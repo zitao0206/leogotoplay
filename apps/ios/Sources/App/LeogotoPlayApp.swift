@@ -3,6 +3,7 @@ import LeogotoPlayCore
 
 @main
 struct LeogotoPlayApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var library = LibraryStore()
     @StateObject private var auth = AuthStore()
 

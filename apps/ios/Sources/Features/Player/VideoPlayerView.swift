@@ -18,6 +18,8 @@ struct VideoPlayerView: View {
     @State private var dragStartValue: Double?
 
     // V2.2：控制层显示状态（默认显示，3 秒无操作自动隐藏）
+    @State private var isLandscape = false
+    @State private var showCastSheet = false
     @State private var controlsVisible = true
     @State private var autoHideTask: Task<Void, Never>?
 
@@ -79,7 +81,10 @@ struct VideoPlayerView: View {
         .animation(.easeInOut(duration: 0.22), value: controlsVisible)
         .statusBarHidden()
         .onAppear { scheduleAutoHide() }
-        .onDisappear { autoHideTask?.cancel() }
+        .onDisappear {
+            autoHideTask?.cancel()
+            if isLandscape { applyOrientation(.portrait) }
+        }
         .onChange(of: showRateSheet) { isShowing in
             if isShowing {
                 autoHideTask?.cancel()
@@ -90,6 +95,11 @@ struct VideoPlayerView: View {
         #if DEBUG
         .onAppear {
             if UserDefaults.standard.bool(forKey: "showRateSheet") { showRateSheet = true }
+            if UserDefaults.standard.bool(forKey: "forceLandscape") {
+                isLandscape = true
+                applyOrientation(.landscapeRight)
+            }
+            if UserDefaults.standard.bool(forKey: "showCastSheet") { showCastSheet = true }
         }
         #endif
         .toast($toastMessage)
@@ -99,6 +109,12 @@ struct VideoPlayerView: View {
             await viewModel.reloadDuration()
             brightness = Double(UIScreen.main.brightness)
             await volume.refreshWhenReady()
+        }
+        .sheet(isPresented: $showCastSheet) {
+            castSheet
+                .presentationDetents([.height(240)])
+                .presentationDragIndicator(.visible)
+                .preferredColorScheme(.dark)
         }
         .sheet(isPresented: $showRateSheet) {
             rateSheet
@@ -141,6 +157,19 @@ struct VideoPlayerView: View {
 
             Spacer()
 
+            // V2.3：横屏播放按钮，放在「⋯」左边。
+            Button {
+                bumpActivity()
+                toggleOrientation()
+            } label: {
+                Image(systemName: isLandscape ? "iphone" : "iphone.landscape")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(.white.opacity(0.14), in: Circle())
+            }
+            .accessibilityLabel(isLandscape ? "退出横屏" : "横屏播放")
+
             // V2.2：右上角收敛成「⋯」更多菜单，后续扩展项都放这里。
             Menu {
                 Button {
@@ -160,6 +189,13 @@ struct VideoPlayerView: View {
                             ? "rectangle.arrowtriangle.2.inward"
                             : "rectangle.arrowtriangle.2.outward"
                     )
+                }
+
+                Button {
+                    bumpActivity()
+                    showCastSheet = true
+                } label: {
+                    Label("投屏", systemImage: "airplayvideo")
                 }
 
                 Divider()
@@ -259,6 +295,26 @@ struct VideoPlayerView: View {
         .background(
             LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .top, endPoint: .bottom)
         )
+    }
+
+    // MARK: - 横屏 / 投屏
+
+    private func toggleOrientation() {
+        isLandscape.toggle()
+        applyOrientation(isLandscape ? .landscapeRight : .portrait)
+    }
+
+    private func applyOrientation(_ mask: UIInterfaceOrientationMask) {
+        OrientationLock.mask = .allButUpsideDown
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first else { return }
+        let root = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController
+        root?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        // 让视图控制器的 supportedInterfaceOrientations 先刷新，再请求几何更新。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
+        }
     }
 
     // MARK: - 控制层自动隐藏
@@ -422,6 +478,30 @@ struct VideoPlayerView: View {
             .background(Capsule().fill(.white.opacity(0.1)))
         }
         .accessibilityLabel("播放速度 \(viewModel.rateLabel)")
+    }
+
+    private var castSheet: some View {
+        VStack(spacing: 14) {
+            Text("投屏")
+                .font(.headline)
+                .foregroundStyle(.white)
+
+            AirPlayRoutePicker()
+                .frame(width: 56, height: 56)
+
+            Text("点上面的 AirPlay 按钮，选择电视或音箱；选中后播放会转到大屏，手机上的进度条依旧可以控制。")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+
+            Button("完成") { showCastSheet = false }
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.accentSecondary)
+        }
+        .padding(.top, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color.black.opacity(0.92))
     }
 
     private var rateSheet: some View {

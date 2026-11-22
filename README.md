@@ -29,6 +29,17 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 
 搜索态截图：`docs/screenshots/10-search-no-stats.png`。
 
+### V2.3 · 播放器画面与横屏 / 投屏
+
+| 默认按原始比例（不裁切） | 横屏播放 | 投屏面板 |
+| --- | --- | --- |
+| ![原始比例](docs/screenshots/20-player-aspect-fit.png) | ![横屏](docs/screenshots/22-player-landscape.png) | ![投屏](docs/screenshots/21-player-cast-sheet.png) |
+
+- 视频默认按原始宽高比完整显示（aspect fit，多出来的部分留黑边），不再默认裁切填满；需要填满时仍可从「⋯」里切到画面填充。
+- 右上角「⋯」左边新增横屏按钮（`iphone.landscape` / `iphone` 图标切换），点一下把播放页转成横屏，再点回到竖屏；退出播放页时若仍是横屏会自动转回竖屏。
+- 「⋯」菜单新增「投屏」：弹出的面板里是系统 `AVRoutePickerView`（AirPlay 设备选择），选中后画面投到电视 / 音箱，手机上的进度条依旧可控。
+- 旋转实现：`OrientationLock` 让 App 整体支持除倒置以外的方向，指示 AppDelegate 返回可用方向；具体页面只发几何更新请求（`requestGeometryUpdate`，刷新后再延迟 0.6 秒发起），不靠 KVC 改设备方向。
+
 ### V2.2 · 播放器控制层
 
 | 进入时全展示 | 3 秒无操作后自动隐藏 |

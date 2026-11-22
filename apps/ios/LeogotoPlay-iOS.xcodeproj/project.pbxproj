@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		6F6CECC4BA4ECB85991542BB /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAF3D747DD6F9524D54342C5 /* AppConfig.swift */; };
 		7954330BA5C78BB7A79266D1 /* LeogotoPlayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 308F6FB6E3C2B005E25BA814 /* LeogotoPlayApp.swift */; };
+		127CA8C3E0A40ADAD3A4E65D /* OrientationSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3931ACED7CBD7A66386BCCB5 /* OrientationSupport.swift */; };
 		33C83AAC4C9EB1AF4A0E91A3 /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEE941A41773838E083320C5 /* RootTabView.swift */; };
 		7FB333775397EA09813D365C /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ABE4BAF20BE696B82A432B9 /* Components.swift */; };
 		94EA09651EF8F93E23339D5A /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72DAC3DA5B27A0B8F70EB1FC /* Theme.swift */; };
@@ -23,6 +24,7 @@
 		3B72474B9076F628D494742E /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90D7D4AC05676DCFAC05DDA /* LoginView.swift */; };
 		1AEB8AC1F7C58A81D35A55A0 /* MineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E66BBA6032D1F950D2AE107 /* MineView.swift */; };
 		89EB6F7AAD50ED9EC09C39A0 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 928AB599B69AD3CA342F7236 /* SettingsView.swift */; };
+		93CE2888B7A6EF0124E53707 /* AirPlayRoutePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E069B6C0B33ECD78B49AAB69 /* AirPlayRoutePicker.swift */; };
 		5031FACCE318BAFF28E34EE8 /* PlayerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500685D7A3FB9593761F255E /* PlayerViewModel.swift */; };
 		0FB36663A2282ED0541C49A6 /* SystemVolumeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E620E8CD6AEDA97579D0BB /* SystemVolumeController.swift */; };
 		ADABD8347015A10CD313889F /* VideoLayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BDACE170EFCEC685F900D11 /* VideoLayerView.swift */; };
@@ -34,6 +36,7 @@
 /* Begin PBXFileReference section */
 		EAF3D747DD6F9524D54342C5 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		308F6FB6E3C2B005E25BA814 /* LeogotoPlayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeogotoPlayApp.swift; sourceTree = "<group>"; };
+		3931ACED7CBD7A66386BCCB5 /* OrientationSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrientationSupport.swift; sourceTree = "<group>"; };
 		FEE941A41773838E083320C5 /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
 		5ABE4BAF20BE696B82A432B9 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		72DAC3DA5B27A0B8F70EB1FC /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -48,6 +51,7 @@
 		B90D7D4AC05676DCFAC05DDA /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		7E66BBA6032D1F950D2AE107 /* MineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MineView.swift; sourceTree = "<group>"; };
 		928AB599B69AD3CA342F7236 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E069B6C0B33ECD78B49AAB69 /* AirPlayRoutePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayRoutePicker.swift; sourceTree = "<group>"; };
 		500685D7A3FB9593761F255E /* PlayerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViewModel.swift; sourceTree = "<group>"; };
 		38E620E8CD6AEDA97579D0BB /* SystemVolumeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemVolumeController.swift; sourceTree = "<group>"; };
 		5BDACE170EFCEC685F900D11 /* VideoLayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoLayerView.swift; sourceTree = "<group>"; };
@@ -99,6 +103,7 @@
 			children = (
 				EAF3D747DD6F9524D54342C5 /* child */,
 				308F6FB6E3C2B005E25BA814 /* child */,
+				3931ACED7CBD7A66386BCCB5 /* child */,
 				FEE941A41773838E083320C5 /* child */,
 			);
 			path = App;
@@ -155,6 +160,7 @@
 		9C2540D373A25EC7F353B475 /* Player */ = {
 			isa = PBXGroup;
 			children = (
+				E069B6C0B33ECD78B49AAB69 /* child */,
 				500685D7A3FB9593761F255E /* child */,
 				38E620E8CD6AEDA97579D0BB /* child */,
 				5BDACE170EFCEC685F900D11 /* child */,
@@ -272,6 +278,7 @@
 			files = (
 				6F6CECC4BA4ECB85991542BB /* AppConfig.swift in Sources */,
 				7954330BA5C78BB7A79266D1 /* LeogotoPlayApp.swift in Sources */,
+				127CA8C3E0A40ADAD3A4E65D /* OrientationSupport.swift in Sources */,
 				33C83AAC4C9EB1AF4A0E91A3 /* RootTabView.swift in Sources */,
 				7FB333775397EA09813D365C /* Components.swift in Sources */,
 				94EA09651EF8F93E23339D5A /* Theme.swift in Sources */,
@@ -286,6 +293,7 @@
 				3B72474B9076F628D494742E /* LoginView.swift in Sources */,
 				1AEB8AC1F7C58A81D35A55A0 /* MineView.swift in Sources */,
 				89EB6F7AAD50ED9EC09C39A0 /* SettingsView.swift in Sources */,
+				93CE2888B7A6EF0124E53707 /* AirPlayRoutePicker.swift in Sources */,
 				5031FACCE318BAFF28E34EE8 /* PlayerViewModel.swift in Sources */,
 				0FB36663A2282ED0541C49A6 /* SystemVolumeController.swift in Sources */,
 				ADABD8347015A10CD313889F /* VideoLayerView.swift in Sources */,
@@ -424,7 +432,7 @@
 				INFOPLIST_FILE = Sources/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = LeogotoPlay;
 				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
-				MARKETING_VERSION = 2.2;
+				MARKETING_VERSION = 2.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.leogotoplay.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -445,7 +453,7 @@
 				INFOPLIST_FILE = Sources/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = LeogotoPlay;
 				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
-				MARKETING_VERSION = 2.2;
+				MARKETING_VERSION = 2.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.leogotoplay.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

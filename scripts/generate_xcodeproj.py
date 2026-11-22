@@ -271,7 +271,7 @@ def generate_project(project_dir, sources_dir, bundle_id, deployment_target, pla
         "GENERATE_INFOPLIST_FILE": "NO",
         "INFOPLIST_FILE": infoplist_project_path,
         "INFOPLIST_KEY_CFBundleDisplayName": PRODUCT_NAME,
-        "MARKETING_VERSION": "2.2" if platform == "ios" else "0.1.0",
+        "MARKETING_VERSION": "2.3" if platform == "ios" else "0.1.0",
         "PRODUCT_BUNDLE_IDENTIFIER": bundle_id,
         "PRODUCT_NAME": "$(TARGET_NAME)",
         "SWIFT_EMIT_LOC_STRINGS": "YES",

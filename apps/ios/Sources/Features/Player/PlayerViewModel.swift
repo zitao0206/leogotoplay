@@ -46,7 +46,8 @@ final class PlayerViewModel: ObservableObject {
     /// 0.25x ... 5x
     @Published var rate: Float = 1
     @Published var mode: PlaybackMode = .repeatOne
-    @Published var isAspectFill = true
+    /// V2.3：默认按视频原始比例完整显示（不裁切）。
+    @Published var isAspectFill = false
     /// 拿不到系统音量滑杆时用的播放器自身音量（0...1）。
     @Published var playerVolume: Float = 1
 
