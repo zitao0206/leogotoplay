@@ -80,6 +80,11 @@ struct LibraryView: View {
             if let keyword = UserDefaults.standard.string(forKey: "searchKeyword"), searchText.isEmpty {
                 searchText = keyword
             }
+            if UserDefaults.standard.bool(forKey: "openFirstVideo"),
+               case .none = route,
+               let first = library.videos.first {
+                route = .player(first)
+            }
             #endif
         }
         .toast($toastMessage)

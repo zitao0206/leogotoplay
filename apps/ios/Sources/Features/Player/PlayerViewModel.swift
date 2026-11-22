@@ -2,29 +2,71 @@ import AVFoundation
 import SwiftUI
 import LeogotoPlayCore
 
-/// 播放页 ViewModel：播放 / 暂停 / 进度 / 倍速 / 循环 / 画面填充。
+/// V1.1.0：循环模式。
+enum PlaybackMode: String, CaseIterable, Identifiable {
+    /// 单曲循环（默认）
+    case repeatOne
+    /// 当前列表循环播放
+    case listLoop
+    /// 列表顺序播放，放完停止
+    case listOnce
+    /// 单曲播放，放完停止
+    case stopAtEnd
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .repeatOne: "单曲循环"
+        case .listLoop: "文件夹循环"
+        case .listOnce: "列表播放"
+        case .stopAtEnd: "单曲停止"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .repeatOne: "repeat.1"
+        case .listLoop: "repeat"
+        case .listOnce: "list.bullet"
+        case .stopAtEnd: "stop.circle"
+        }
+    }
+}
+
+/// 播放页 ViewModel：播放 / 暂停 / 进度 / 倍速 / 循环模式 / 上一个下一个。
 @MainActor
 final class PlayerViewModel: ObservableObject {
-    let item: VideoItem
+    @Published private(set) var item: VideoItem
     let player: AVPlayer
 
     @Published var isPlaying = false
     @Published var currentTime: Double = 0
     @Published var duration: Double
+    /// 0.25x ... 5x
     @Published var rate: Float = 1
-    @Published var isLooping = true
+    @Published var mode: PlaybackMode = .repeatOne
     @Published var isAspectFill = true
+    /// 拿不到系统音量滑杆时用的播放器自身音量（0...1）。
+    @Published var playerVolume: Float = 1
+
+    /// 当前播放队列（同一个文件夹内的视频），供列表循环 / 上一个下一个使用。
+    @Published private(set) var queue: [VideoItem]
+    private var index: Int
 
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
 
-    private let rates: [Float] = [0.5, 1, 1.5, 2]
+    static let minRate: Float = 0.25
+    static let maxRate: Float = 5
 
-    init(item: VideoItem) {
+    init(item: VideoItem, queue: [VideoItem] = []) {
         self.item = item
+        let resolved = queue.isEmpty ? [item] : queue
+        self.queue = resolved
+        self.index = resolved.firstIndex(where: { $0.id == item.id }) ?? 0
         duration = max(item.duration, 0.01)
         player = AVPlayer(url: item.fileURL)
-        isLooping = UserDefaults.standard.object(forKey: ExportSettings.autoLoopKey) as? Bool ?? true
         observe()
     }
 
@@ -37,11 +79,72 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
-    var availableRates: [Float] { rates }
+    // MARK: - 文案
 
     var rateLabel: String {
-        rate == 1 ? "1x" : (rate.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(rate))x" : String(format: "%.1fx", rate))
+        var text = String(format: "%.2f", rate)
+        while text.contains("."), text.hasSuffix("0") { text.removeLast() }
+        if text.hasSuffix(".") { text.removeLast() }
+        return text + "x"
     }
+
+    var hasQueue: Bool { queue.count > 1 }
+
+    // MARK: - 队列
+
+    /// 进入播放器后由页面注入同目录视频列表。
+    func setQueue(_ items: [VideoItem]) {
+        guard !items.isEmpty else { return }
+        queue = items
+        index = items.firstIndex(where: { $0.id == item.id }) ?? 0
+    }
+
+    func playPrevious() {
+        guard hasQueue else {
+            seek(to: 0)
+            return
+        }
+        index = (index - 1 + queue.count) % queue.count
+        load(queue[index], autoplay: true)
+    }
+
+    func playNext() {
+        guard hasQueue else {
+            seek(to: 0)
+            return
+        }
+        index = (index + 1) % queue.count
+        load(queue[index], autoplay: true)
+    }
+
+    private func advanceIfPossible(wrapping: Bool) {
+        if index + 1 < queue.count {
+            index += 1
+            load(queue[index], autoplay: true)
+        } else if wrapping, !queue.isEmpty {
+            index = 0
+            load(queue[index], autoplay: true)
+        } else {
+            stopAtEnd()
+        }
+    }
+
+    private func load(_ newItem: VideoItem, autoplay: Bool) {
+        player.pause()
+        item = newItem
+        duration = max(newItem.duration, 0.01)
+        currentTime = 0
+        player.replaceCurrentItem(with: AVPlayerItem(url: newItem.fileURL))
+        if autoplay {
+            player.playImmediately(atRate: rate)
+            isPlaying = true
+            Task { await reloadDuration() }
+        } else {
+            isPlaying = false
+        }
+    }
+
+    // MARK: - 播放控制
 
     func togglePlay() {
         if isPlaying {
@@ -71,11 +174,25 @@ final class PlayerViewModel: ObservableObject {
                     toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
+    /// 前进 / 倒退，传负数即倒退。
+    func skip(by seconds: Double) {
+        seek(to: currentTime + seconds)
+    }
+
     func setRate(_ value: Float) {
-        rate = value
+        rate = min(max(value, Self.minRate), Self.maxRate)
         if isPlaying {
-            player.rate = value
+            player.rate = rate
         }
+    }
+
+    func setVolume(_ value: Float) {
+        playerVolume = min(max(value, 0), 1)
+        player.volume = playerVolume
+    }
+
+    func setMode(_ value: PlaybackMode) {
+        mode = value
     }
 
     func reloadDuration() async {
@@ -97,30 +214,51 @@ final class PlayerViewModel: ObservableObject {
 
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
-            object: player.currentItem,
+            object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] note in
             guard let self else { return }
-            Task { @MainActor in self.handleEnd() }
+            let endedItem = note.object as? AVPlayerItem
+            Task { @MainActor in
+                guard endedItem === self.player.currentItem else { return }
+                self.handleEnd()
+            }
         }
     }
 
     private func tick(_ seconds: Double) {
         guard seconds.isFinite else { return }
         currentTime = seconds
-        if isPlaying, isLooping, seconds >= duration - 0.05 {
-            player.seek(to: .zero)
-        }
     }
 
     private func handleEnd() {
-        if isLooping {
+        switch mode {
+        case .repeatOne:
             player.seek(to: .zero)
             player.playImmediately(atRate: rate)
             isPlaying = true
-        } else {
-            isPlaying = false
-            currentTime = duration
+        case .listLoop:
+            if hasQueue {
+                advanceIfPossible(wrapping: true)
+            } else {
+                player.seek(to: .zero)
+                player.playImmediately(atRate: rate)
+                isPlaying = true
+            }
+        case .listOnce:
+            if hasQueue {
+                advanceIfPossible(wrapping: false)
+            } else {
+                stopAtEnd()
+            }
+        case .stopAtEnd:
+            stopAtEnd()
         }
+    }
+
+    private func stopAtEnd() {
+        player.pause()
+        isPlaying = false
+        currentTime = duration
     }
 }

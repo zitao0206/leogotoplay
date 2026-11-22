@@ -24,6 +24,7 @@
 		1AEB8AC1F7C58A81D35A55A0 /* MineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E66BBA6032D1F950D2AE107 /* MineView.swift */; };
 		89EB6F7AAD50ED9EC09C39A0 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 928AB599B69AD3CA342F7236 /* SettingsView.swift */; };
 		5031FACCE318BAFF28E34EE8 /* PlayerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500685D7A3FB9593761F255E /* PlayerViewModel.swift */; };
+		0FB36663A2282ED0541C49A6 /* SystemVolumeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E620E8CD6AEDA97579D0BB /* SystemVolumeController.swift */; };
 		ADABD8347015A10CD313889F /* VideoLayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BDACE170EFCEC685F900D11 /* VideoLayerView.swift */; };
 		73EC1D1FC8EFB00BCB21ED84 /* VideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F902B796281382F1AA49F5E1 /* VideoPlayerView.swift */; };
 		0F56184317D102A8AE63E075 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 94C41BB8685E37A07CA871EC /* Assets.xcassets */; };
@@ -48,6 +49,7 @@
 		7E66BBA6032D1F950D2AE107 /* MineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MineView.swift; sourceTree = "<group>"; };
 		928AB599B69AD3CA342F7236 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		500685D7A3FB9593761F255E /* PlayerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViewModel.swift; sourceTree = "<group>"; };
+		38E620E8CD6AEDA97579D0BB /* SystemVolumeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemVolumeController.swift; sourceTree = "<group>"; };
 		5BDACE170EFCEC685F900D11 /* VideoLayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoLayerView.swift; sourceTree = "<group>"; };
 		F902B796281382F1AA49F5E1 /* VideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerView.swift; sourceTree = "<group>"; };
 		94C41BB8685E37A07CA871EC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -154,6 +156,7 @@
 			isa = PBXGroup;
 			children = (
 				500685D7A3FB9593761F255E /* child */,
+				38E620E8CD6AEDA97579D0BB /* child */,
 				5BDACE170EFCEC685F900D11 /* child */,
 				F902B796281382F1AA49F5E1 /* child */,
 			);
@@ -284,6 +287,7 @@
 				1AEB8AC1F7C58A81D35A55A0 /* MineView.swift in Sources */,
 				89EB6F7AAD50ED9EC09C39A0 /* SettingsView.swift in Sources */,
 				5031FACCE318BAFF28E34EE8 /* PlayerViewModel.swift in Sources */,
+				0FB36663A2282ED0541C49A6 /* SystemVolumeController.swift in Sources */,
 				ADABD8347015A10CD313889F /* VideoLayerView.swift in Sources */,
 				73EC1D1FC8EFB00BCB21ED84 /* VideoPlayerView.swift in Sources */,
 			);
@@ -420,7 +424,7 @@
 				INFOPLIST_FILE = Sources/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = LeogotoPlay;
 				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
-				MARKETING_VERSION = 1.0.5;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.leogotoplay.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -441,7 +445,7 @@
 				INFOPLIST_FILE = Sources/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = LeogotoPlay;
 				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
-				MARKETING_VERSION = 1.0.5;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.leogotoplay.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
