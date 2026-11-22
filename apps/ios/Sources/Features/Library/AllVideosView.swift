@@ -42,8 +42,7 @@ struct AllVideosView: View {
                         } label: {
                             VideoListRow(
                                 item: item,
-                                showsFolderName: true,
-                                folderName: library.folder(with: item.folderID)?.name
+                                folderPath: item.folderID.map { library.folderPath(for: $0) }
                             )
                         }
                         .buttonStyle(.plain)

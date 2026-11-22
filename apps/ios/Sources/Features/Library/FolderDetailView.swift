@@ -47,15 +47,13 @@ struct FolderDetailView: View {
                             .fill(Color(uiColor: .secondarySystemGroupedBackground))
                     )
                 } else {
-                    LazyVGrid(
-                        columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
-                        spacing: 16
-                    ) {
+                    // V1.0.3：视频统一用列表 cell（缩略图 + 名称.mp4 + 大小 / 日期 / 时长）。
+                    LazyVStack(spacing: 8) {
                         ForEach(videos) { item in
                             Button {
                                 route = .player(item)
                             } label: {
-                                VideoCard(item: item)
+                                VideoListRow(item: item)
                             }
                             .buttonStyle(.plain)
                             .contextMenu {

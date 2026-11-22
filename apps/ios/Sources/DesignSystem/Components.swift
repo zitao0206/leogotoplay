@@ -98,53 +98,50 @@ struct VideoCard: View {
     }
 }
 
-// MARK: - 视频列表行（V2.0.1）
+// MARK: - 视频列表行（V1.0.3）
 
-/// 列表形式展示的视频行：缩略图 + 名称.mp4 + 大小 / 添加日期 / 时长。
+/// 与文件夹行同一套 cell 样式：左侧缩略图 / 图标，标题「名称.mp4」，第二行是
+/// 大小 · 添加日期 · 时长，右侧 chevron。
 struct VideoListRow: View {
     let item: VideoItem
-    var showsFolderName: Bool = false
-    var folderName: String? = nil
-
-    private var metaText: String {
-        "\(item.fileSize.fileSizeText) · \(item.createdAt.dateText) · \(item.duration.timecode)"
-    }
+    /// 完整层级路径，用于「全部视频」这类跨目录列表；nil 时不展示。
+    var folderPath: String? = nil
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack(alignment: .bottomTrailing) {
-                ThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 10)
-                    .frame(width: 92, height: 58)
-                    .clipped()
+            ThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 8)
+                .frame(width: 52, height: 52)
+                .clipped()
 
-                Text(item.duration.timecode)
-                    .font(.caption2.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(.black.opacity(0.65), in: Capsule())
-                    .padding(4)
-            }
-
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(item.displayNameWithExtension)
                     .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                Text(metaText)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                if showsFolderName {
-                    Text(folderName ?? "未分类")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                HStack(spacing: 10) {
+                    Text(item.fileSize.fileSizeText)
+                    Text(item.createdAt.dateText)
+                    Text(item.duration.listTimecode)
                 }
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             }
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+
+            if let folderPath {
+                Text(folderPath)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .layoutPriority(-1)
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color(uiColor: .tertiaryLabel))
         }
         .padding(12)
         .background(

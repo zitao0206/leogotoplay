@@ -34,6 +34,7 @@ struct LibraryView: View {
 
                 if searchText.isEmpty {
                     folderSection
+                    rootVideoSection
                 } else {
                     searchResultsSection
                 }
@@ -294,6 +295,51 @@ struct LibraryView: View {
         }
     }
 
+    // MARK: - 根目录视频（V1.0.3）
+
+    private var rootVideos: [VideoItem] { library.videos(in: nil) }
+
+    /// 根目录下的视频：与文件夹同一套 cell 样式，单行展示。
+    private var rootVideoSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                SectionHeader(
+                    title: "视频",
+                    subtitle: rootVideos.isEmpty
+                        ? "导入的视频会落在根目录，可再移动进文件夹"
+                        : "\(rootVideos.count) 个 · \(rootVideos.reduce(Int64(0)) { $0 + $1.fileSize }.fileSizeText)"
+                )
+                Spacer()
+            }
+
+            if rootVideos.isEmpty {
+                EmptyStateView(
+                    symbol: "film",
+                    title: "根目录还没有视频",
+                    message: "点右上角相册图标导入，视频会直接放在根目录；需要归档时用「移动到文件夹」。"
+                )
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                )
+            } else {
+                LazyVStack(spacing: 8) {
+                    ForEach(rootVideos) { item in
+                        Button {
+                            route = .player(item)
+                        } label: {
+                            VideoListRow(item: item)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            videoContextMenu(for: item)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - 搜索结果
 
     private var searchResults: [VideoItem] {
@@ -325,8 +371,7 @@ struct LibraryView: View {
                         } label: {
                             VideoListRow(
                                 item: item,
-                                showsFolderName: true,
-                                folderName: library.folder(with: item.folderID)?.name
+                                folderPath: item.folderID.map { library.folderPath(for: $0) }
                             )
                         }
                         .buttonStyle(.plain)
