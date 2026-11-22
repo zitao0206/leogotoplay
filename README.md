@@ -29,6 +29,17 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 
 搜索态截图：`docs/screenshots/10-search-no-stats.png`。
 
+### V2.4 · 播放器全屏按钮常驻与锁定
+
+| 音量滑杆下方的锁按钮 | 锁定态（只剩开锁按钮） | 横屏 3 秒后顶栏仍保留 |
+| --- | --- | --- |
+| ![锁按钮](docs/screenshots/23-player-lock-button.png) | ![锁定](docs/screenshots/24-player-locked.png) | ![横屏顶栏](docs/screenshots/25-player-landscape-topbar.png) |
+
+- 横屏（全屏）播放时不再自动收起顶栏：返回按钮和横屏按钮一直留着，点横屏按钮回到竖屏正常播放，点返回按钮直接退出视频；底栏进度与播放控制仍然 3 秒后自动隐藏。
+- 横竖屏切换只切换布局分支：`onAppear` / `onDisappear` / `.task` 都挂在最外层，切换分支不会触发 `onDisappear` 把横屏状态清掉（修掉了「点一下横屏立刻弹回竖屏」）。
+- 音量滑杆下方新增锁按钮（默认 `lock.fill`）：点一下变成开锁图标 `lock.open.fill` 并进入锁定状态——所有按钮、进度条、左右滑杆和画面点击手势全部失效，屏幕上只留这一个开锁按钮；再点它恢复成正常控制。
+- 锁定时会飘一条「已锁定，点击锁图标解锁」提示，横屏下同样生效。
+
 ### V2.3 · 播放器画面与横屏 / 投屏
 
 | 默认按原始比例（不裁切） | 横屏播放 | 投屏面板 |
@@ -36,9 +47,9 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 | ![原始比例](docs/screenshots/20-player-aspect-fit.png) | ![横屏](docs/screenshots/22-player-landscape.png) | ![投屏](docs/screenshots/21-player-cast-sheet.png) |
 
 - 视频默认按原始宽高比完整显示（aspect fit，多出来的部分留黑边），不再默认裁切填满；需要填满时仍可从「⋯」里切到画面填充。
-- 右上角「⋯」左边新增横屏按钮（`iphone.landscape` / `iphone` 图标切换），点一下把播放页转成横屏，再点回到竖屏；退出播放页时若仍是横屏会自动转回竖屏。
+- 右上角「⋯」左边新增横屏按钮（`iphone.landscape` / `iphone` 图标切换），点一下把播放页转成横屏，再点回到竖屏；退出播放页时若仍是横屏会自动恢复竖屏。
 - 「⋯」菜单新增「投屏」：弹出的面板里是系统 `AVRoutePickerView`（AirPlay 设备选择），选中后画面投到电视 / 音箱，手机上的进度条依旧可控。
-- 旋转实现：`OrientationLock` 让 App 整体支持除倒置以外的方向，指示 AppDelegate 返回可用方向；具体页面只发几何更新请求（`requestGeometryUpdate`，刷新后再延迟 0.6 秒发起），不靠 KVC 改设备方向。
+- 横屏实现：播放页把整页旋转 90° 铺满横向画面（按 430×932 换算出 932×430 的横屏画布），不改设备方向，其它页面固定竖屏；左右滑杆在横屏下自动缩短，避免撑破横向布局。
 
 ### V2.2 · 播放器控制层
 
@@ -46,7 +57,7 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 | --- | --- |
 | ![控制层显示](docs/screenshots/18-player-controls-visible.png) | ![控制层隐藏](docs/screenshots/19-player-controls-hidden.png) |
 
-- 右上角收起为「⋯」更多菜单：剪辑、画面填充/适应，以及一条禁用的「更多功能（预留）」占位，方便后续加项。
+- 右上角收起为「⋯」更多：点开弹出底部操作面板，内含剪辑、画面填充/适应、投屏；实现上用 Button + `confirmationDialog` 而不是 `Menu`，因为 `Menu` 自带的图标内边距会让这个圆形按钮和左边的横屏按钮上下错位。
 - 进播放页时控制层全部展示；3 秒无操作自动淡出（顶栏、底栏、左右滑杆一起隐藏）。点画面立刻隐藏，再点一次重新出现并重新计时；播放、拖动进度、切上下一个、改倍速/循环、拖亮度音量都会重置计时。
 - 打开倍速面板期间不自动隐藏。
 
