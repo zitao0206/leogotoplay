@@ -233,7 +233,10 @@ struct VideoPlayerView: View {
             .accessibilityLabel("更多")
         }
         .padding(.horizontal, 16)
-        .padding(.top, 10)
+        // 顶栏整排（返回 / 标题 / 横屏 / 更多）整体下移到灵动岛下方：
+        // iPhone 15 Pro Max 的安全区顶部是 59pt，灵动岛占 11~48pt，
+        // 所以竖屏留 62pt、横屏（整页旋转后顶部变成物理左侧那条）留 58pt。
+        .padding(.top, isLandscape ? 58 : 62)
         .padding(.bottom, 18)
         .background(
             LinearGradient(colors: [.black.opacity(0.65), .clear], startPoint: .top, endPoint: .bottom)
@@ -387,39 +390,67 @@ struct VideoPlayerView: View {
 
     private var sliderHeight: CGFloat { isLandscape ? 96 : 210 }
 
+    /// V2.6：两侧触控区大幅加宽，滑杆平时不显示，只在滑动时浮现。
+    private var sideZoneWidth: CGFloat { isLandscape ? 132 : 96 }
+
+    private var lockButtonVisible: Bool {
+        isLocked ? lockUIvisible : controlsVisible
+    }
+
+    private var sideColumnHeight: CGFloat { sliderHeight + 16 + 48 }
+
     private var sideControls: some View {
-        HStack(spacing: 0) {
-            sideControl(.brightness)
-                .opacity(isLocked ? 0 : 1)
-                .allowsHitTesting(!isLocked)
-            Spacer(minLength: 0)
-            VStack(spacing: 18) {
-                sideControl(.volume)
-                    .opacity(isLocked ? 0 : 1)
-                    .allowsHitTesting(!isLocked)
+        HStack(alignment: .center, spacing: 0) {
+            // V2.6：锁按钮挪到左侧，亮度滑杆下面。
+            VStack(spacing: 16) {
+                sideZone(.brightness)
                 lockButton
+                    .opacity(lockButtonVisible ? 1 : 0)
+                    .allowsHitTesting(lockButtonVisible)
             }
+            Spacer(minLength: 0)
+            sideZone(.volume)
         }
-        .padding(.horizontal, 10)
         .padding(.top, isLandscape ? 64 : 92)
-        // V2.5：锁按钮放大后整体下移，底部留白相应收窄，避免被底栏盖住。
         .padding(.bottom, isLandscape ? 176 : 184)
     }
 
-    private func sideControl(_ side: Side) -> some View {
-        let isActive = activeSide == side
-        let value = side == .brightness
+    private func sideValue(_ side: Side) -> Double {
+        side == .brightness
             ? brightness
             : (volume.isAvailable ? Double(volume.value) : Double(viewModel.playerVolume))
-        return VStack(spacing: 8) {
+    }
+
+    /// 透明的大触控区 + 只在交互时浮现的滑杆。
+    private func sideZone(_ side: Side) -> some View {
+        let active = activeSide == side
+        let value = sideValue(side)
+        return ZStack(alignment: side == .brightness ? .leading : .trailing) {
+            Color.clear.contentShape(Rectangle())
+            sideSlider(side, active: active, value: value)
+                .padding(.horizontal, 8)
+                .opacity(active && !isLocked ? 1 : 0)
+                .allowsHitTesting(false)
+        }
+        .frame(width: sideZoneWidth, height: sliderHeight)
+        .frame(height: sideColumnHeight, alignment: .top)
+        .contentShape(Rectangle())
+        .gesture(sideDrag(side))
+        .allowsHitTesting(!isLocked)
+        .accessibilityLabel(side.title)
+        .accessibilityValue("\(Int(value * 100))%")
+    }
+
+    private func sideSlider(_ side: Side, active: Bool, value: Double) -> some View {
+        VStack(spacing: 8) {
             Image(systemName: side.icon)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white.opacity(isActive ? 0.95 : 0.35))
+                .foregroundStyle(.white.opacity(active ? 0.95 : 0.35))
 
             GeometryReader { geo in
                 ZStack(alignment: .bottom) {
                     Capsule()
-                        .fill(.white.opacity(isActive ? 0.18 : 0.1))
+                        .fill(.white.opacity(active ? 0.18 : 0.1))
                     Capsule()
                         .fill(
                             LinearGradient(
@@ -430,43 +461,38 @@ struct VideoPlayerView: View {
                         .frame(height: max(3, geo.size.height * CGFloat(min(max(value, 0), 1))))
                 }
                 .overlay(
-                    Capsule().stroke(.white.opacity(isActive ? 0.28 : 0.12), lineWidth: 1)
+                    Capsule().stroke(.white.opacity(active ? 0.28 : 0.12), lineWidth: 1)
                 )
             }
             .frame(width: 6)
 
-            if isActive {
-                Text("\(Int(value * 100))%")
-                    .font(.system(size: 10, weight: .medium).monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.8))
-            }
+            Text("\(Int(value * 100))%")
+                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.8))
+                .opacity(active ? 1 : 0)
         }
-        .frame(width: 34, height: sliderHeight)
-        .padding(.vertical, 12)
-        .padding(.horizontal, 8)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { drag in
-                    if dragStartValue == nil {
-                        dragStartValue = value
-                        activeSide = side
-                    }
-                    bumpActivity()
-                    let base = dragStartValue ?? value
-                    let delta = Double(-drag.translation.height) / 190.0
-                    applySideValue(base + delta, to: side)
+        .frame(width: 46, height: sliderHeight)
+    }
+
+    private func sideDrag(_ side: Side) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { drag in
+                if dragStartValue == nil {
+                    dragStartValue = sideValue(side)
+                    activeSide = side
                 }
-                .onEnded { _ in
-                    dragStartValue = nil
-                    let finished = side
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        if activeSide == finished { activeSide = nil }
-                    }
+                bumpActivity()
+                let base = dragStartValue ?? sideValue(side)
+                let delta = Double(-drag.translation.height) / 190.0
+                applySideValue(base + delta, to: side)
+            }
+            .onEnded { _ in
+                dragStartValue = nil
+                let finished = side
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    if activeSide == finished { activeSide = nil }
                 }
-        )
-        .accessibilityLabel(side.title)
-        .accessibilityValue("\(Int(value * 100))%")
+            }
     }
 
     /// V2.4：音量滑杆下方的锁按钮。锁定时图标变成开锁，且它是屏幕上唯一可点的元素。

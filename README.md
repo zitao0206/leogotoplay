@@ -29,6 +29,18 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 
 搜索态截图：`docs/screenshots/10-search-no-stats.png`。
 
+### V2.6 · 锁按钮左移与滑杆按需浮现
+
+| 默认：滑杆不显示，锁按钮在左侧 | 滑动左侧：浮出亮度滑杆 | 滑动右侧：浮出音量滑杆 |
+| --- | --- | --- |
+| ![锁按钮左移](docs/screenshots/30-player-lock-left.png) | ![亮度](docs/screenshots/31-player-brightness-slider.png) | ![音量](docs/screenshots/32-player-volume-slider.png) |
+
+- 锁按钮从右侧音量滑杆下方挪到左侧、亮度滑杆下方。
+- 亮度滑杆和音量滑杆默认完全不显示；只有手指在左 / 右两侧区域按下并滑动时才浮出来，松手 1 秒后自动消失。
+- 两侧触控区大幅加宽（竖屏 96pt、横屏 132pt，竖直方向覆盖滑杆高度），不用瞄准那根 6pt 细条就能调；滑杆本身不可点击（`allowsHitTesting(false)`），只负责显示。
+- 百分比数字常驻占位、只切透明度，浮现时滑杆长度不会跳。
+- 顶栏整排（返回 / 标题 / 横屏 / 更多）整体下移到灵动岛下方：竖屏顶部留白 62pt、横屏 58pt（iPhone 15 Pro Max 安全区顶部 59pt、灵动岛占 11~48pt），标题和按钮不会再被灵动岛盖住。
+
 ### V2.5 · 锁定态控件的自动隐藏
 
 | 锁按钮放大 1.5 倍并下移 | 锁定态：只留开锁按钮 + 进度条 | 锁屏 3 秒无操作后全部隐藏 |
