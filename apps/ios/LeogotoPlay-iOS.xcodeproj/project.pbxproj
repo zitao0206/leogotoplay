@@ -424,7 +424,7 @@
 				INFOPLIST_FILE = Sources/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = LeogotoPlay;
 				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 2.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.leogotoplay.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -445,7 +445,7 @@
 				INFOPLIST_FILE = Sources/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = LeogotoPlay;
 				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 2.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.leogotoplay.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

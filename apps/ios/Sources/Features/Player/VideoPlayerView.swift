@@ -202,7 +202,10 @@ struct VideoPlayerView: View {
             Slider(
                 value: Binding(
                     get: { viewModel.currentTime },
-                    set: { viewModel.seek(to: $0) }
+                    set: {
+                        bumpActivity()
+                        viewModel.seek(to: $0)
+                    }
                 ),
                 in: 0...max(viewModel.duration, 0.1)
             )
@@ -218,13 +221,16 @@ struct VideoPlayerView: View {
 
                 HStack(spacing: 14) {
                     transportButton(icon: "backward.end.fill", label: "上一个") {
+                        bumpActivity()
                         viewModel.playPrevious()
                     }
                     transportButton(icon: "gobackward.10", label: "倒退 10 秒") {
+                        bumpActivity()
                         viewModel.skip(by: -10)
                     }
 
                     Button {
+                        bumpActivity()
                         viewModel.togglePlay()
                     } label: {
                         Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
@@ -236,9 +242,11 @@ struct VideoPlayerView: View {
                     .accessibilityLabel(viewModel.isPlaying ? "暂停" : "播放")
 
                     transportButton(icon: "goforward.10", label: "前进 10 秒") {
+                        bumpActivity()
                         viewModel.skip(by: 10)
                     }
                     transportButton(icon: "forward.end.fill", label: "下一个") {
+                        bumpActivity()
                         viewModel.playNext()
                     }
                 }
@@ -341,6 +349,7 @@ struct VideoPlayerView: View {
                         dragStartValue = value
                         activeSide = side
                     }
+                    bumpActivity()
                     let base = dragStartValue ?? value
                     let delta = Double(-drag.translation.height) / 190.0
                     applySideValue(base + delta, to: side)
@@ -376,6 +385,7 @@ struct VideoPlayerView: View {
         Menu {
             ForEach(PlaybackMode.allCases) { mode in
                 Button {
+                    bumpActivity()
                     viewModel.setMode(mode)
                 } label: {
                     if viewModel.mode == mode {
@@ -397,6 +407,7 @@ struct VideoPlayerView: View {
 
     private var speedButton: some View {
         Button {
+            bumpActivity()
             showRateSheet = true
         } label: {
             HStack(spacing: 4) {
@@ -428,7 +439,9 @@ struct VideoPlayerView: View {
             Slider(
                 value: Binding(
                     get: { Double(viewModel.rate) },
-                    set: { viewModel.setRate(Float($0)) }
+                    set: {
+                        viewModel.setRate(Float($0))
+                    }
                 ),
                 in: Double(PlayerViewModel.minRate)...Double(PlayerViewModel.maxRate),
                 step: 0.05
