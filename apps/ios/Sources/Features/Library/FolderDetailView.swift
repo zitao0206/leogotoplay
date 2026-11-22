@@ -22,6 +22,7 @@ struct FolderDetailView: View {
     }
 
     private var folder: VideoFolder? { library.folder(with: folderID) }
+    private var subfolders: [VideoFolder] { library.subfolders(in: folderID) }
     private var videos: [VideoItem] {
         library.videos(in: folderID).sorted { $0.createdAt > $1.createdAt }
     }
@@ -31,11 +32,15 @@ struct FolderDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 statsRow
 
+                if !subfolders.isEmpty {
+                    subfolderSection
+                }
+
                 if videos.isEmpty {
                     EmptyStateView(
                         symbol: "folder",
-                        title: "这个文件夹还是空的",
-                        message: "在 List 页长按视频，选择「移动到文件夹」就能把它收进来。"
+                        title: subfolders.isEmpty ? "这个文件夹还是空的" : "这个文件夹还没有视频",
+                        message: "点右上角「+」可以在当前文件夹里再建子文件夹；视频则通过「移动到文件夹」收进来。"
                     )
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -98,7 +103,15 @@ struct FolderDetailView: View {
         .navigationTitle(folder?.name ?? initialName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                // V1.0.3：进入文件夹后，右上角仍然保留「+」，用于在当前目录新建子文件夹。
+                Button {
+                    textEdit = TextEditRequest(kind: .newFolder, parentID: folderID)
+                } label: {
+                    Image(systemName: "plus.circle")
+                }
+                .accessibilityLabel("在当前文件夹新建子文件夹")
+
                 Menu {
                     Button {
                         if let folder {
@@ -134,7 +147,7 @@ struct FolderDetailView: View {
                 case .renameFolder:
                     library.renameFolder(folderID, to: text)
                 case .newFolder:
-                    library.createFolder(named: text)
+                    library.createFolder(named: text, parentID: request.parentID ?? folderID)
                 }
                 toastMessage = "已保存"
             }
@@ -142,7 +155,8 @@ struct FolderDetailView: View {
         .sheet(item: $moveTarget) { item in
             MoveToFolderSheet(
                 folders: library.folders,
-                currentFolderID: item.folderID
+                currentFolderID: item.folderID,
+                pathProvider: { library.folderPath(for: $0) }
             ) { target in
                 library.moveVideo(item.id, to: target)
                 toastMessage = "已移动"
@@ -185,6 +199,40 @@ struct FolderDetailView: View {
             Button("取消", role: .cancel) { pendingDelete = nil }
         } message: {
             Text(pendingDelete?.message ?? "")
+        }
+    }
+
+    /// V1.0.3：当前文件夹下的子文件夹列表。
+    private var subfolderSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionHeader(title: "子文件夹", subtitle: "\(subfolders.count) 个")
+
+            ForEach(subfolders) { sub in
+                NavigationLink {
+                    FolderDetailView(folder: sub)
+                        .environmentObject(library)
+                } label: {
+                    FolderListRow(
+                        folder: sub,
+                        videoCount: library.videoCount(in: sub.id),
+                        subfolderCount: library.subfolderCount(in: sub.id)
+                    )
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                    Button {
+                        textEdit = TextEditRequest(kind: .renameFolder(sub))
+                    } label: {
+                        Label("重命名", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        pendingDelete = DeleteRequest(kind: .folder(sub))
+                        showDeleteDialog = true
+                    } label: {
+                        Label("删除文件夹", systemImage: "trash")
+                    }
+                }
+            }
         }
     }
 

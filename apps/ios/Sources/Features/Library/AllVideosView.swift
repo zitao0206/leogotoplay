@@ -103,7 +103,8 @@ struct AllVideosView: View {
         .sheet(item: $moveTarget) { item in
             MoveToFolderSheet(
                 folders: library.folders,
-                currentFolderID: item.folderID
+                currentFolderID: item.folderID,
+                pathProvider: { library.folderPath(for: $0) }
             ) { folderID in
                 library.moveVideo(item.id, to: folderID)
                 toastMessage = "已移动到\(library.folder(with: folderID)?.name ?? "未分类")"

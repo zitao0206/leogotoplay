@@ -69,10 +69,17 @@ struct TextEditRequest: Identifiable {
 
     let id = UUID()
     let kind: Kind
+    /// 新建文件夹时的上级目录；nil 表示建在素材库根目录。
+    var parentID: UUID?
+
+    init(kind: Kind, parentID: UUID? = nil) {
+        self.kind = kind
+        self.parentID = parentID
+    }
 
     var title: String {
         switch kind {
-        case .newFolder: return "新建文件夹"
+        case .newFolder: return parentID == nil ? "新建文件夹" : "新建子文件夹"
         case .renameVideo: return "重命名视频"
         case .renameFolder: return "重命名文件夹"
         }
@@ -80,7 +87,7 @@ struct TextEditRequest: Identifiable {
 
     var placeholder: String {
         switch kind {
-        case .newFolder: return "例如：旅行、娃、工作"
+        case .newFolder: return parentID == nil ? "例如：旅行、娃、工作" : "例如：第一天、花絮"
         case .renameVideo, .renameFolder: return "输入名称"
         }
     }
@@ -106,6 +113,8 @@ struct TextEditRequest: Identifiable {
 struct MoveToFolderSheet: View {
     let folders: [VideoFolder]
     let currentFolderID: UUID?
+    /// 文件夹在层级里的完整路径，嵌套文件夹靠它区分同名项。
+    var pathProvider: ((UUID) -> String)? = nil
     let onMove: (UUID?) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -115,7 +124,7 @@ struct MoveToFolderSheet: View {
             List {
                 row(title: "未分类", folderID: nil)
                 ForEach(folders) { folder in
-                    row(title: folder.name, folderID: folder.id)
+                    row(title: pathProvider?(folder.id) ?? folder.name, folderID: folder.id)
                 }
             }
             .navigationTitle("移动到")

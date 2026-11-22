@@ -161,6 +161,11 @@ struct VideoListRow: View {
 struct FolderListRow: View {
     let folder: VideoFolder
     let videoCount: Int
+    var subfolderCount: Int = 0
+
+    private var subtitle: String {
+        subfolderCount > 0 ? "\(videoCount) 个视频 · \(subfolderCount) 个文件夹" : "\(videoCount) 个视频"
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -174,7 +179,7 @@ struct FolderListRow: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                Text("\(videoCount) 个视频")
+                Text(subtitle)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

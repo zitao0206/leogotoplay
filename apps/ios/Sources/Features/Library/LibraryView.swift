@@ -24,6 +24,8 @@ struct LibraryView: View {
     @State private var pendingDelete: DeleteRequest?
     @State private var showDeleteDialog = false
     @State private var toastMessage: String?
+    // 仅 Debug：`-openFirstFolder YES` 直接进第一个根文件夹，方便截图核对目录内工具栏。
+    @State private var debugFolder: VideoFolder?
 
     var body: some View {
         ScrollView {
@@ -41,31 +43,34 @@ struct LibraryView: View {
             .padding(.bottom, 28)
         }
         .background(Color(uiColor: .systemGroupedBackground))
+        .background(debugFolderLink)
         .navigationTitle("List")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索视频名称")
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Menu {
-                    Button {
-                        textEdit = TextEditRequest(kind: .newFolder)
-                    } label: {
-                        Label("新建文件夹", systemImage: "folder.badge.plus")
-                    }
-                    // V2.0.2：移除「从文件导入」入口
-                } label: {
-                    Image(systemName: "plus.circle")
-                }
-            }
-
-            ToolbarItem(placement: .topBarTrailing) {
+            // V1.0.3：顶部只保留「+」，并且移到右上角，只负责新建文件夹。
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 if config.allowsPhotoImport {
                     PhotosPicker(selection: $photoItem, matching: .videos, photoLibrary: .shared()) {
                         Image(systemName: "photo.badge.plus")
                     }
                     .accessibilityLabel("从相册导入")
                 }
+
+                Button {
+                    textEdit = TextEditRequest(kind: .newFolder, parentID: nil)
+                } label: {
+                    Image(systemName: "plus.circle")
+                }
+                .accessibilityLabel("在素材库根目录新建文件夹")
             }
+        }
+        .onAppear {
+            #if DEBUG
+            if UserDefaults.standard.bool(forKey: "openFirstFolder"), debugFolder == nil {
+                debugFolder = library.rootFolders.first
+            }
+            #endif
         }
         .toast($toastMessage)
         .overlay {
@@ -90,7 +95,8 @@ struct LibraryView: View {
         .sheet(item: $moveTarget) { item in
             MoveToFolderSheet(
                 folders: library.folders,
-                currentFolderID: item.folderID
+                currentFolderID: item.folderID,
+                pathProvider: { library.folderPath(for: $0) }
             ) { folderID in
                 library.moveVideo(item.id, to: folderID)
                 toastMessage = "已移动到\(library.folder(with: folderID)?.name ?? "未分类")"
@@ -203,15 +209,37 @@ struct LibraryView: View {
         }
     }
 
+    /// 仅 Debug 用的隐藏跳转。
+    private var debugFolderLink: some View {
+        NavigationLink(
+            isActive: Binding(
+                get: { debugFolder != nil },
+                set: { if !$0 { debugFolder = nil } }
+            )
+        ) {
+            if let folder = debugFolder {
+                FolderDetailView(folder: folder)
+                    .environmentObject(library)
+            }
+        } label: {
+            EmptyView()
+        }
+        .hidden()
+    }
+
     /// V2.0.1：文件夹的列表形式（默认）。V2.0.2：移除顶部的新建文件夹 Cell。
     private var folderList: some View {
         VStack(spacing: 8) {
-            ForEach(library.folders) { folder in
+            ForEach(library.rootFolders) { folder in
                 NavigationLink {
                     FolderDetailView(folder: folder)
                         .environmentObject(library)
                 } label: {
-                    FolderListRow(folder: folder, videoCount: library.videoCount(in: folder.id))
+                    FolderListRow(
+                        folder: folder,
+                        videoCount: library.videoCount(in: folder.id),
+                        subfolderCount: library.subfolderCount(in: folder.id)
+                    )
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
@@ -237,27 +265,7 @@ struct LibraryView: View {
             columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
             spacing: 12
         ) {
-            Button {
-                textEdit = TextEditRequest(kind: .newFolder)
-            } label: {
-                VStack(spacing: 6) {
-                    Image(systemName: "folder.badge.plus")
-                        .font(.title3)
-                        .foregroundStyle(Theme.accent)
-                    Text("新建文件夹")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 116)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Theme.accent.opacity(0.35), style: StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
-                )
-            }
-            .buttonStyle(.plain)
-
-            ForEach(library.folders) { folder in
+            ForEach(library.rootFolders) { folder in
                 NavigationLink {
                     FolderDetailView(folder: folder)
                         .environmentObject(library)
@@ -396,7 +404,7 @@ struct LibraryView: View {
     private func applyTextEdit(_ request: TextEditRequest, text: String) {
         switch request.kind {
         case .newFolder:
-            library.createFolder(named: text)
+            library.createFolder(named: text, parentID: request.parentID)
             toastMessage = "已创建文件夹「\(text)」"
         case .renameVideo(let item):
             library.renameVideo(item.id, to: text)
