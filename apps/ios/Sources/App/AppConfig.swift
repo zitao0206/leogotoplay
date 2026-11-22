@@ -37,8 +37,8 @@ struct AppConfig {
         }
     }
 
-    /// 首页展示的 Tab，顺序即展示顺序。
-    var tabs: [Tab] = [.cut, .list, .mine]
+    /// 首页展示的 Tab，顺序即展示顺序。（V2.0.1：List 提到 Cut 前面）
+    var tabs: [Tab] = [.list, .cut, .mine]
 
     /// 是否允许从系统相册导入视频进行剪辑。
     var allowsPhotoImport = true

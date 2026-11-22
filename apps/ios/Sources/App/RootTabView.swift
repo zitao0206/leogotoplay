@@ -1,7 +1,7 @@
 import SwiftUI
 import LeogotoPlayCore
 
-/// 首页容器：Cut / List / Mine 三个 Tab，由 AppConfig 驱动。
+/// 首页容器：List / Cut / Mine 三个 Tab（V2.0.1 起 List 在前），由 AppConfig 驱动。
 struct RootTabView: View {
     private let config = AppConfig.current
     @State private var selection: AppConfig.Tab = RootTabView.initialTab()

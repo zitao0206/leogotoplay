@@ -98,6 +98,102 @@ struct VideoCard: View {
     }
 }
 
+// MARK: - 视频列表行（V2.0.1）
+
+/// 列表形式展示的视频行：缩略图 + 名称.mp4 + 大小 / 添加日期 / 时长。
+struct VideoListRow: View {
+    let item: VideoItem
+    var showsFolderName: Bool = false
+    var folderName: String? = nil
+
+    private var metaText: String {
+        "\(item.fileSize.fileSizeText) · \(item.createdAt.dateText) · \(item.duration.timecode)"
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack(alignment: .bottomTrailing) {
+                ThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 10)
+                    .frame(width: 92, height: 58)
+                    .clipped()
+
+                Text(item.duration.timecode)
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(.black.opacity(0.65), in: Capsule())
+                    .padding(4)
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(item.displayNameWithExtension)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+
+                Text(metaText)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                if showsFolderName {
+                    Text(folderName ?? "未分类")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(uiColor: .secondarySystemGroupedBackground))
+        )
+        .contentShape(Rectangle())
+    }
+}
+
+// MARK: - 文件夹列表行（V2.0.1）
+
+/// 列表形式的文件夹行：图标 + 名称 + 视频数量。
+struct FolderListRow: View {
+    let folder: VideoFolder
+    let videoCount: Int
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "folder.fill")
+                .font(.title3)
+                .foregroundStyle(Theme.accent)
+                .frame(width: 32)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(folder.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text("\(videoCount) 个视频")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color(uiColor: .tertiaryLabel))
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(uiColor: .secondarySystemGroupedBackground))
+        )
+        .contentShape(Rectangle())
+    }
+}
+
 // MARK: - 文件夹卡片
 
 struct FolderCard: View {

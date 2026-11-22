@@ -53,3 +53,12 @@ extension Int64 {
         return formatter.string(fromByteCount: self)
     }
 }
+
+extension Date {
+    /// 列表展示用的添加日期，例如「2026/11/22」。
+    var dateText: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy/MM/dd"
+        return formatter.string(from: self)
+    }
+}
