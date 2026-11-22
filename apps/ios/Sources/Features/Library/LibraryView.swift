@@ -2,20 +2,13 @@ import PhotosUI
 import SwiftUI
 import LeogotoPlayCore
 
-/// List 页：素材库。文件夹管理 + 导入（相册 / 文件）+ 搜索。V2.0.1：
-/// - 移除首页的「全部视频」卡片网格，改为 All -> 进入列表形式的全量视频页
-/// - 文件夹视图支持 列表（默认）/ 卡片 两种形式切换
+/// List 页：素材库。文件夹管理 + 导入（相册 / 文件）+ 搜索。
+/// V1.0.4：固定为列表展示（去掉布局切换键与 All 按钮），统计卡改为
+/// 视频总数 / 占用空间 / 总时长，点击进入全部视频页。
 struct LibraryView: View {
     @EnvironmentObject private var library: LibraryStore
     private let config = AppConfig.current
 
-    /// 文件夹的展示形式；V2.0.1 起默认列表。
-    enum FolderViewMode {
-        case list
-        case grid
-    }
-
-    @State private var folderViewMode: FolderViewMode = .list
     @State private var searchText = ""
     @State private var photoItem: PhotosPickerItem?
     @State private var textEdit: TextEditRequest?
@@ -30,7 +23,10 @@ struct LibraryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                statsBar
+                // V1.0.4：搜索时隐藏统计卡，只留结果列表。
+                if searchText.isEmpty {
+                    statsBar
+                }
 
                 if searchText.isEmpty {
                     folderSection
@@ -51,25 +47,28 @@ struct LibraryView: View {
         .toolbar {
             // V1.0.3：顶部只保留「+」，并且移到右上角，只负责新建文件夹。
             ToolbarItemGroup(placement: .topBarTrailing) {
-                if config.allowsPhotoImport {
-                    PhotosPicker(selection: $photoItem, matching: .videos, photoLibrary: .shared()) {
-                        Image(systemName: "photo.badge.plus")
-                    }
-                    .accessibilityLabel("从相册导入")
-                }
-
                 Button {
                     textEdit = TextEditRequest(kind: .newFolder, parentID: nil)
                 } label: {
                     Image(systemName: "plus.circle")
                 }
                 .accessibilityLabel("在素材库根目录新建文件夹")
+
+                if config.allowsPhotoImport {
+                    PhotosPicker(selection: $photoItem, matching: .videos, photoLibrary: .shared()) {
+                        Image(systemName: "photo.badge.plus")
+                    }
+                    .accessibilityLabel("从相册导入")
+                }
             }
         }
         .onAppear {
             #if DEBUG
             if UserDefaults.standard.bool(forKey: "openFirstFolder"), debugFolder == nil {
                 debugFolder = library.rootFolders.first
+            }
+            if let keyword = UserDefaults.standard.string(forKey: "searchKeyword"), searchText.isEmpty {
+                searchText = keyword
             }
             #endif
         }
@@ -150,19 +149,27 @@ struct LibraryView: View {
 
     // MARK: - 统计
 
+    /// V1.0.4：视频总数 / 占用空间 / 总时长；整块可点，进入「全部视频」列表。
     private var statsBar: some View {
-        HStack(spacing: 0) {
-            StatItem(value: "\(library.videos.count)", title: "视频")
-            Divider().frame(height: 26)
-            StatItem(value: "\(library.folders.count)", title: "文件夹")
-            Divider().frame(height: 26)
-            StatItem(value: library.totalSize.fileSizeText, title: "占用")
+        NavigationLink {
+            AllVideosView()
+                .environmentObject(library)
+        } label: {
+            HStack(spacing: 0) {
+                StatItem(value: "\(library.videos.count)", title: "视频")
+                Divider().frame(height: 26)
+                StatItem(value: library.totalSize.fileSizeText, title: "占用空间")
+                Divider().frame(height: 26)
+                StatItem(value: library.totalDuration.listTimecode, title: "总时长")
+            }
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
+            )
         }
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(uiColor: .secondarySystemGroupedBackground))
-        )
+        .buttonStyle(.plain)
+        .accessibilityLabel("查看全部视频")
     }
 
     // MARK: - 文件夹
@@ -172,41 +179,10 @@ struct LibraryView: View {
             HStack(alignment: .firstTextBaseline) {
                 SectionHeader(title: "文件夹", subtitle: "把不同项目的素材分开收纳")
                 Spacer()
-
-                // V2.0.1：视图切换键（列表 <-> 卡片），在 All 的左边
-                Button {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        folderViewMode = folderViewMode == .list ? .grid : .list
-                    }
-                } label: {
-                    Image(systemName: folderViewMode == .list ? "square.grid.2x2" : "list.bullet")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(Theme.accent)
-                }
-                .accessibilityLabel(folderViewMode == .list ? "切换到卡片视图" : "切换到列表视图")
-
-                // V2.0.1：原来的「新建」改为 All ->，进入全部视频页面
-                NavigationLink {
-                    AllVideosView()
-                        .environmentObject(library)
-                } label: {
-                    HStack(spacing: 2) {
-                        Text("All")
-                        Image(systemName: "chevron.right")
-                            .font(.caption2.weight(.bold))
-                    }
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Theme.accent)
-                }
             }
             .padding(.top, 4)
 
-            switch folderViewMode {
-            case .list:
-                folderList
-            case .grid:
-                folderGrid
-            }
+            folderList
         }
     }
 
@@ -240,41 +216,6 @@ struct LibraryView: View {
                         folder: folder,
                         videoCount: library.videoCount(in: folder.id),
                         subfolderCount: library.subfolderCount(in: folder.id)
-                    )
-                }
-                .buttonStyle(.plain)
-                .contextMenu {
-                    Button {
-                        textEdit = TextEditRequest(kind: .renameFolder(folder))
-                    } label: {
-                        Label("重命名", systemImage: "pencil")
-                    }
-                    Button(role: .destructive) {
-                        pendingDelete = DeleteRequest(kind: .folder(folder))
-                        showDeleteDialog = true
-                    } label: {
-                        Label("删除文件夹", systemImage: "trash")
-                    }
-                }
-            }
-        }
-    }
-
-    /// V2.0.1：文件夹的卡片形式（原有的网格，作为第二种视图保留）。
-    private var folderGrid: some View {
-        LazyVGrid(
-            columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
-            spacing: 12
-        ) {
-            ForEach(library.rootFolders) { folder in
-                NavigationLink {
-                    FolderDetailView(folder: folder)
-                        .environmentObject(library)
-                } label: {
-                    FolderCard(
-                        folder: folder,
-                        videoCount: library.videoCount(in: folder.id),
-                        coverThumbnails: library.coverThumbnails(for: folder.id)
                     )
                 }
                 .buttonStyle(.plain)

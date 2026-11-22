@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 import LeogotoPlayCore
 
@@ -15,6 +16,7 @@ struct FolderDetailView: View {
     @State private var pendingDelete: DeleteRequest?
     @State private var showDeleteDialog = false
     @State private var toastMessage: String?
+    @State private var photoItem: PhotosPickerItem?
 
     init(folder: VideoFolder) {
         folderID = folder.id
@@ -30,8 +32,7 @@ struct FolderDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                statsRow
-
+                // V1.0.4：文件夹内不再显示统计卡。
                 if !subfolders.isEmpty {
                     subfolderSection
                 }
@@ -40,7 +41,7 @@ struct FolderDetailView: View {
                     EmptyStateView(
                         symbol: "folder",
                         title: subfolders.isEmpty ? "这个文件夹还是空的" : "这个文件夹还没有视频",
-                        message: "点右上角「+」可以在当前文件夹里再建子文件夹；视频则通过「移动到文件夹」收进来。"
+                        message: "点右上角「+」建子文件夹，点右侧相册图标可直接把视频添加到当前文件夹。"
                     )
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -110,26 +111,30 @@ struct FolderDetailView: View {
                 }
                 .accessibilityLabel("在当前文件夹新建子文件夹")
 
-                Menu {
-                    Button {
-                        if let folder {
-                            textEdit = TextEditRequest(kind: .renameFolder(folder))
-                        }
-                    } label: {
-                        Label("重命名文件夹", systemImage: "pencil")
+                // V1.0.3：原来的文件夹操作菜单换成首页的「添加视频」，导入直接落到当前文件夹。
+                if AppConfig.current.allowsPhotoImport {
+                    PhotosPicker(selection: $photoItem, matching: .videos, photoLibrary: .shared()) {
+                        Image(systemName: "photo.badge.plus")
                     }
-                    Button(role: .destructive) {
-                        if let folder {
-                            pendingDelete = DeleteRequest(kind: .folder(folder))
-                            showDeleteDialog = true
-                        }
-                    } label: {
-                        Label("删除文件夹", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
+                    .accessibilityLabel("从相册添加视频到当前文件夹")
                 }
             }
+        }
+        .overlay {
+            if library.isImporting {
+                VStack(spacing: 10) {
+                    ProgressView()
+                    Text("正在导入…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(22)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+        }
+        .onChange(of: photoItem) { item in
+            guard let item else { return }
+            Task { await importFromPhotos(item) }
         }
         .toast($toastMessage)
         .sheet(item: $textEdit) { request in
@@ -200,6 +205,18 @@ struct FolderDetailView: View {
         }
     }
 
+    private func importFromPhotos(_ item: PhotosPickerItem) async {
+        defer { photoItem = nil }
+        do {
+            let url = try await VideoImporter.prepare(from: item)
+            try await library.importVideo(fromTempURL: url, source: .photos, folderID: folderID)
+            VideoImporter.cleanTemporaryFile(at: url)
+            toastMessage = "已添加到「\(folder?.name ?? initialName)」"
+        } catch {
+            toastMessage = error.localizedDescription
+        }
+    }
+
     /// V1.0.3：当前文件夹下的子文件夹列表。
     private var subfolderSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -234,18 +251,4 @@ struct FolderDetailView: View {
         }
     }
 
-    private var statsRow: some View {
-        HStack(spacing: 0) {
-            StatItem(value: "\(videos.count)", title: "视频")
-            Divider().frame(height: 24)
-            StatItem(value: videos.reduce(Int64(0)) { $0 + $1.fileSize }.fileSizeText, title: "占用")
-            Divider().frame(height: 24)
-            StatItem(value: videos.reduce(0) { $0 + $1.duration }.timecode, title: "总时长")
-        }
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(uiColor: .secondarySystemGroupedBackground))
-        )
-    }
 }
