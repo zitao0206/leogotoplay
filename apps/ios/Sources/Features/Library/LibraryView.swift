@@ -67,6 +67,16 @@ struct LibraryView: View {
             if UserDefaults.standard.bool(forKey: "openFirstFolder"), debugFolder == nil {
                 debugFolder = library.rootFolders.first
             }
+            if UserDefaults.standard.bool(forKey: "openEmptyFolder") {
+                let emptyRoot = library.rootFolders.first {
+                    library.videos(in: $0.id).isEmpty && library.subfolders(in: $0.id).isEmpty
+                }
+                debugFolder = emptyRoot ?? library.rootFolders.first.flatMap {
+                    library.subfolders(in: $0.id).first {
+                        library.videos(in: $0.id).isEmpty && library.subfolders(in: $0.id).isEmpty
+                    }
+                }
+            }
             if let keyword = UserDefaults.standard.string(forKey: "searchKeyword"), searchText.isEmpty {
                 searchText = keyword
             }
@@ -177,7 +187,11 @@ struct LibraryView: View {
     private var folderSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                SectionHeader(title: "文件夹", subtitle: "把不同项目的素材分开收纳")
+                // V1.0.5：副标题改成文件夹数量，不再写说明文案。
+                SectionHeader(
+                    title: "文件夹",
+                    subtitle: "\(library.rootFolders.count) 个文件夹"
+                )
                 Spacer()
             }
             .padding(.top, 4)
@@ -336,11 +350,6 @@ struct LibraryView: View {
             route = .editor(.library(item))
         } label: {
             Label("剪辑", systemImage: "scissors")
-        }
-        Button {
-            library.toggleFavorite(item.id)
-        } label: {
-            Label(item.isFavorite ? "取消收藏" : "收藏", systemImage: item.isFavorite ? "heart.slash" : "heart")
         }
         Button {
             moveTarget = item

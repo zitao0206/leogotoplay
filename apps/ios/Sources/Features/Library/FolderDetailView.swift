@@ -37,17 +37,19 @@ struct FolderDetailView: View {
                     subfolderSection
                 }
 
-                if videos.isEmpty {
+                // V1.0.5：只有「既没有子文件夹、也没有视频」才算空文件夹；
+                // 已经有了子文件夹就不再提示空态，避免上面列着子文件夹、下面说"空"。
+                if videos.isEmpty && subfolders.isEmpty {
                     EmptyStateView(
                         symbol: "folder",
-                        title: subfolders.isEmpty ? "这个文件夹还是空的" : "这个文件夹还没有视频",
+                        title: "这是个空文件夹",
                         message: "点右上角「+」建子文件夹，点右侧相册图标可直接把视频添加到当前文件夹。"
                     )
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .fill(Color(uiColor: .secondarySystemGroupedBackground))
                     )
-                } else {
+                } else if !videos.isEmpty {
                     // V1.0.3：视频统一用列表 cell（缩略图 + 名称.mp4 + 大小 / 日期 / 时长）。
                     LazyVStack(spacing: 8) {
                         ForEach(videos) { item in
@@ -67,12 +69,6 @@ struct FolderDetailView: View {
                                     route = .editor(.library(item))
                                 } label: {
                                     Label("剪辑", systemImage: "scissors")
-                                }
-                                Button {
-                                    library.toggleFavorite(item.id)
-                                } label: {
-                                    Label(item.isFavorite ? "取消收藏" : "收藏",
-                                          systemImage: item.isFavorite ? "heart.slash" : "heart")
                                 }
                                 Button {
                                     moveTarget = item
@@ -220,8 +216,7 @@ struct FolderDetailView: View {
     /// V1.0.3：当前文件夹下的子文件夹列表。
     private var subfolderSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "子文件夹", subtitle: "\(subfolders.count) 个")
-
+            // V1.0.5：去掉「子文件夹」标题和数量，直接列目录。
             ForEach(subfolders) { sub in
                 NavigationLink {
                     FolderDetailView(folder: sub)

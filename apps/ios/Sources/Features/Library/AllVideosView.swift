@@ -150,11 +150,6 @@ struct AllVideosView: View {
             Label("剪辑", systemImage: "scissors")
         }
         Button {
-            library.toggleFavorite(item.id)
-        } label: {
-            Label(item.isFavorite ? "取消收藏" : "收藏", systemImage: item.isFavorite ? "heart.slash" : "heart")
-        }
-        Button {
             moveTarget = item
         } label: {
             Label("移动到文件夹", systemImage: "folder")
