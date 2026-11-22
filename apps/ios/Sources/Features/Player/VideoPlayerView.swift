@@ -26,6 +26,8 @@ struct VideoPlayerView: View {
 
     // V2.4：锁定播放（只留解锁按钮可点）
     @State private var isLocked = false
+    /// V2.5：锁模式下锁按钮 / 进度条也走 3 秒自动隐藏，点画面再次唤回。
+    @State private var lockUIvisible = true
 
     private enum Side: Equatable {
         case brightness, volume
@@ -133,8 +135,9 @@ struct VideoPlayerView: View {
             // V2.4：锁定时屏幕触摸全部失效，只有解锁按钮可用。
             Color.clear
                 .contentShape(Rectangle())
-                .onTapGesture { if !isLocked { toggleControls() } }
-                .allowsHitTesting(!isLocked)
+                .onTapGesture {
+                    if isLocked { toggleLockUI() } else { toggleControls() }
+                }
 
             if !viewModel.isPlaying {
                 Image(systemName: "play.fill")
@@ -148,8 +151,8 @@ struct VideoPlayerView: View {
             }
 
             sideControls
-                .opacity(isLocked || controlsVisible ? 1 : 0)
-                .allowsHitTesting(isLocked || controlsVisible)
+                .opacity(isLocked ? (lockUIvisible ? 1 : 0) : (controlsVisible ? 1 : 0))
+                .allowsHitTesting(isLocked ? lockUIvisible : controlsVisible)
 
             // 隐藏的系统音量控件（只用来读写系统音量；被视频画面盖住，不可见）
             SystemVolumeHost(controller: volume)
@@ -165,11 +168,12 @@ struct VideoPlayerView: View {
                     .allowsHitTesting(topBarVisible)
                 Spacer()
                 bottomPanel
-                    .opacity(controlsVisible && !isLocked ? 1 : 0)
-                    .allowsHitTesting(controlsVisible && !isLocked)
+                    .opacity(isLocked ? (lockUIvisible ? 1 : 0) : (controlsVisible ? 1 : 0))
+                    .allowsHitTesting(!isLocked && controlsVisible)
             }
         }
         .animation(.easeInOut(duration: 0.22), value: controlsVisible)
+        .animation(.easeInOut(duration: 0.22), value: lockUIvisible)
     }
 
     // MARK: - 顶栏
@@ -303,6 +307,9 @@ struct VideoPlayerView: View {
                 }
             }
             .padding(.top, 2)
+            // V2.5：锁模式下只保留进度条，运输控件（循环 / 播放键 / 倍速）整体隐藏。
+            .opacity(isLocked ? 0 : 1)
+            .allowsHitTesting(!isLocked)
         }
         .padding(.horizontal, 18)
         .padding(.top, 14)
@@ -343,6 +350,28 @@ struct VideoPlayerView: View {
         }
     }
 
+    /// V2.5：锁模式下只有锁按钮和进度条，3 秒无操作一起淡出。
+    private func scheduleLockAutoHide() {
+        autoHideTask?.cancel()
+        autoHideTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.22)) {
+                lockUIvisible = false
+            }
+        }
+    }
+
+    private func toggleLockUI() {
+        if lockUIvisible {
+            autoHideTask?.cancel()
+            withAnimation(.easeInOut(duration: 0.22)) { lockUIvisible = false }
+        } else {
+            withAnimation(.easeInOut(duration: 0.22)) { lockUIvisible = true }
+            scheduleLockAutoHide()
+        }
+    }
+
     private func toggleControls() {
         guard !isLocked else { return }
         if controlsVisible {
@@ -364,7 +393,7 @@ struct VideoPlayerView: View {
                 .opacity(isLocked ? 0 : 1)
                 .allowsHitTesting(!isLocked)
             Spacer(minLength: 0)
-            VStack(spacing: 14) {
+            VStack(spacing: 18) {
                 sideControl(.volume)
                     .opacity(isLocked ? 0 : 1)
                     .allowsHitTesting(!isLocked)
@@ -373,8 +402,8 @@ struct VideoPlayerView: View {
         }
         .padding(.horizontal, 10)
         .padding(.top, isLandscape ? 64 : 92)
-        // V2.4：底部留够锁按钮（音量滑杆下方）的位置，避免被底栏盖住。
-        .padding(.bottom, isLandscape ? 206 : 214)
+        // V2.5：锁按钮放大后整体下移，底部留白相应收窄，避免被底栏盖住。
+        .padding(.bottom, isLandscape ? 176 : 184)
     }
 
     private func sideControl(_ side: Side) -> some View {
@@ -446,9 +475,9 @@ struct VideoPlayerView: View {
             toggleLock()
         } label: {
             Image(systemName: isLocked ? "lock.open.fill" : "lock.fill")
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 21, weight: .semibold))
                 .foregroundStyle(isLocked ? Theme.accent : .white.opacity(0.92))
-                .frame(width: 32, height: 32)
+                .frame(width: 48, height: 48)
                 .background(.black.opacity(isLocked ? 0.55 : 0.38), in: Circle())
                 .overlay(
                     Circle().stroke(
@@ -465,12 +494,18 @@ struct VideoPlayerView: View {
             isLocked.toggle()
         }
         if isLocked {
-            autoHideTask?.cancel()
             activeSide = nil
-            withAnimation(.easeInOut(duration: 0.22)) { controlsVisible = false }
+            withAnimation(.easeInOut(duration: 0.22)) {
+                controlsVisible = false
+                lockUIvisible = true
+            }
             toastMessage = "已锁定，点击锁图标解锁"
+            scheduleLockAutoHide()
         } else {
-            withAnimation(.easeInOut(duration: 0.22)) { controlsVisible = true }
+            withAnimation(.easeInOut(duration: 0.22)) {
+                controlsVisible = true
+                lockUIvisible = true
+            }
             scheduleAutoHide()
         }
     }
