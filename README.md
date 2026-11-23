@@ -11,15 +11,7 @@
 
 iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，可增删改序；macOS 用侧栏对应 `剪辑台 / 素材库 / 我的` 三个入口。
 
-| iOS Cut | iOS List | iOS Mine |
-| --- | --- | --- |
-| ![Cut](docs/screenshots/01-cut.png) | ![List](docs/screenshots/02-list.png) | ![Mine](docs/screenshots/03-mine.png) |
-
 ### V1.0.4 · List 页收敛
-
-| 根目录（统计卡 = 视频 / 占用空间 / 总时长，点击进入全部视频） | 文件夹内（不显示统计卡） |
-| --- | --- |
-| ![根目录](docs/screenshots/08-root-stats.png) | ![文件夹内](docs/screenshots/09-folder-no-stats.png) |
 
 - 去掉文件夹区域的布局切换按钮（列表 / 卡片），固定列表展示；卡片视图代码一并移除。
 - 去掉文件夹标题右侧的 `All` 入口。
@@ -27,13 +19,16 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - 文件夹内页不再显示统计卡，进目录直接看子文件夹与视频。
 - 搜索时（关键词非空）首页也不显示统计卡，页面直接呈现「搜索结果」，避免搜索时还占着顶部统计的空间。
 
-搜索态截图：`docs/screenshots/10-search-no-stats.png`。
+### V3.0 · Cut 页入口调整
+
+- 顶部深色卡片去掉「LEOGOTOPLAY CUT」标题和两段说明文案，改成「热门工具」四宫格：AI 画质增强 / 一键去水印 / 一键成片 / 智能字幕；四项都还没开发，点击只弹「xxx · 开发中」提示，留着后续接功能。
+- 卡片里的两个胶囊按钮（从相册选片 / 从素材库选）随文案一起去掉，选片入口统一收敛到下面两块卡片。
+- 原来的「导入到素材库」「素材管理」两块卡片去掉，只留一个「从相册选片」入口（图标 `photo.stack`，走系统相册）：卡片通栏、左右两边与上方「热门工具」卡对齐，高度收窄（上下内边距 11pt），卡片里只有图标 + 「从相册选片」一行字（去掉了原来的副标题「从系统相册挑视频」），两者都居中；图标是 30pt 圆角方块，底色为主色 32% 的橙（从 16% 加深到 32%，避免按钮感太弱）、加号本身用主色（表达“添加”语义，避免大块纯色色块显得突兀）；卡片底色是 `Theme.accentSoftGradient` 的淡橙渐变（左上浓、右下淡）加 1pt 淡橙描边，高度再 +5pt（上下内边距 16pt），选完直接进剪辑器。
+- 页面底部的「剪辑流程」（1 选片 / 2 裁剪 / 3 导出·入库）整块卡片连同 `workflowCard`、`flowStep` 代码一并删除，Cut 页现在只有「热门工具」「从相册选片」「最近素材」三段。
+- 「最近素材」这一段改名为「最近编辑」，下面那行说明「点一下就能继续剪」删掉，只留标题。
+- 「导入到素材库」和「从 List 中选片」两条从 Cut 页移除后：文件 / 相册导入素材库仍走 List 页右上角入口，从 List 选片仍走播放器外的素材库列表，能力没有丢。
 
 ### V2.6 · 锁按钮左移与滑杆按需浮现
-
-| 默认：滑杆不显示，锁按钮在左侧 | 滑动左侧：浮出亮度滑杆 | 滑动右侧：浮出音量滑杆 |
-| --- | --- | --- |
-| ![锁按钮左移](docs/screenshots/30-player-lock-left.png) | ![亮度](docs/screenshots/31-player-brightness-slider.png) | ![音量](docs/screenshots/32-player-volume-slider.png) |
 
 - 锁按钮从右侧音量滑杆下方挪到左侧、亮度滑杆下方。
 - 亮度滑杆和音量滑杆默认完全不显示；只有手指在左 / 右两侧区域按下并滑动时才浮出来，松手 1 秒后自动消失。
@@ -43,20 +38,12 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 
 ### V2.5 · 锁定态控件的自动隐藏
 
-| 锁按钮放大 1.5 倍并下移 | 锁定态：只留开锁按钮 + 进度条 | 锁屏 3 秒无操作后全部隐藏 |
-| --- | --- | --- |
-| ![锁按钮](docs/screenshots/27-player-lock-button.png) | ![锁定](docs/screenshots/28-player-locked-ui.png) | ![锁定隐藏](docs/screenshots/29-player-locked-hidden.png) |
-
 - 锁按钮从 32pt 放大到 48pt，并整体下移一点，更好按。
 - 进入锁定状态后不再一直亮着：3 秒没有任何操作，锁按钮一起淡出；此时点一下屏幕，锁按钮重新出现并重新计时。
 - 锁定态下进度条仍然显示但不可拖动（滑杆手势禁用、运输控件整排隐藏），同样 3 秒后随着锁按钮一起淡出，点屏幕再次唤回。
 - 解锁后恢复正常控制层并重新开始 3 秒计时。
 
 ### V2.4 · 播放器全屏按钮常驻与锁定
-
-| 音量滑杆下方的锁按钮 | 锁定态（只剩开锁按钮） | 横屏 3 秒后顶栏仍保留 |
-| --- | --- | --- |
-| ![锁按钮](docs/screenshots/23-player-lock-button.png) | ![锁定](docs/screenshots/24-player-locked.png) | ![横屏顶栏](docs/screenshots/25-player-landscape-topbar.png) |
 
 - 横屏（全屏）播放时不再自动收起顶栏：返回按钮和横屏按钮一直留着，点横屏按钮回到竖屏正常播放，点返回按钮直接退出视频；底栏进度与播放控制仍然 3 秒后自动隐藏。
 - 横竖屏切换只切换布局分支：`onAppear` / `onDisappear` / `.task` 都挂在最外层，切换分支不会触发 `onDisappear` 把横屏状态清掉（修掉了「点一下横屏立刻弹回竖屏」）。
@@ -65,10 +52,6 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 
 ### V2.3 · 播放器画面与横屏 / 投屏
 
-| 默认按原始比例（不裁切） | 横屏播放 | 投屏面板 |
-| --- | --- | --- |
-| ![原始比例](docs/screenshots/20-player-aspect-fit.png) | ![横屏](docs/screenshots/22-player-landscape.png) | ![投屏](docs/screenshots/21-player-cast-sheet.png) |
-
 - 视频默认按原始宽高比完整显示（aspect fit，多出来的部分留黑边），不再默认裁切填满；需要填满时仍可从「⋯」里切到画面填充。
 - 右上角「⋯」左边新增横屏按钮（`iphone.landscape` / `iphone` 图标切换），点一下把播放页转成横屏，再点回到竖屏；退出播放页时若仍是横屏会自动恢复竖屏。
 - 「⋯」菜单新增「投屏」：弹出的面板里是系统 `AVRoutePickerView`（AirPlay 设备选择），选中后画面投到电视 / 音箱，手机上的进度条依旧可控。
@@ -76,19 +59,11 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 
 ### V2.2 · 播放器控制层
 
-| 进入时全展示 | 3 秒无操作后自动隐藏 |
-| --- | --- |
-| ![控制层显示](docs/screenshots/18-player-controls-visible.png) | ![控制层隐藏](docs/screenshots/19-player-controls-hidden.png) |
-
 - 右上角收起为「⋯」更多：点开弹出底部操作面板，内含剪辑、画面填充/适应、投屏；实现上用 Button + `confirmationDialog` 而不是 `Menu`，因为 `Menu` 自带的图标内边距会让这个圆形按钮和左边的横屏按钮上下错位。
 - 进播放页时控制层全部展示；3 秒无操作自动淡出（顶栏、底栏、左右滑杆一起隐藏）。点画面立刻隐藏，再点一次重新出现并重新计时；播放、拖动进度、切上下一个、改倍速/循环、拖亮度音量都会重置计时。
 - 打开倍速面板期间不自动隐藏。
 
 ### V1.1.0 · 播放器
-
-| 控制条（循环模式 · 上一个/±10s/播放/下一个 · 倍速） | 倍速滑块 |
-| --- | --- |
-| ![控制条](docs/screenshots/15-player-controls.png) | ![倍速](docs/screenshots/16-player-rate-sheet.png) |
 
 - 播放控制居中：上一个 / 倒退 10 秒 / 播放暂停 / 前进 10 秒 / 下一个，五个按钮同一排；「上一个 / 下一个」在同一个文件夹的视频队列里循环切换。
 - 同排最左是循环模式菜单：单曲循环（默认）/ 文件夹循环 / 列表播放 / 单曲停止。
@@ -96,13 +71,7 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - 画面填充开关从底栏挪到顶栏（视频右上角圆形按钮），底栏位置让给三段式控制。
 - 播放器左右两侧各有一条竖向滑杆：左侧亮度（`UIScreen.main.brightness`），右侧音量（`MPVolumeView` 写系统音量，取不到滑杆时退回 `AVPlayer.volume`）。在两侧区域上下拖动即调整，拖动时滑杆高亮并显示百分比，松手 1 秒后收起。
 
-![左右滑杆](docs/screenshots/17-player-side-sliders.png)
-
 ### V1.0.5 · 空态与标题
-
-| 根目录（文件夹副标题 = 数量） | 有子文件夹、没有视频的目录（不显示空态） |
-| --- | --- |
-| ![根目录](docs/screenshots/12-root-folder-count.png) | ![子文件夹](docs/screenshots/13-folder-subfolders-no-empty.png) |
 
 - 文件夹内页只有在「既没有视频、也没有子文件夹」时才显示 `这是个空文件夹`；已有子文件夹或视频就不再出现空态卡片。
 - 首页「文件夹」分组副标题从说明文案改成数量，例如 `3 个文件夹`（按当前根目录下的文件夹数计）。

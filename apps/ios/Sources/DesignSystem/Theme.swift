@@ -10,6 +10,12 @@ enum Theme {
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
+    /// 浅色品牌渐变：给白卡叠一层从主色到浅橙的淡色晕染，亮/暗色模式都成立。
+    static let accentSoftGradient = LinearGradient(
+        colors: [accent.opacity(0.18), accentSecondary.opacity(0.04)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
     static let darkGradient = LinearGradient(
         colors: [Color(hex: 0x1B1C21), Color(hex: 0x2B2320)],
         startPoint: .topLeading,

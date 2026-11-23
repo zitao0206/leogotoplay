@@ -98,22 +98,28 @@ struct FolderDetailView: View {
         .navigationTitle(folder?.name ?? initialName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                // V1.0.3：进入文件夹后，右上角仍然保留「+」，用于在当前目录新建子文件夹。
-                Button {
-                    textEdit = TextEditRequest(kind: .newFolder, parentID: folderID)
-                } label: {
-                    Image(systemName: "plus.circle")
-                }
-                .accessibilityLabel("在当前文件夹新建子文件夹")
-
-                // V1.0.3：原来的文件夹操作菜单换成首页的「添加视频」，导入直接落到当前文件夹。
-                if AppConfig.current.allowsPhotoImport {
-                    PhotosPicker(selection: $photoItem, matching: .videos, photoLibrary: .shared()) {
-                        Image(systemName: "photo.badge.plus")
+            // 与首页导航条一致：两个图标当成一组整体左移，间距自己控制。
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 12) {
+                    // V1.0.3：进入文件夹后，右上角仍然保留「+」，用于在当前目录新建子文件夹。
+                    Button {
+                        textEdit = TextEditRequest(kind: .newFolder, parentID: folderID)
+                    } label: {
+                        Image(systemName: "plus.circle")
                     }
-                    .accessibilityLabel("从相册添加视频到当前文件夹")
+                    // 「＋」圆形图标的实际像素中心比相册图标低 ~2px，上移 0.5pt 让两者严格水平对齐。
+                    .offset(y: -0.5)
+                    .accessibilityLabel("在当前文件夹新建子文件夹")
+
+                    // V1.0.3：原来的文件夹操作菜单换成首页的「添加视频」，导入直接落到当前文件夹。
+                    if AppConfig.current.allowsPhotoImport {
+                        PhotosPicker(selection: $photoItem, matching: .videos, photoLibrary: .shared()) {
+                            Image(systemName: "photo.badge.plus")
+                        }
+                        .accessibilityLabel("从相册添加视频到当前文件夹")
+                    }
                 }
+                .offset(x: -12)
             }
         }
         .overlay {

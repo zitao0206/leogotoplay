@@ -46,20 +46,27 @@ struct LibraryView: View {
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索视频名称")
         .toolbar {
             // V1.0.3：顶部只保留「+」，并且移到右上角，只负责新建文件夹。
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button {
-                    textEdit = TextEditRequest(kind: .newFolder, parentID: nil)
-                } label: {
-                    Image(systemName: "plus.circle")
-                }
-                .accessibilityLabel("在素材库根目录新建文件夹")
-
-                if config.allowsPhotoImport {
-                    PhotosPicker(selection: $photoItem, matching: .videos, photoLibrary: .shared()) {
-                        Image(systemName: "photo.badge.plus")
+            // 两个按钮当成一组整体左移：系统给 trailing 的默认 16pt 内边距偏右，
+            // 用 offset 把整组往左推，间距不受 toolbar 布局影响。
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 12) {
+                    Button {
+                        textEdit = TextEditRequest(kind: .newFolder, parentID: nil)
+                    } label: {
+                        Image(systemName: "plus.circle")
                     }
-                    .accessibilityLabel("从相册导入")
+                    // 「＋」圆形图标的实际像素中心比相册图标低 ~2px，上移 0.5pt 让两者严格水平对齐。
+                    .offset(y: -0.5)
+                    .accessibilityLabel("在素材库根目录新建文件夹")
+
+                    if config.allowsPhotoImport {
+                        PhotosPicker(selection: $photoItem, matching: .videos, photoLibrary: .shared()) {
+                            Image(systemName: "photo.badge.plus")
+                        }
+                        .accessibilityLabel("从相册导入")
+                    }
                 }
+                .offset(x: -12)
             }
         }
         .onAppear {
