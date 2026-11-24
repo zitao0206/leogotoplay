@@ -2,6 +2,12 @@ import PhotosUI
 import SwiftUI
 import LeogotoPlayCore
 
+/// V3.5：用 sheet(item:) 承载提取页，避免 sheet 内容闭包拿到过期的 URL 状态
+struct TextExtractRequest: Identifiable {
+    let id = UUID()
+    let url: URL?
+}
+
 /// Cut 页：剪辑入口。可以从相册或素材库选视频直接进入编辑器。
 struct CutHomeView: View {
     @EnvironmentObject private var library: LibraryStore
@@ -13,6 +19,8 @@ struct CutHomeView: View {
     @State private var showLibraryPicker = false
     @State private var isPreparing = false
     @State private var toastMessage: String?
+    /// V3.5：一键提取文字页面
+    @State private var textExtractRequest: TextExtractRequest?
     /// 丢弃草稿后让「最近编辑」重新读一遍草稿状态
     @State private var draftRevision = 0
 
@@ -27,6 +35,19 @@ struct CutHomeView: View {
             .padding(.vertical, 12)
         }
         .background(Color(uiColor: .systemGroupedBackground))
+        #if DEBUG
+        .onAppear {
+            // 截图钩子：直接打开「一键提取文字」，并带一个素材库视频进去
+            if UserDefaults.standard.bool(forKey: "openTextExtract") {
+                let url = library.videos.first?.fileURL
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    textExtractRequest = TextExtractRequest(url: url)
+                }
+            } else if UserDefaults.standard.bool(forKey: "textExtractPageOnly") {
+                textExtractRequest = TextExtractRequest(url: nil)
+            }
+        }
+        #endif
         .navigationTitle("Cut")
         .navigationBarTitleDisplayMode(.inline)
         .toast($toastMessage)
@@ -41,6 +62,9 @@ struct CutHomeView: View {
                     editorSource = .library(item)
                 }
             }
+        }
+        .fullScreenCover(item: $textExtractRequest) { request in
+            TextExtractView(debugURL: request.url)
         }
         .fullScreenCover(item: $editorSource, onDismiss: {
             if let url = pendingTempURL {
@@ -76,7 +100,9 @@ struct CutHomeView: View {
             ) {
                 toolEntry(icon: "sparkles", title: "AI 画质增强")
                 toolEntry(icon: "wand.and.stars", title: "一键去水印")
-                toolEntry(icon: "wand.and.rays", title: "一键成片")
+                toolEntry(icon: "text.viewfinder", title: "一键提取文字") {
+                    textExtractRequest = TextExtractRequest(url: nil)
+                }
                 toolEntry(icon: "text.bubble", title: "智能字幕")
             }
         }
@@ -96,9 +122,13 @@ struct CutHomeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
-    private func toolEntry(icon: String, title: String) -> some View {
+    private func toolEntry(icon: String, title: String, action: (() -> Void)? = nil) -> some View {
         Button {
-            toastMessage = "\(title) · 开发中"
+            if let action {
+                action()
+            } else {
+                toastMessage = "\(title) · 开发中"
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: icon)

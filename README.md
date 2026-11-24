@@ -26,6 +26,18 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - 设置里删掉「存储 · 素材占用」这一行，存储组只剩「清理缩略图缓存」（占用空间在 List / Mine 的统计卡上看就够了）。
 - List 页根目录一个文件夹都没有时，文件夹区给一张引导卡：`folder.badge.plus` 图标 + 「还没有文件夹」+「点击右上角，新建文件夹就会出现在这里。」，和下面「根目录还没有视频」的空态排在一起。
 
+### V3.5 · 一键提取文本
+
+- Cut 页热门工具里「一键成片」换成「一键提取文字」，点击进独立页面，不再走「开发中」提示。页面自带导航栈、左上「关闭」，内容依次是能力介绍（画面文字 + 声音，可只取一种也可两种都要）、中央虚线大按钮「从相册中选片」、两个开关、「说明」卡（软字幕轨道读不到、音乐/多人/方言会降准确度）。
+- 两个开关「画面字幕文字」「声音转文字」默认都开，至少留一项（关到只剩一项时那一项禁掉），值存本地 `UserDefaults`（`text.extract.frames` / `text.extract.speech`），下次进来还是上次的选择。
+- 选中相册视频后先算估时（`1.5 + 0.06×时长` 的画面 + `1.2×时长` 的声音，约 24s 素材报「约 32 秒」），弹「开始提取？」确认框，写明处理期间屏幕常亮、不要锁屏或切 App；确认后才开始跑。
+- 处理中整屏刷黑（`#0D0D0F`，连 sheet 底色一起换，避免顶部漏出浅色圆角），正中一颗会呼吸的白色光球，内部是主题暖色流光（`Theme.accent` #FF5C3D → `accentSecondary` #FF9A6B → 浅橙，11s 转一圈，顶部叠一层柔光做玻璃球质感），球下方「文字提取中 17%」+ 一行灰字「正在识别画面文字，请不要锁屏或切换程序」；顶部只留一个返回箭头，左上角点它弹「停止提取？」确认后中止（已识别的文字一并丢弃，视频不受影响）。期间 `isIdleTimerDisabled = true` 保持不息屏，导航栏隐藏，`interactiveDismissDisabled` 防止下拉关页，结束/失败/取消都会复位。
+- 流程：画面这条路按 0.5s 抽帧（`AVAssetReader`，BGRA），用 Vision `VNRecognizeTextRequest`（`.accurate`、中英双语、语言纠正）逐帧识别，按 boundingBox 从上到下拼行，相邻帧文本相同就合并延长结束时间，带 `preferredTransform` 处理竖拍旋转；声音这条路先把音轨导成 m4a，再按 30s 切片喂 `SFSpeechAudioBufferRecognitionRequest`，「词级片段按 0.7s 停顿合并成句」（中文不留空格、英文补空格），时间码按切片偏移还原成全片时间；语音失败不中止画面结果，只往 warnings 里记一条。
+- 语音识别优先挑支持端上识别的语种（zh-CN → zh-Hans-CN → en-US → en-GB，离线、不上传）；设备没有端上模型时退回在线识别，并新增 `NSSpeechRecognitionUsageDescription`（「把视频里的说话内容转成文字，识别在本机完成，不上传。」）。模拟器上实测：端上模型不可用 → 走在线识别，38 条语音行正常出字。
+- 结果用 sheet 展示：warnings 置顶，每条「起止时间码 + 来源胶囊（画面橙色 / 语音蓝色）+ 文本」，底部「复制全部文字」（进剪贴板 + toast「已复制 N 条文字」）和「共 N 条 · 画面 x / 语音 y」统计，左上「取消」直接关。
+- 提取页用 `fullScreenCover` 呈现（原来是 sheet，处理时父页面会在顶部露出一条浅色边），页内仍是 `NavigationStack`，日常态有导航栏、处理态隐藏。
+- 调试钩子：`-openTextExtract YES`（带素材库首个视频进页面）、`-textExtractPageOnly YES`（只开空页面）、`-textExtractSkipConfirm YES`（跳过估时确认直接开跑）。sheet 用 `sheet(item:)` 承载（`TextExtractRequest`），否则内容闭包会拿到未落库的 `nil` URL。
+
 ### V4.0 · App Icon
 
 - 有了正式图标（此前 `AppIcon.appiconset` 是空的，装到手机上就是白灰方块）：炭黑底 `#15171B` + 右上暖橙光晕，主体是主题色 `Theme.accent`（`#FF5C3D` → `#FF9A6B`）渐变的播放三角，中间被一道斜切缝劈开——一眼是「播放」，第二眼是「剪辑」，对应 Cut / List 两条主线。
