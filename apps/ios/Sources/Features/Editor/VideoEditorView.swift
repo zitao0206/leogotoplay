@@ -66,12 +66,19 @@ struct VideoEditorView: View {
     ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            preview
-            transportRow
-            timeline
-            toolBar
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                header
+                // 预览整体下移 30pt
+                preview(areaHeight: geo.size.height * 0.60, areaWidth: geo.size.width * 0.68)
+                    .padding(.top, 30)
+                transportRow
+                timeline
+                // 时间轴与功能条之间固定 30pt
+                Color.clear.frame(height: 30)
+                toolBar
+                Spacer(minLength: 0)
+            }
         }
         .background(Color.black.ignoresSafeArea())
         .contentShape(Rectangle())
@@ -150,7 +157,7 @@ struct VideoEditorView: View {
 
     // MARK: - 预览
 
-    private var preview: some View {
+    private func preview(areaHeight: CGFloat, areaWidth: CGFloat) -> some View {
         ZStack {
             VideoLayerView(
                 player: viewModel.player,
@@ -179,7 +186,7 @@ struct VideoEditorView: View {
             viewModel.clearSelection()
             viewModel.togglePlay()
         }
-        .frame(maxHeight: .infinity)
+        .frame(width: areaWidth, height: areaHeight)
         .clipped()
     }
 
@@ -237,14 +244,14 @@ struct VideoEditorView: View {
 
     private var toolBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            HStack(spacing: 10) {
                 ForEach(tools) { tool in
                     toolButton(tool)
                 }
             }
             .padding(.horizontal, 12)
         }
-        .frame(height: 68)
+        .frame(height: 58)
         .padding(.bottom, 2)
     }
 
@@ -252,16 +259,16 @@ struct VideoEditorView: View {
         Button {
             tap(tool)
         } label: {
-            VStack(spacing: 5) {
+            VStack(spacing: 7) {
                 Image(systemName: tool.icon)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(tool.isReady ? Color.white : Color.white.opacity(0.4))
-                    .frame(height: 22)
+                    .frame(height: 26)
                 Text(tool.title)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(tool.isReady ? Color.white.opacity(0.85) : Color.white.opacity(0.35))
             }
-            .frame(width: 58)
+            .frame(width: 68)
             .padding(.vertical, 2)
             .contentShape(Rectangle())
         }

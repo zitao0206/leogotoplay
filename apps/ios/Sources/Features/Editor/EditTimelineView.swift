@@ -22,7 +22,7 @@ struct EditTimelineView: View {
     @State private var isDragging = false
     @State private var dragStartTime: Double = 0
 
-    private let trackHeight: CGFloat = 64
+    private let trackHeight: CGFloat = 84
     private let clipGap: CGFloat = 2
     private let handleWidth: CGFloat = 18
 
