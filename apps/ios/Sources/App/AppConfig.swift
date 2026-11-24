@@ -49,5 +49,25 @@ struct AppConfig {
     /// 是否允许未登录用户使用剪辑功能。
     var allowsAnonymousEditing = true
 
+    /// 实际展示的 Tab：按 `tabs` 顺序过滤掉用户在设置里关掉的那一个。
+    /// Mine 恒定显示，List / Cut 由 `TabPrefs` 控制。
+    var visibleTabs: [Tab] {
+        tabs.filter { TabPrefs.isVisible($0) }
+    }
+
     static let current = AppConfig()
+}
+
+/// V4.0：首页 Tab 显隐偏好，存本地 UserDefaults，设置页与 Tab 栏共享同一组 key。
+enum TabPrefs {
+    static let showListKey = "tab.list.visible"
+    static let showCutKey = "tab.cut.visible"
+
+    static func isVisible(_ tab: AppConfig.Tab) -> Bool {
+        switch tab {
+        case .list: return UserDefaults.standard.object(forKey: showListKey) as? Bool ?? true
+        case .cut: return UserDefaults.standard.object(forKey: showCutKey) as? Bool ?? true
+        case .mine: return true
+        }
+    }
 }

@@ -8,6 +8,11 @@ struct MineView: View {
 
     @State private var showLogin = false
     @State private var showSettings = false
+    @State private var showTabLayout = false
+
+    // 和 TabLayoutView / RootTabView 共用同一组 key，用来实时刷新「首页 TAB」那行的副标题
+    @AppStorage(TabPrefs.showListKey) private var showList = true
+    @AppStorage(TabPrefs.showCutKey) private var showCut = true
     @State private var showAbout = false
     @State private var showLogoutConfirm = false
     @State private var toastMessage: String?
@@ -34,6 +39,9 @@ struct MineView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(library)
+        }
+        .sheet(isPresented: $showTabLayout) {
+            TabLayoutView()
         }
         .alert("关于 LeogotoPlay", isPresented: $showAbout) {
             Button("知道了", role: .cancel) {}
@@ -155,7 +163,13 @@ struct MineView: View {
 
     private var actionList: some View {
         VStack(spacing: 0) {
-            actionRow(icon: "slider.horizontal.3", title: "导出与播放设置", subtitle: "清晰度、自动存相册、循环播放") {
+            // V4.0：功能选择（List / Cut 显隐），放在最上面
+            actionRow(icon: "rectangle.split.3x1", title: "功能选择", subtitle: tabLayoutSubtitle) {
+                showTabLayout = true
+            }
+            Divider().padding(.leading, 48)
+
+            actionRow(icon: "slider.horizontal.3", title: "导出与播放设置", subtitle: "清晰度、循环播放") {
                 showSettings = true
             }
             Divider().padding(.leading, 48)
@@ -182,6 +196,16 @@ struct MineView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Color(uiColor: .secondarySystemGroupedBackground))
         )
+    }
+
+    /// Mine 列表里「首页 TAB」那一行的副标题，直接反映当前选择
+    private var tabLayoutSubtitle: String {
+        switch (showList, showCut) {
+        case (true, true): return "List + Cut"
+        case (true, false): return "List"
+        case (false, true): return "Cut"
+        default: return "List + Cut"
+        }
     }
 
     private func actionRow(

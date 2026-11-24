@@ -7,6 +7,8 @@ import LeogotoPlayCore
 /// 视频总数 / 占用空间 / 总时长，点击进入全部视频页。
 struct LibraryView: View {
     @EnvironmentObject private var library: LibraryStore
+    /// Cut 被关掉就没有剪辑页，长按菜单不再给「剪辑」
+    @AppStorage(TabPrefs.showCutKey) private var showCut = true
     private let config = AppConfig.current
 
     @State private var searchText = ""
@@ -363,10 +365,12 @@ struct LibraryView: View {
         } label: {
             Label("播放", systemImage: "play.fill")
         }
-        Button {
-            route = .editor(.library(item))
-        } label: {
-            Label("剪辑", systemImage: "scissors")
+        if showCut {
+            Button {
+                route = .editor(.library(item))
+            } label: {
+                Label("剪辑", systemImage: "scissors")
+            }
         }
         Button {
             moveTarget = item

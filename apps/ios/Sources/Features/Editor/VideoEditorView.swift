@@ -14,6 +14,9 @@ struct VideoEditorView: View {
     @State private var showVolumePanel = false
     @State private var volumeDraft: Double = 1
     @State private var speedDraft: Double = 1
+    @Environment(\.scenePhase) private var scenePhase
+    /// List 被关掉就没有素材库页，导出选项里也不再给「存入素材库」
+    @AppStorage(TabPrefs.showListKey) private var showList = true
 
     init(source: EditorViewModel.Source) {
         _viewModel = StateObject(wrappedValue: EditorViewModel(source: source))
@@ -87,10 +90,17 @@ struct VideoEditorView: View {
             viewModel.clearSelection()
         }
         .task { await viewModel.load() }
+        // V4.0：离开剪辑页把现场存成草稿，下次从「最近编辑」点回来可以还原
+        .onDisappear { viewModel.saveDraft() }
+        .onChange(of: scenePhase) { phase in
+            if phase != .active { viewModel.saveDraft() }
+        }
         .toast($toastMessage)
         .confirmationDialog("导出剪辑结果", isPresented: $showExportOptions, titleVisibility: .visible) {
             Button("保存到相册") { Task { await exportToAlbum() } }
-            Button("存入素材库") { Task { await exportToLibrary() } }
+            if showList {
+                Button("存入素材库") { Task { await exportToLibrary() } }
+            }
             Button("取消", role: .cancel) {}
         } message: {
             Text("成片时长 \(viewModel.outputDuration.timecode)")
@@ -113,6 +123,7 @@ struct VideoEditorView: View {
         HStack(spacing: 12) {
             Button {
                 viewModel.pause()
+                viewModel.saveDraft()
                 dismiss()
             } label: {
                 Image(systemName: "xmark")

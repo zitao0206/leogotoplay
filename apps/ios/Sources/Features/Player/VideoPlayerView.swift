@@ -21,6 +21,8 @@ struct VideoPlayerView: View {
     @State private var isLandscape = false
     @State private var showCastSheet = false
     @State private var showMoreMenu = false
+    // V4.0：Cut 关闭时「更多」里的剪辑入口一起收口
+    @AppStorage(TabPrefs.showCutKey) private var showCut = true
     @State private var controlsVisible = true
     @State private var autoHideTask: Task<Void, Never>?
 
@@ -92,6 +94,8 @@ struct VideoPlayerView: View {
             if UserDefaults.standard.bool(forKey: "showRateSheet") { showRateSheet = true }
             if UserDefaults.standard.bool(forKey: "lockPlayer") { toggleLock() }
             if UserDefaults.standard.bool(forKey: "showCastSheet") { showCastSheet = true }
+            // 截图钩子：直接弹出「更多」菜单（模拟器里点不到顶部小圆钮时用）
+            if UserDefaults.standard.bool(forKey: "showMoreMenu") { showMoreMenu = true }
         }
         #endif
         .toast($toastMessage)
@@ -105,9 +109,11 @@ struct VideoPlayerView: View {
             if !viewModel.isPlaying { viewModel.play() }
         }
         .confirmationDialog("更多", isPresented: $showMoreMenu, titleVisibility: .visible) {
-            Button("剪辑") {
-                bumpActivity()
-                editorSource = .library(viewModel.item)
+            if showCut {
+                Button("剪辑") {
+                    bumpActivity()
+                    editorSource = .library(viewModel.item)
+                }
             }
             Button(viewModel.isAspectFill ? "画面改为适应" : "画面改为填充") {
                 bumpActivity()

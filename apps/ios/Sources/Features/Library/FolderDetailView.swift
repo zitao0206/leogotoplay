@@ -5,6 +5,7 @@ import LeogotoPlayCore
 /// 文件夹详情：展示该文件夹下的视频，支持移动、重命名、删除。
 struct FolderDetailView: View {
     @EnvironmentObject private var library: LibraryStore
+    @AppStorage(TabPrefs.showCutKey) private var showCut = true
     @Environment(\.dismiss) private var dismiss
 
     let folderID: UUID
@@ -65,10 +66,12 @@ struct FolderDetailView: View {
                                 } label: {
                                     Label("播放", systemImage: "play.fill")
                                 }
-                                Button {
-                                    route = .editor(.library(item))
-                                } label: {
-                                    Label("剪辑", systemImage: "scissors")
+                                if showCut {
+                                    Button {
+                                        route = .editor(.library(item))
+                                    } label: {
+                                        Label("剪辑", systemImage: "scissors")
+                                    }
                                 }
                                 Button {
                                     moveTarget = item

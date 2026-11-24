@@ -4,6 +4,7 @@ import LeogotoPlayCore
 /// V2.0.1：全部视频页面，以列表形式展示素材库中的所有视频。
 struct AllVideosView: View {
     @EnvironmentObject private var library: LibraryStore
+    @AppStorage(TabPrefs.showCutKey) private var showCut = true
 
     @State private var sort: LibrarySort = .newest
     @State private var route: LibraryRoute?
@@ -144,10 +145,12 @@ struct AllVideosView: View {
         } label: {
             Label("播放", systemImage: "play.fill")
         }
-        Button {
-            route = .editor(.library(item))
-        } label: {
-            Label("剪辑", systemImage: "scissors")
+        if showCut {
+            Button {
+                route = .editor(.library(item))
+            } label: {
+                Label("剪辑", systemImage: "scissors")
+            }
         }
         Button {
             moveTarget = item

@@ -158,11 +158,64 @@ final class EditorViewModel: ObservableObject {
         selectedClipID = nil
         currentTime = 0
         filmstrip = Array(repeating: nil, count: Self.frameCount)
-        await rebuildComposition(playhead: 0, resumePlayback: false)
+
+        // V4.0：有草稿就先还原上次的现场（分段、倍速、音量、播放头）
+        let draft = source.libraryItem.flatMap { EditorDraftStore.draft(for: $0) }
+        var playhead: Double = 0
+        if let restored = restoredClips(from: draft), let first = restored.first, let last = restored.last {
+            clips = restored
+            playhead = min(max(draft?.playhead ?? 0, first.start), last.end)
+            currentTime = playhead
+            isAspectFill = draft?.isAspectFill ?? isAspectFill
+        }
+
+        await rebuildComposition(playhead: playhead, resumePlayback: false)
         isLoading = false
-        seek(sourceTime: 0)
+        seek(sourceTime: playhead)
 
         await refreshFilmstrip()
+    }
+
+    /// 把草稿里的分段换成内部 Clip，顺便校验边界（视频被换过或时长变短就不认）
+    private func restoredClips(from draft: EditorDraft?) -> [Clip]? {
+        guard let draft, !draft.clips.isEmpty else { return nil }
+        let mapped = draft.clips.compactMap { data -> Clip? in
+            let start = min(max(data.start, 0), duration)
+            let end = min(max(data.end, 0), duration)
+            guard end - start > 0.05 else { return nil }
+            return Clip(start: start, end: end,
+                        speed: max(data.speed, 0.1),
+                        volume: min(max(data.volume, 0), 1))
+        }
+        guard mapped.count == draft.clips.count, !mapped.isEmpty else { return nil }
+        return mapped
+    }
+
+    // MARK: - 草稿
+
+    /// 只动过播放头不算「改过」，避免只是预览一下就留下草稿
+    var hasDraftWorthyEdits: Bool {
+        guard let first = clips.first else { return false }
+        if clips.count > 1 { return true }
+        if abs(first.start) > 0.01 || abs(first.end - duration) > 0.01 { return true }
+        if abs(first.speed - 1) > 0.01 || abs(first.volume - 1) > 0.01 { return true }
+        return false
+    }
+
+    /// 离开剪辑页时调用：改过就存草稿，退回原始状态就把旧草稿清掉
+    func saveDraft() {
+        guard let item = source.libraryItem else { return }
+        guard hasDraftWorthyEdits else {
+            EditorDraftStore.clear(for: item)
+            return
+        }
+        let data = clips.map {
+            EditorDraft.ClipData(start: $0.start, end: $0.end, speed: $0.speed, volume: $0.volume)
+        }
+        EditorDraftStore.save(
+            EditorDraft(clips: data, playhead: currentTime, isAspectFill: isAspectFill, updatedAt: Date()),
+            for: item
+        )
     }
 
     /// 按「成片时间」重新铺胶片：删掉的片段不再出现，剩下的片段首尾相接。

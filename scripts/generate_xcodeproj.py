@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""生成 iOS / macOS 两个 Xcode 工程 + 一个 workspace。
+"""
+生成 iOS / macOS 两个 Xcode 工程 + 一个 workspace。
 
 不依赖 XcodeGen：按目录扫描源码，生成稳定的 project.pbxproj、共享 scheme 与 workspace。
 结构约定（与本仓库目录保持一致）：
@@ -13,6 +14,24 @@
 """
 import hashlib
 import os
+
+
+def development_team():
+    """真机签名用的 Team ID。
+
+    优先读环境变量 LEOGOTO_DEVELOPMENT_TEAM；否则读 scripts/devteam.local（本机私有，不进仓库）。
+    两者都没有就留空——只跑模拟器不需要 Team，真机才需要。
+    """
+    team = os.environ.get("LEOGOTO_DEVELOPMENT_TEAM", "").strip()
+    if team:
+        return team
+    local_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "devteam.local")
+    if os.path.exists(local_file):
+        with open(local_file, encoding="utf-8") as fh:
+            team = fh.read().strip()
+        if team:
+            return team
+    return ""
 
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP_NAME = "LeogotoPlay"
@@ -266,6 +285,8 @@ def generate_project(project_dir, sources_dir, bundle_id, deployment_target, pla
         "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
         "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor",
         "CODE_SIGN_STYLE": "Automatic",
+        # 真机：填了 Team 才能自动生成描述文件；模拟器不需要
+        **({"DEVELOPMENT_TEAM": development_team()} if development_team() else {}),
         "CURRENT_PROJECT_VERSION": "1",
         "ENABLE_PREVIEWS": "YES",
         "GENERATE_INFOPLIST_FILE": "NO",

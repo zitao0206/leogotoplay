@@ -22,3 +22,6 @@ packages/*/.swiftpm/
 .swiftpm/
 *.xcworkspace/xcuserdata/
 *.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+
+# 本机私有：真机签名用的 Team ID（scripts/generate_xcodeproj.py 会读）
+scripts/devteam.local

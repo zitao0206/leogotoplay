@@ -1,13 +1,12 @@
 import SwiftUI
 import LeogotoPlayCore
 
-/// 设置页：导出清晰度、自动保存相册、循环播放、缓存清理。
+/// 设置页：导出清晰度、循环播放、缓存清理。
 struct SettingsView: View {
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
 
     @AppStorage(ExportSettings.qualityKey) private var qualityRaw = VideoExporter.Quality.p1080.rawValue
-    @AppStorage(ExportSettings.autoSaveToAlbumKey) private var autoSaveToAlbum = false
     @AppStorage(ExportSettings.autoLoopKey) private var autoLoop = true
 
     @State private var toastMessage: String?
@@ -21,11 +20,10 @@ struct SettingsView: View {
                             Text(quality.title).tag(quality.rawValue)
                         }
                     }
-                    Toggle("剪辑后自动保存到相册", isOn: $autoSaveToAlbum)
                 } header: {
                     Text("导出")
                 } footer: {
-                    Text("清晰度越高文件越大；自动保存会在导出成功后再写入系统相册。")
+                    Text("清晰度越高文件越大。")
                 }
 
                 Section {

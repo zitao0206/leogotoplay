@@ -15,6 +15,8 @@ struct CutHomeView: View {
     @State private var isPreparing = false
     @State private var toastMessage: String?
     @State private var fileImportPurpose: FileImportPurpose = .edit
+    /// 丢弃草稿后让「最近编辑」重新读一遍草稿状态
+    @State private var draftRevision = 0
 
     private enum FileImportPurpose { case edit, importToLibrary }
 
@@ -56,6 +58,8 @@ struct CutHomeView: View {
                 VideoImporter.cleanTemporaryFile(at: url)
                 pendingTempURL = nil
             }
+            // 剪辑页刚存完草稿，让「最近编辑」重新读一遍角标
+            draftRevision += 1
         }) { source in
             VideoEditorView(source: source)
                 .environmentObject(library)
@@ -188,16 +192,57 @@ struct CutHomeView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(library.recentVideos) { item in
-                            Button {
-                                editorSource = .library(item)
-                            } label: {
-                                VideoCard(item: item)
-                                    .frame(width: 148)
-                            }
-                            .buttonStyle(.plain)
+                            recentCard(item)
                         }
                     }
                     .padding(.vertical, 2)
+                    .id(draftRevision)
+                }
+            }
+        }
+    }
+
+    /// 最近编辑里的一张卡：有草稿就带「草稿」角标，点开还原上次现场
+    private func recentCard(_ item: VideoItem) -> some View {
+        let draft = EditorDraftStore.draft(for: item)
+        return Button {
+            // 有草稿的话，编辑器载入时会自动还原；没有就从完整片段重新开始
+            editorSource = .library(item)
+        } label: {
+            VideoCard(item: item)
+                .frame(width: 148)
+                .overlay(alignment: .topTrailing) {
+                    if let draft {
+                        HStack(spacing: 3) {
+                            Image(systemName: "square.and.pencil")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("草稿")
+                                .font(.caption2.weight(.bold))
+                            Text(EditorViewModel.durationLabel(draft.outputDuration))
+                                .font(.caption2.monospacedDigit())
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(Theme.accent, in: Capsule())
+                        .padding(6)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            if draft != nil {
+                Button {
+                    editorSource = .library(item)
+                } label: {
+                    Label("继续编辑草稿", systemImage: "arrow.uturn.backward")
+                }
+                Button(role: .destructive) {
+                    EditorDraftStore.clear(for: item)
+                    draftRevision += 1
+                    toastMessage = "已丢弃草稿"
+                } label: {
+                    Label("丢弃草稿", systemImage: "trash")
                 }
             }
         }

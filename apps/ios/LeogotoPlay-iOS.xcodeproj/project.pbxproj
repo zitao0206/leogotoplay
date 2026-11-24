@@ -3,62 +3,66 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		6F6CECC4BA4ECB85991542BB /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAF3D747DD6F9524D54342C5 /* AppConfig.swift */; };
-		7954330BA5C78BB7A79266D1 /* LeogotoPlayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 308F6FB6E3C2B005E25BA814 /* LeogotoPlayApp.swift */; };
-		127CA8C3E0A40ADAD3A4E65D /* OrientationSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3931ACED7CBD7A66386BCCB5 /* OrientationSupport.swift */; };
-		33C83AAC4C9EB1AF4A0E91A3 /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEE941A41773838E083320C5 /* RootTabView.swift */; };
-		7FB333775397EA09813D365C /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ABE4BAF20BE696B82A432B9 /* Components.swift */; };
-		94EA09651EF8F93E23339D5A /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72DAC3DA5B27A0B8F70EB1FC /* Theme.swift */; };
-		D72F3CB3A6786C5137F2E834 /* CutHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8492F36493B698EB46DB4677 /* CutHomeView.swift */; };
-		47AB6E289C096B2C9D6678E9 /* EditTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 286B318BE3DF6A87E5A132EB /* EditTimelineView.swift */; };
-		8EDFE115336B85205CB1E530 /* EditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2256565E1CB34223D73DCFD /* EditorViewModel.swift */; };
-		AEC22EA9C7D75F051577ECD2 /* VideoEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32001E290A3B0319EF700D91 /* VideoEditorView.swift */; };
-		A7FF6E24E22B4D2FD5E191F6 /* AllVideosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16C0A3663A28D4A3852D488 /* AllVideosView.swift */; };
-		4719FB49D8B93EB21DFDF843 /* FolderDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57DB7297C90416408E287037 /* FolderDetailView.swift */; };
-		94A4CEF0A499566C017C8D65 /* LibrarySheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98E0708CF451EC1E27B8B218 /* LibrarySheets.swift */; };
 		006B47F1B41877FBA4B07426 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D72693EDBFF6F34F5DAB892E /* LibraryView.swift */; };
-		3B72474B9076F628D494742E /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90D7D4AC05676DCFAC05DDA /* LoginView.swift */; };
-		1AEB8AC1F7C58A81D35A55A0 /* MineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E66BBA6032D1F950D2AE107 /* MineView.swift */; };
-		89EB6F7AAD50ED9EC09C39A0 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 928AB599B69AD3CA342F7236 /* SettingsView.swift */; };
-		93CE2888B7A6EF0124E53707 /* AirPlayRoutePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E069B6C0B33ECD78B49AAB69 /* AirPlayRoutePicker.swift */; };
-		5031FACCE318BAFF28E34EE8 /* PlayerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500685D7A3FB9593761F255E /* PlayerViewModel.swift */; };
-		0FB36663A2282ED0541C49A6 /* SystemVolumeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E620E8CD6AEDA97579D0BB /* SystemVolumeController.swift */; };
-		ADABD8347015A10CD313889F /* VideoLayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BDACE170EFCEC685F900D11 /* VideoLayerView.swift */; };
-		73EC1D1FC8EFB00BCB21ED84 /* VideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F902B796281382F1AA49F5E1 /* VideoPlayerView.swift */; };
 		0F56184317D102A8AE63E075 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 94C41BB8685E37A07CA871EC /* Assets.xcassets */; };
+		0FB36663A2282ED0541C49A6 /* SystemVolumeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E620E8CD6AEDA97579D0BB /* SystemVolumeController.swift */; };
+		127CA8C3E0A40ADAD3A4E65D /* OrientationSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3931ACED7CBD7A66386BCCB5 /* OrientationSupport.swift */; };
+		1AEB8AC1F7C58A81D35A55A0 /* MineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E66BBA6032D1F950D2AE107 /* MineView.swift */; };
+		33C83AAC4C9EB1AF4A0E91A3 /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEE941A41773838E083320C5 /* RootTabView.swift */; };
+		3B72474B9076F628D494742E /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90D7D4AC05676DCFAC05DDA /* LoginView.swift */; };
+		4719FB49D8B93EB21DFDF843 /* FolderDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57DB7297C90416408E287037 /* FolderDetailView.swift */; };
+		47223EB4F9B93C122233DC67 /* EditorDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CD2F4736C7889C560AEBB31 /* EditorDraft.swift */; };
+		47AB6E289C096B2C9D6678E9 /* EditTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 286B318BE3DF6A87E5A132EB /* EditTimelineView.swift */; };
+		5031FACCE318BAFF28E34EE8 /* PlayerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500685D7A3FB9593761F255E /* PlayerViewModel.swift */; };
+		6F6CECC4BA4ECB85991542BB /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAF3D747DD6F9524D54342C5 /* AppConfig.swift */; };
+		73EC1D1FC8EFB00BCB21ED84 /* VideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F902B796281382F1AA49F5E1 /* VideoPlayerView.swift */; };
+		7954330BA5C78BB7A79266D1 /* LeogotoPlayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 308F6FB6E3C2B005E25BA814 /* LeogotoPlayApp.swift */; };
+		7FB333775397EA09813D365C /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ABE4BAF20BE696B82A432B9 /* Components.swift */; };
+		89EB6F7AAD50ED9EC09C39A0 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 928AB599B69AD3CA342F7236 /* SettingsView.swift */; };
+		8EDFE115336B85205CB1E530 /* EditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2256565E1CB34223D73DCFD /* EditorViewModel.swift */; };
+		91E43DE50DCC8343D506215C /* TabLayoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5929CBF04E7D81EA03FBA41 /* TabLayoutView.swift */; };
+		93CE2888B7A6EF0124E53707 /* AirPlayRoutePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E069B6C0B33ECD78B49AAB69 /* AirPlayRoutePicker.swift */; };
+		94A4CEF0A499566C017C8D65 /* LibrarySheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98E0708CF451EC1E27B8B218 /* LibrarySheets.swift */; };
+		94EA09651EF8F93E23339D5A /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72DAC3DA5B27A0B8F70EB1FC /* Theme.swift */; };
+		A7FF6E24E22B4D2FD5E191F6 /* AllVideosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16C0A3663A28D4A3852D488 /* AllVideosView.swift */; };
+		ADABD8347015A10CD313889F /* VideoLayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BDACE170EFCEC685F900D11 /* VideoLayerView.swift */; };
+		AEC22EA9C7D75F051577ECD2 /* VideoEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32001E290A3B0319EF700D91 /* VideoEditorView.swift */; };
 		BD4571F05F8C159D53D849B0 /* LeogotoPlayCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3F5482F80C19C9FB50A2978D /* LeogotoPlayCore */; };
+		D72F3CB3A6786C5137F2E834 /* CutHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8492F36493B698EB46DB4677 /* CutHomeView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		EAF3D747DD6F9524D54342C5 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
-		308F6FB6E3C2B005E25BA814 /* LeogotoPlayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeogotoPlayApp.swift; sourceTree = "<group>"; };
-		3931ACED7CBD7A66386BCCB5 /* OrientationSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrientationSupport.swift; sourceTree = "<group>"; };
-		FEE941A41773838E083320C5 /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
-		5ABE4BAF20BE696B82A432B9 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
-		72DAC3DA5B27A0B8F70EB1FC /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
-		8492F36493B698EB46DB4677 /* CutHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CutHomeView.swift; sourceTree = "<group>"; };
-		286B318BE3DF6A87E5A132EB /* EditTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditTimelineView.swift; sourceTree = "<group>"; };
-		A2256565E1CB34223D73DCFD /* EditorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorViewModel.swift; sourceTree = "<group>"; };
-		32001E290A3B0319EF700D91 /* VideoEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoEditorView.swift; sourceTree = "<group>"; };
-		F16C0A3663A28D4A3852D488 /* AllVideosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllVideosView.swift; sourceTree = "<group>"; };
-		57DB7297C90416408E287037 /* FolderDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderDetailView.swift; sourceTree = "<group>"; };
-		98E0708CF451EC1E27B8B218 /* LibrarySheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySheets.swift; sourceTree = "<group>"; };
-		D72693EDBFF6F34F5DAB892E /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
-		B90D7D4AC05676DCFAC05DDA /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
-		7E66BBA6032D1F950D2AE107 /* MineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MineView.swift; sourceTree = "<group>"; };
-		928AB599B69AD3CA342F7236 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		E069B6C0B33ECD78B49AAB69 /* AirPlayRoutePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayRoutePicker.swift; sourceTree = "<group>"; };
-		500685D7A3FB9593761F255E /* PlayerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViewModel.swift; sourceTree = "<group>"; };
-		38E620E8CD6AEDA97579D0BB /* SystemVolumeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemVolumeController.swift; sourceTree = "<group>"; };
-		5BDACE170EFCEC685F900D11 /* VideoLayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoLayerView.swift; sourceTree = "<group>"; };
-		F902B796281382F1AA49F5E1 /* VideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerView.swift; sourceTree = "<group>"; };
-		94C41BB8685E37A07CA871EC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		456C6728C1730902596DECE8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info.plist"; sourceTree = "<group>"; };
 		281A836633285E5C491D227F /* LeogotoPlay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LeogotoPlay.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		286B318BE3DF6A87E5A132EB /* EditTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditTimelineView.swift; sourceTree = "<group>"; };
+		308F6FB6E3C2B005E25BA814 /* LeogotoPlayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeogotoPlayApp.swift; sourceTree = "<group>"; };
+		32001E290A3B0319EF700D91 /* VideoEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoEditorView.swift; sourceTree = "<group>"; };
+		38E620E8CD6AEDA97579D0BB /* SystemVolumeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemVolumeController.swift; sourceTree = "<group>"; };
+		3931ACED7CBD7A66386BCCB5 /* OrientationSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrientationSupport.swift; sourceTree = "<group>"; };
+		456C6728C1730902596DECE8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		500685D7A3FB9593761F255E /* PlayerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViewModel.swift; sourceTree = "<group>"; };
+		57DB7297C90416408E287037 /* FolderDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderDetailView.swift; sourceTree = "<group>"; };
+		5ABE4BAF20BE696B82A432B9 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		5BDACE170EFCEC685F900D11 /* VideoLayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoLayerView.swift; sourceTree = "<group>"; };
+		5CD2F4736C7889C560AEBB31 /* EditorDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorDraft.swift; sourceTree = "<group>"; };
+		72DAC3DA5B27A0B8F70EB1FC /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		7E66BBA6032D1F950D2AE107 /* MineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MineView.swift; sourceTree = "<group>"; };
+		8492F36493B698EB46DB4677 /* CutHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CutHomeView.swift; sourceTree = "<group>"; };
+		928AB599B69AD3CA342F7236 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		94C41BB8685E37A07CA871EC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		98E0708CF451EC1E27B8B218 /* LibrarySheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySheets.swift; sourceTree = "<group>"; };
+		A2256565E1CB34223D73DCFD /* EditorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorViewModel.swift; sourceTree = "<group>"; };
+		B90D7D4AC05676DCFAC05DDA /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		D5929CBF04E7D81EA03FBA41 /* TabLayoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabLayoutView.swift; sourceTree = "<group>"; };
+		D72693EDBFF6F34F5DAB892E /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
+		E069B6C0B33ECD78B49AAB69 /* AirPlayRoutePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayRoutePicker.swift; sourceTree = "<group>"; };
+		EAF3D747DD6F9524D54342C5 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		F16C0A3663A28D4A3852D488 /* AllVideosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllVideosView.swift; sourceTree = "<group>"; };
+		F902B796281382F1AA49F5E1 /* VideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerView.swift; sourceTree = "<group>"; };
+		FEE941A41773838E083320C5 /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -73,13 +77,46 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		8F801C834D9E675469D2B87E = {
+		22EB26EA52B6B83543CDB5B8 /* DesignSystem */ = {
 			isa = PBXGroup;
 			children = (
-				2422CBF3B5C0EDF41BEAA05D /* Sources */,
-				651CF3A69A0863C5E8577B03 /* Packages */,
-				33A2D0C45F35892202A1C357 /* Products */,
+				5ABE4BAF20BE696B82A432B9 /* Components.swift */,
+				72DAC3DA5B27A0B8F70EB1FC /* Theme.swift */,
 			);
+			path = DesignSystem;
+			sourceTree = "<group>";
+		};
+		23D0D225515EA3BEAB4A5CD8 /* Editor */ = {
+			isa = PBXGroup;
+			children = (
+				286B318BE3DF6A87E5A132EB /* EditTimelineView.swift */,
+				5CD2F4736C7889C560AEBB31 /* EditorDraft.swift */,
+				A2256565E1CB34223D73DCFD /* EditorViewModel.swift */,
+				32001E290A3B0319EF700D91 /* VideoEditorView.swift */,
+			);
+			path = Editor;
+			sourceTree = "<group>";
+		};
+		2422CBF3B5C0EDF41BEAA05D /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				3157EC5F95B18969C1735541 /* App */,
+				22EB26EA52B6B83543CDB5B8 /* DesignSystem */,
+				7C7A721F283FB9E6C38F14B0 /* Features */,
+				7085B9CE01D20BB440BF6471 /* Resources */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		3157EC5F95B18969C1735541 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				EAF3D747DD6F9524D54342C5 /* AppConfig.swift */,
+				308F6FB6E3C2B005E25BA814 /* LeogotoPlayApp.swift */,
+				3931ACED7CBD7A66386BCCB5 /* OrientationSupport.swift */,
+				FEE941A41773838E083320C5 /* RootTabView.swift */,
+			);
+			path = App;
 			sourceTree = "<group>";
 		};
 		33A2D0C45F35892202A1C357 /* Products */ = {
@@ -90,115 +127,83 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		651CF3A69A0863C5E8577B03 /* Packages */ = {
+		34C541A921114A6E4C06A30E /* Library */ = {
 			isa = PBXGroup;
 			children = (
-				// LeogotoPlayCore 由 packageProductDependencies 提供
+				F16C0A3663A28D4A3852D488 /* AllVideosView.swift */,
+				57DB7297C90416408E287037 /* FolderDetailView.swift */,
+				98E0708CF451EC1E27B8B218 /* LibrarySheets.swift */,
+				D72693EDBFF6F34F5DAB892E /* LibraryView.swift */,
 			);
-			name = Packages;
-			sourceTree = "<group>";
-		};
-		3157EC5F95B18969C1735541 /* App */ = {
-			isa = PBXGroup;
-			children = (
-				EAF3D747DD6F9524D54342C5 /* child */,
-				308F6FB6E3C2B005E25BA814 /* child */,
-				3931ACED7CBD7A66386BCCB5 /* child */,
-				FEE941A41773838E083320C5 /* child */,
-			);
-			path = App;
-			sourceTree = "<group>";
-		};
-		22EB26EA52B6B83543CDB5B8 /* DesignSystem */ = {
-			isa = PBXGroup;
-			children = (
-				5ABE4BAF20BE696B82A432B9 /* child */,
-				72DAC3DA5B27A0B8F70EB1FC /* child */,
-			);
-			path = DesignSystem;
+			path = Library;
 			sourceTree = "<group>";
 		};
 		4AB25210CBDC6A967F9064F3 /* Cut */ = {
 			isa = PBXGroup;
 			children = (
-				8492F36493B698EB46DB4677 /* child */,
+				8492F36493B698EB46DB4677 /* CutHomeView.swift */,
 			);
 			path = Cut;
 			sourceTree = "<group>";
 		};
-		23D0D225515EA3BEAB4A5CD8 /* Editor */ = {
+		651CF3A69A0863C5E8577B03 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				286B318BE3DF6A87E5A132EB /* child */,
-				A2256565E1CB34223D73DCFD /* child */,
-				32001E290A3B0319EF700D91 /* child */,
 			);
-			path = Editor;
-			sourceTree = "<group>";
-		};
-		34C541A921114A6E4C06A30E /* Library */ = {
-			isa = PBXGroup;
-			children = (
-				F16C0A3663A28D4A3852D488 /* child */,
-				57DB7297C90416408E287037 /* child */,
-				98E0708CF451EC1E27B8B218 /* child */,
-				D72693EDBFF6F34F5DAB892E /* child */,
-			);
-			path = Library;
-			sourceTree = "<group>";
-		};
-		8BF2A95017CA3A387C871BF3 /* Mine */ = {
-			isa = PBXGroup;
-			children = (
-				B90D7D4AC05676DCFAC05DDA /* child */,
-				7E66BBA6032D1F950D2AE107 /* child */,
-				928AB599B69AD3CA342F7236 /* child */,
-			);
-			path = Mine;
-			sourceTree = "<group>";
-		};
-		9C2540D373A25EC7F353B475 /* Player */ = {
-			isa = PBXGroup;
-			children = (
-				E069B6C0B33ECD78B49AAB69 /* child */,
-				500685D7A3FB9593761F255E /* child */,
-				38E620E8CD6AEDA97579D0BB /* child */,
-				5BDACE170EFCEC685F900D11 /* child */,
-				F902B796281382F1AA49F5E1 /* child */,
-			);
-			path = Player;
-			sourceTree = "<group>";
-		};
-		7C7A721F283FB9E6C38F14B0 /* Features */ = {
-			isa = PBXGroup;
-			children = (
-				4AB25210CBDC6A967F9064F3 /* child */,
-				23D0D225515EA3BEAB4A5CD8 /* child */,
-				34C541A921114A6E4C06A30E /* child */,
-				8BF2A95017CA3A387C871BF3 /* child */,
-				9C2540D373A25EC7F353B475 /* child */,
-			);
-			path = Features;
+			name = Packages;
 			sourceTree = "<group>";
 		};
 		7085B9CE01D20BB440BF6471 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				94C41BB8685E37A07CA871EC /* child */,
-				456C6728C1730902596DECE8 /* child */,
+				94C41BB8685E37A07CA871EC /* Assets.xcassets */,
+				456C6728C1730902596DECE8 /* Info.plist */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
 		};
-		2422CBF3B5C0EDF41BEAA05D /* Sources */ = {
+		7C7A721F283FB9E6C38F14B0 /* Features */ = {
 			isa = PBXGroup;
 			children = (
-				3157EC5F95B18969C1735541 /* child */,
-				22EB26EA52B6B83543CDB5B8 /* child */,
-				7C7A721F283FB9E6C38F14B0 /* child */,
-				7085B9CE01D20BB440BF6471 /* child */,
+				4AB25210CBDC6A967F9064F3 /* Cut */,
+				23D0D225515EA3BEAB4A5CD8 /* Editor */,
+				34C541A921114A6E4C06A30E /* Library */,
+				8BF2A95017CA3A387C871BF3 /* Mine */,
+				9C2540D373A25EC7F353B475 /* Player */,
 			);
-			path = Sources;
+			path = Features;
+			sourceTree = "<group>";
+		};
+		8BF2A95017CA3A387C871BF3 /* Mine */ = {
+			isa = PBXGroup;
+			children = (
+				B90D7D4AC05676DCFAC05DDA /* LoginView.swift */,
+				7E66BBA6032D1F950D2AE107 /* MineView.swift */,
+				928AB599B69AD3CA342F7236 /* SettingsView.swift */,
+				D5929CBF04E7D81EA03FBA41 /* TabLayoutView.swift */,
+			);
+			path = Mine;
+			sourceTree = "<group>";
+		};
+		8F801C834D9E675469D2B87E = {
+			isa = PBXGroup;
+			children = (
+				2422CBF3B5C0EDF41BEAA05D /* Sources */,
+				651CF3A69A0863C5E8577B03 /* Packages */,
+				33A2D0C45F35892202A1C357 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		9C2540D373A25EC7F353B475 /* Player */ = {
+			isa = PBXGroup;
+			children = (
+				E069B6C0B33ECD78B49AAB69 /* AirPlayRoutePicker.swift */,
+				500685D7A3FB9593761F255E /* PlayerViewModel.swift */,
+				38E620E8CD6AEDA97579D0BB /* SystemVolumeController.swift */,
+				5BDACE170EFCEC685F900D11 /* VideoLayerView.swift */,
+				F902B796281382F1AA49F5E1 /* VideoPlayerView.swift */,
+			);
+			path = Player;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -239,7 +244,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 06E343E50A1EEBC2CB0EC695 /* Build configuration list for PBXProject "LeogotoPlay" */;
+			buildConfigurationList = 06E343E50A1EEBC2CB0EC695 /* Build configuration list for PBXProject "LeogotoPlay-iOS" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -284,6 +289,7 @@
 				94EA09651EF8F93E23339D5A /* Theme.swift in Sources */,
 				D72F3CB3A6786C5137F2E834 /* CutHomeView.swift in Sources */,
 				47AB6E289C096B2C9D6678E9 /* EditTimelineView.swift in Sources */,
+				47223EB4F9B93C122233DC67 /* EditorDraft.swift in Sources */,
 				8EDFE115336B85205CB1E530 /* EditorViewModel.swift in Sources */,
 				AEC22EA9C7D75F051577ECD2 /* VideoEditorView.swift in Sources */,
 				A7FF6E24E22B4D2FD5E191F6 /* AllVideosView.swift in Sources */,
@@ -293,6 +299,7 @@
 				3B72474B9076F628D494742E /* LoginView.swift in Sources */,
 				1AEB8AC1F7C58A81D35A55A0 /* MineView.swift in Sources */,
 				89EB6F7AAD50ED9EC09C39A0 /* SettingsView.swift in Sources */,
+				91E43DE50DCC8343D506215C /* TabLayoutView.swift in Sources */,
 				93CE2888B7A6EF0124E53707 /* AirPlayRoutePicker.swift in Sources */,
 				5031FACCE318BAFF28E34EE8 /* PlayerViewModel.swift in Sources */,
 				0FB36663A2282ED0541C49A6 /* SystemVolumeController.swift in Sources */,
@@ -304,61 +311,53 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		FD3E4026CB403C61D95BBCBE /* Debug */ = {
+		1FFBE24B70D637C96F0E6382 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = dwarf;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_TESTABILITY = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu17;
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = ("DEBUG=1", "$(inherited)");
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
-				MTL_FAST_MATH = YES;
-				ONLY_ACTIVE_ARCH = YES;
-				SDKROOT = iphoneos;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VUC9NCVG44;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Sources/Resources/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = LeogotoPlay;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.leogotoplay.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		3658A8E05371B39129D78883 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VUC9NCVG44;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Sources/Resources/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = LeogotoPlay;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.leogotoplay.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -420,52 +419,71 @@
 			};
 			name = Release;
 		};
-		3658A8E05371B39129D78883 /* Debug */ = {
+		FD3E4026CB403C61D95BBCBE /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Sources/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = LeogotoPlay;
-				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
-				MARKETING_VERSION = 2.3;
-				PRODUCT_BUNDLE_IDENTIFIER = com.leogotoplay.app;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;
-		};
-		1FFBE24B70D637C96F0E6382 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Sources/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = LeogotoPlay;
-				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
-				MARKETING_VERSION = 2.3;
-				PRODUCT_BUNDLE_IDENTIFIER = com.leogotoplay.app;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		06E343E50A1EEBC2CB0EC695 /* Build configuration list for PBXProject "LeogotoPlay" */ = {
+		06E343E50A1EEBC2CB0EC695 /* Build configuration list for PBXProject "LeogotoPlay-iOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				FD3E4026CB403C61D95BBCBE /* Debug */,
@@ -495,8 +513,8 @@
 /* Begin XCSwiftPackageProductDependency section */
 		3F5482F80C19C9FB50A2978D /* LeogotoPlayCore */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = LeogotoPlayCore;
 			package = 545F0CFFB2EFEACCBCD964E5 /* XCLocalSwiftPackageReference "../../packages/LeogotoPlayCore" */;
+			productName = LeogotoPlayCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
