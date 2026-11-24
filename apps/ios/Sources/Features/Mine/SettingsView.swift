@@ -8,38 +8,38 @@ struct SettingsView: View {
 
     @AppStorage(ExportSettings.qualityKey) private var qualityRaw = VideoExporter.Quality.p1080.rawValue
     @AppStorage(ExportSettings.autoLoopKey) private var autoLoop = true
+    // V3.4：设置项跟着「功能选择」走——Cut 关了就没有导出这回事，List 关了就没有播放这回事
+    @AppStorage(TabPrefs.showCutKey) private var showCut = true
+    @AppStorage(TabPrefs.showListKey) private var showList = true
 
     @State private var toastMessage: String?
 
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Picker("导出清晰度", selection: $qualityRaw) {
-                        ForEach(VideoExporter.Quality.allCases) { quality in
-                            Text(quality.title).tag(quality.rawValue)
+                if showCut {
+                    Section {
+                        Picker("导出清晰度", selection: $qualityRaw) {
+                            ForEach(VideoExporter.Quality.allCases) { quality in
+                                Text(quality.title).tag(quality.rawValue)
+                            }
                         }
+                    } header: {
+                        Text("Cut导出")
+                    } footer: {
+                        Text("清晰度越高文件越大。")
                     }
-                } header: {
-                    Text("导出")
-                } footer: {
-                    Text("清晰度越高文件越大。")
+                }
+
+                if showList {
+                    Section {
+                        Toggle("默认循环播放", isOn: $autoLoop)
+                    } header: {
+                        Text("List播放")
+                    }
                 }
 
                 Section {
-                    Toggle("默认循环播放", isOn: $autoLoop)
-                } header: {
-                    Text("播放")
-                }
-
-                Section {
-                    HStack {
-                        Text("素材占用")
-                        Spacer()
-                        Text(library.totalSize.fileSizeText)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
                     Button {
                         library.clearThumbnailCache()
                         ImageCache.clear()

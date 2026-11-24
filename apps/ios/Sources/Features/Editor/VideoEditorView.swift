@@ -283,7 +283,7 @@ struct VideoEditorView: View {
         }
         // 点下方功能键时也把时间轴对应段选中（参考图里的选中态）
         guard let clip = viewModel.ensureSelectedClip() else {
-            toastMessage = "时间轴上还没有素材"
+            toastMessage = "时间轴上还没有视频"
             return
         }
         switch tool {

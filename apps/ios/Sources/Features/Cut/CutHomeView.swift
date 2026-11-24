@@ -2,7 +2,7 @@ import PhotosUI
 import SwiftUI
 import LeogotoPlayCore
 
-/// Cut 页：剪辑入口。可以从相册、文件或素材库选视频直接进入编辑器。
+/// Cut 页：剪辑入口。可以从相册或素材库选视频直接进入编辑器。
 struct CutHomeView: View {
     @EnvironmentObject private var library: LibraryStore
     private let config = AppConfig.current
@@ -11,14 +11,10 @@ struct CutHomeView: View {
     @State private var editorSource: EditorViewModel.Source?
     @State private var pendingTempURL: URL?
     @State private var showLibraryPicker = false
-    @State private var showFileImporter = false
     @State private var isPreparing = false
     @State private var toastMessage: String?
-    @State private var fileImportPurpose: FileImportPurpose = .edit
     /// 丢弃草稿后让「最近编辑」重新读一遍草稿状态
     @State private var draftRevision = 0
-
-    private enum FileImportPurpose { case edit, importToLibrary }
 
     var body: some View {
         ScrollView {
@@ -45,13 +41,6 @@ struct CutHomeView: View {
                     editorSource = .library(item)
                 }
             }
-        }
-        .fileImporter(
-            isPresented: $showFileImporter,
-            allowedContentTypes: [.movie, .mpeg4Movie, .quickTimeMovie],
-            allowsMultipleSelection: false
-        ) { result in
-            handleFileImport(result)
         }
         .fullScreenCover(item: $editorSource, onDismiss: {
             if let url = pendingTempURL {
@@ -177,15 +166,11 @@ struct CutHomeView: View {
             SectionHeader(title: "最近编辑")
 
             if library.recentVideos.isEmpty {
+                // V3.4：这里不再给「从文件导入」按钮，导入入口统一留在上面的相册入口
                 EmptyStateView(
                     symbol: "film",
-                    title: "还没有素材",
-                    message: "先从相册导入一个视频，它就出现在这里。",
-                    actionTitle: "从文件导入",
-                    action: {
-                        fileImportPurpose = .importToLibrary
-                        showFileImporter = true
-                    }
+                    title: "还没有视频",
+                    message: "先从相册选一个视频剪一次，它就会出现在这里。"
                 )
                 .cardBackground()
             } else {
@@ -265,31 +250,6 @@ struct CutHomeView: View {
         }
     }
 
-    private func handleFileImport(_ result: Result<[URL], Error>) {
-        do {
-            guard let url = try result.get().first else { return }
-            let tempURL = try VideoImporter.prepare(from: url)
-            let title = url.deletingPathExtension().lastPathComponent
-
-            switch fileImportPurpose {
-            case .edit:
-                pendingTempURL = tempURL
-                editorSource = .temporary(tempURL, title: title)
-            case .importToLibrary:
-                Task {
-                    do {
-                        try await library.importVideo(fromTempURL: tempURL, source: .files, suggestedTitle: title)
-                        toastMessage = "已导入素材库"
-                    } catch {
-                        toastMessage = error.localizedDescription
-                    }
-                    VideoImporter.cleanTemporaryFile(at: tempURL)
-                }
-            }
-        } catch {
-            toastMessage = error.localizedDescription
-        }
-    }
 }
 
 // MARK: - 素材库选择器

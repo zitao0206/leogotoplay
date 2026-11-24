@@ -240,6 +240,19 @@ struct LibraryView: View {
     /// V2.0.1：文件夹的列表形式（默认）。V2.0.2：移除顶部的新建文件夹 Cell。
     private var folderList: some View {
         VStack(spacing: 8) {
+            if library.rootFolders.isEmpty {
+                // V3.4：根目录一个文件夹都没有时给个引导，指向上右角的新建按钮
+                EmptyStateView(
+                    symbol: "folder.badge.plus",
+                    title: "还没有文件夹",
+                    message: "点击右上角，新建文件夹就会出现在这里。"
+                )
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                )
+            }
+
             ForEach(library.rootFolders) { folder in
                 NavigationLink {
                     FolderDetailView(folder: folder)
@@ -280,7 +293,7 @@ struct LibraryView: View {
                 SectionHeader(
                     title: "视频",
                     subtitle: rootVideos.isEmpty
-                        ? "导入的视频会落在根目录，可再移动进文件夹"
+                        ? "导入的视频可再移动进文件夹"
                         : "\(rootVideos.count) 个 · \(rootVideos.reduce(Int64(0)) { $0 + $1.fileSize }.fileSizeText)"
                 )
                 Spacer()
@@ -290,7 +303,7 @@ struct LibraryView: View {
                 EmptyStateView(
                     symbol: "film",
                     title: "根目录还没有视频",
-                    message: "点右上角相册图标导入，视频会直接放在根目录；需要归档时用「移动到文件夹」。"
+                    message: "点右上角相册图标导入，视频就会出现在这里。"
                 )
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
