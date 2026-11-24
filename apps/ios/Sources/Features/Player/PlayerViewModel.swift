@@ -69,6 +69,9 @@ final class PlayerViewModel: ObservableObject {
         duration = max(item.duration, 0.01)
         player = AVPlayer(url: item.fileURL)
         observe()
+        // V3.2.1：进来就是播放态（不等 .task 里的异步准备）
+        player.playImmediately(atRate: 1)
+        isPlaying = true
     }
 
     deinit {

@@ -61,8 +61,25 @@ struct VideoPlayerView: View {
         .statusBarHidden()
         // 生命周期挂在最外层：切横竖屏只是换布局分支，不能触发 onDisappear，
         // 否则会立刻把横屏状态清掉（表现为点一下横屏马上弹回竖屏）。
-        .onAppear { scheduleAutoHide() }
+        .onAppear {
+            // V3.2.1：暂停态控制层常驻，只有播放中才 3 秒自动隐藏
+            scheduleAutoHide()
+        }
         .onDisappear { autoHideTask?.cancel() }
+        .onChange(of: viewModel.isPlaying) { playing in
+            // V3.2.1：暂停 → 计时取消并确保控件可见；继续播放 → 重新开始 3 秒计时
+            if playing {
+                scheduleAutoHide()
+            } else {
+                autoHideTask?.cancel()
+                if !controlsVisible {
+                    withAnimation(.easeInOut(duration: 0.22)) { controlsVisible = true }
+                }
+                if isLocked, !lockUIvisible {
+                    withAnimation(.easeInOut(duration: 0.22)) { lockUIvisible = true }
+                }
+            }
+        }
         .onChange(of: showRateSheet) { isShowing in
             if isShowing {
                 autoHideTask?.cancel()
@@ -84,6 +101,8 @@ struct VideoPlayerView: View {
             await viewModel.reloadDuration()
             brightness = Double(UIScreen.main.brightness)
             await volume.refreshWhenReady()
+            // V3.2.1：从列表进来默认直接播放（以前是暂停等用户点）
+            if !viewModel.isPlaying { viewModel.play() }
         }
         .confirmationDialog("更多", isPresented: $showMoreMenu, titleVisibility: .visible) {
             Button("剪辑") {
@@ -316,7 +335,8 @@ struct VideoPlayerView: View {
         }
         .padding(.horizontal, 18)
         .padding(.top, 14)
-        .padding(.bottom, 20)
+        // V3.2.1：整块控制区上移（30 + 15 = 45pt）
+        .padding(.bottom, 65)
         .background(
             LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .top, endPoint: .bottom)
         )
@@ -334,7 +354,7 @@ struct VideoPlayerView: View {
 
     /// 每次操作都重置 3 秒计时；控制层隐藏时不重置（点一下才唤回）。
     private func bumpActivity() {
-        guard controlsVisible, !isLocked else { return }
+        guard controlsVisible, !isLocked, viewModel.isPlaying else { return }
         scheduleAutoHide()
     }
 
@@ -344,9 +364,11 @@ struct VideoPlayerView: View {
 
     private func scheduleAutoHide() {
         autoHideTask?.cancel()
+        // 暂停时按钮常驻，不排自动隐藏
+        guard viewModel.isPlaying, controlsVisible, !isLocked else { return }
         autoHideTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, viewModel.isPlaying else { return }
             withAnimation(.easeInOut(duration: 0.22)) {
                 controlsVisible = false
             }
@@ -356,9 +378,10 @@ struct VideoPlayerView: View {
     /// V2.5：锁模式下只有锁按钮和进度条，3 秒无操作一起淡出。
     private func scheduleLockAutoHide() {
         autoHideTask?.cancel()
+        guard viewModel.isPlaying, lockUIvisible else { return }
         autoHideTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, viewModel.isPlaying else { return }
             withAnimation(.easeInOut(duration: 0.22)) {
                 lockUIvisible = false
             }
@@ -436,7 +459,8 @@ struct VideoPlayerView: View {
         .frame(height: sideColumnHeight, alignment: .top)
         .contentShape(Rectangle())
         .gesture(sideDrag(side))
-        .allowsHitTesting(!isLocked)
+        // V3.2.1：控制层隐藏 / 锁定时，两侧不再接管手势，滑动只负责把控件唤回
+        .allowsHitTesting(!isLocked && controlsVisible)
         .accessibilityLabel(side.title)
         .accessibilityValue("\(Int(value * 100))%")
     }
@@ -477,7 +501,12 @@ struct VideoPlayerView: View {
     private func sideDrag(_ side: Side) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { drag in
+                // V3.2.1：控件没显示时不准动亮度/音量，避免"看不见却在调"
+                guard controlsVisible, !isLocked else { return }
                 if dragStartValue == nil {
+                    // V3.2.1：只接竖直方向的滑动；横向划屏（想翻页/随便滑）不弹滑杆
+                    let t = drag.translation
+                    guard abs(t.height) > abs(t.width), abs(t.height) > 4 else { return }
                     dragStartValue = sideValue(side)
                     activeSide = side
                 }

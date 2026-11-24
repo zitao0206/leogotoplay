@@ -107,7 +107,7 @@ struct VideoEditorView: View {
         }
     }
 
-    // MARK: - 顶栏（只有关闭、画面比例、导出）
+    // MARK: - 顶栏（只有关闭、导出）
 
     private var header: some View {
         HStack(spacing: 12) {
@@ -124,18 +124,7 @@ struct VideoEditorView: View {
 
             Spacer()
 
-            Button {
-                viewModel.isAspectFill.toggle()
-            } label: {
-                Image(systemName: viewModel.isAspectFill
-                      ? "rectangle.arrowtriangle.2.outward"
-                      : "rectangle.arrowtriangle.2.inward")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.8))
-                    .frame(width: 34, height: 34)
-                    .background(.white.opacity(0.12), in: Circle())
-            }
-
+            // V3.2.1：顶栏只留关闭 + 导出，画面比例按钮去掉
             Button {
                 viewModel.pause()
                 showExportOptions = true

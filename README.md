@@ -19,6 +19,13 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - 文件夹内页不再显示统计卡，进目录直接看子文件夹与视频。
 - 搜索时（关键词非空）首页也不显示统计卡，页面直接呈现「搜索结果」，避免搜索时还占着顶部统计的空间。
 
+### V3.2.1 · 播放页控制层
+
+- 暂停态控制层常驻：`scheduleAutoHide` / `scheduleLockAutoHide` / `bumpActivity` 都先判断 `viewModel.isPlaying`，不播就不排 3 秒计时；新增 `.onChange(of: viewModel.isPlaying)`，暂停时取消计时并把控件（含锁模式按钮）重新显示出来，继续播放时才重新开始 3 秒倒计时。计时任务醒来后也会再查一次播放状态，避免暂停瞬间被旧计时误关。
+- 从列表进入播放页默认直接播放：`PlayerViewModel.init` 里 `playImmediately(atRate: 1)` + `isPlaying = true`（以前是建好 `AVPlayer` 停在暂停态，等用户点播放），页面 `.task` 里再兜一次 `play()`。
+- 两侧亮度 / 音量手势收紧：只在控制层可见时生效（`.allowsHitTesting(!isLocked && controlsVisible)`，`sideDrag` 里再 `guard controlsVisible`），并且必须先判定为竖直方向（`|Δy| > |Δx|` 且 > 4pt）才进入调整，横向划屏不再弹滑杆、不再误改亮度。
+- 底部控制区整体上移 45pt：`bottomPanel` 的 `.padding(.bottom)` 20 → 50 → 65（两次分别上移 30pt、15pt）。
+
 ### V3.3 · 剪辑页交互打磨
 
 - 时间轴改成「固定居中播放头 + 胶片可平移」：白色播放头固定在正中，胶片按 `stripX = width/2 - (成片时间/总时长)*width` 平移，两侧各留半个屏幕的滑动余量，滑空的区域铺淡色空轨道。拖动 = 平移 + 同步 scrub，松手保持位置不回弹（位移 < 6pt 的轻点才把被点时间送到播放头位置）。
