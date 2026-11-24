@@ -92,6 +92,11 @@ struct LibraryView: View {
                let first = library.videos.first {
                 route = .player(first)
             }
+            if UserDefaults.standard.bool(forKey: "openEditorFirst"),
+               case .none = route,
+               let first = library.videos.first {
+                route = .editor(.library(first))
+            }
             #endif
         }
         .toast($toastMessage)
