@@ -193,22 +193,9 @@ final class EditorViewModel: ObservableObject {
 
     // MARK: - 草稿
 
-    /// 只动过播放头不算「改过」，避免只是预览一下就留下草稿
-    var hasDraftWorthyEdits: Bool {
-        guard let first = clips.first else { return false }
-        if clips.count > 1 { return true }
-        if abs(first.start) > 0.01 || abs(first.end - duration) > 0.01 { return true }
-        if abs(first.speed - 1) > 0.01 || abs(first.volume - 1) > 0.01 { return true }
-        return false
-    }
-
-    /// 离开剪辑页时调用：改过就存草稿，退回原始状态就把旧草稿清掉
+    /// 离开剪辑页时调用：只要打开过就存成草稿（V3.6 起「最近编辑」里一律是草稿，不再区分改没改过）
     func saveDraft() {
-        guard let item = source.libraryItem else { return }
-        guard hasDraftWorthyEdits else {
-            EditorDraftStore.clear(for: item)
-            return
-        }
+        guard let item = source.libraryItem, duration > 0.1, !clips.isEmpty else { return }
         let data = clips.map {
             EditorDraft.ClipData(start: $0.start, end: $0.end, speed: $0.speed, volume: $0.volume)
         }

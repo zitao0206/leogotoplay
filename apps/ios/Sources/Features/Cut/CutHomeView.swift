@@ -26,6 +26,8 @@ struct CutHomeView: View {
     @State private var faceMaskRequest: FaceMaskRequest?
     /// 丢弃草稿后让「最近编辑」重新读一遍草稿状态
     @State private var draftRevision = 0
+    /// 最近编辑里待删除的视频
+    @State private var pendingDeleteVideo: VideoItem?
 
     var body: some View {
         ScrollView {
@@ -38,6 +40,27 @@ struct CutHomeView: View {
             .padding(.vertical, 12)
         }
         .background(Color(uiColor: .systemGroupedBackground))
+        .confirmationDialog(
+            pendingDeleteVideo.map { "删除「\($0.title)」？" } ?? "删除视频？",
+            isPresented: Binding(
+                get: { pendingDeleteVideo != nil },
+                set: { if !$0 { pendingDeleteVideo = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("删除视频", role: .destructive) {
+                if let item = pendingDeleteVideo {
+                    EditorDraftStore.clear(for: item)
+                    library.deleteVideo(item.id)
+                    draftRevision += 1
+                    toastMessage = "视频已删除"
+                }
+                pendingDeleteVideo = nil
+            }
+            Button("取消", role: .cancel) { pendingDeleteVideo = nil }
+        } message: {
+            Text("会连同素材库里的文件、缩略图和草稿一起删掉，相册里的原片不受影响。")
+        }
         #if DEBUG
         .onAppear {
             // 截图钩子：直接打开「一键提取文字」，并带一个素材库视频进去
@@ -56,6 +79,10 @@ struct CutHomeView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     faceMaskRequest = FaceMaskRequest(url: testURL)
                 }
+            }
+            // 截图钩子：直接弹「删除视频」确认框（取消即可，不会真删）
+            if UserDefaults.standard.bool(forKey: "cutDeleteDialog") {
+                pendingDeleteVideo = library.recentVideos.first
             }
             // 截图钩子：直接打开「一键人脸打码」
             if UserDefaults.standard.bool(forKey: "openFaceMask") {
@@ -243,48 +270,43 @@ struct CutHomeView: View {
         }
     }
 
-    /// 最近编辑里的一张卡：有草稿就带「草稿」角标，点开还原上次现场
+    /// 最近编辑里的一张卡：一律按草稿处理，角标写草稿的成片时长（还没打开过的按原片时长）
     private func recentCard(_ item: VideoItem) -> some View {
         let draft = EditorDraftStore.draft(for: item)
+        let badgeDuration = draft?.outputDuration ?? item.duration
         return Button {
-            // 有草稿的话，编辑器载入时会自动还原；没有就从完整片段重新开始
+            // 编辑器载入时会自动还原上次的现场；没打开过的从完整片段开始
             editorSource = .library(item)
         } label: {
             VideoCard(item: item)
                 .frame(width: 148)
                 .overlay(alignment: .topTrailing) {
-                    if let draft {
-                        HStack(spacing: 3) {
-                            Image(systemName: "square.and.pencil")
-                                .font(.system(size: 9, weight: .bold))
-                            Text("草稿")
-                                .font(.caption2.weight(.bold))
-                            Text(EditorViewModel.durationLabel(draft.outputDuration))
-                                .font(.caption2.monospacedDigit())
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 4)
-                        .background(Theme.accent, in: Capsule())
-                        .padding(6)
+                    HStack(spacing: 3) {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 9, weight: .bold))
+                        Text("草稿")
+                            .font(.caption2.weight(.bold))
+                        Text(badgeDuration.timecode)
+                            .font(.caption2.monospacedDigit())
                     }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(Theme.accent, in: Capsule())
+                    .padding(6)
                 }
         }
         .buttonStyle(.plain)
         .contextMenu {
-            if draft != nil {
-                Button {
-                    editorSource = .library(item)
-                } label: {
-                    Label("继续编辑草稿", systemImage: "arrow.uturn.backward")
-                }
-                Button(role: .destructive) {
-                    EditorDraftStore.clear(for: item)
-                    draftRevision += 1
-                    toastMessage = "已丢弃草稿"
-                } label: {
-                    Label("丢弃草稿", systemImage: "trash")
-                }
+            Button {
+                editorSource = .library(item)
+            } label: {
+                Label("编辑", systemImage: "scissors")
+            }
+            Button(role: .destructive) {
+                pendingDeleteVideo = item
+            } label: {
+                Label("删除", systemImage: "trash")
             }
         }
     }
