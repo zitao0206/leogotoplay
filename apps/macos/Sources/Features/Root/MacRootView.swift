@@ -2,6 +2,7 @@ import SwiftUI
 import LeogotoPlayCore
 
 /// 侧栏分区：对应 iOS 的三个 Tab（Cut / List / Mine），桌面端以侧栏 + 主区域呈现。
+/// V1.0：导航条目统一按 Cut / List / Mine 命名（与 iOS Tab 同名），侧栏底部不再显示登录状态。
 enum MacSection: String, CaseIterable, Identifiable {
     case cut
     case library
@@ -11,17 +12,17 @@ enum MacSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .cut: return "剪辑台"
-        case .library: return "素材库"
-        case .mine: return "我的"
+        case .cut: return "Cut"
+        case .library: return "List"
+        case .mine: return "Mine"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .cut: return "Cut"
-        case .library: return "List"
-        case .mine: return "Mine"
+        case .cut: return "剪辑台"
+        case .library: return "素材库"
+        case .mine: return "我的"
         }
     }
 
@@ -36,7 +37,6 @@ enum MacSection: String, CaseIterable, Identifiable {
 
 struct MacRootView: View {
     @EnvironmentObject private var library: LibraryStore
-    @EnvironmentObject private var auth: AuthStore
 
     @State private var selection: MacSection? = MacRootView.initialSection()
 
@@ -77,16 +77,13 @@ struct MacRootView: View {
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: MacTheme.sidebarWidth, max: 260)
             .safeAreaInset(edge: .bottom) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(auth.displayName)
-                        .font(.caption.weight(.semibold))
-                    Text("\(library.videos.count) 个视频 · \(library.totalSize.fileSizeText)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                // V1.0：这里原来显示账号名（登录状态），已去掉，只留素材库统计。
+                Text("\(library.videos.count) 个视频 · \(library.totalSize.fileSizeText)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
             }
         } detail: {
             detail

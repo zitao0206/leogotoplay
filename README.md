@@ -9,7 +9,14 @@
 3. **基础剪辑**：相簿 / 素材库视频 → 裁剪（时间轴双手柄）、静音 → 存回相簿或存入素材库，也可导出到用户指定的位置
 4. **账号体系**：登录 / 注册 / 登录态持久化（本地演示实现，接口已抽象，方便接后端）
 
-iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，可增删改序；macOS 用侧栏对应 `剪辑台 / 素材库 / 我的` 三个入口。
+iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，可增删改序；macOS 用侧栏对应同样三个入口。
+
+### Mac-V1.0 · 整体页面结构
+
+- 首页沿用 `NavigationSplitView` 侧栏 + 主区域，两侧分工不变，只把三个入口统一成 iOS 的命名：`Cut` / `List` / `Mine`，中文名（剪辑台 / 素材库 / 我的）降为副标题，默认仍落在 `List`。Debug 的 `-startSection cut|library|mine` 深链照旧可用。
+- 侧栏底部原来显示当前账号（`AuthStore.displayName`），属于「登录状态」，本次整块去掉，只留一行素材库统计「N 个视频 · 占用空间」；`MacRootView` 不再需要 `AuthStore` 环境对象。
+- `Mine` 页里的账号卡（登录 / 注册 / 退出登录）原样保留，账号能力没动，只是不把登录状态摊在首页。
+- 顺手把 `MacEditorView` 里 `Button("重置区间", action: model.resetTrim)` 的告警（`@MainActor` 方法转 `() -> Void` 丢隔离）改成闭包调用，macOS 目标 clean build 0 warning。
 
 ### V1.0.4 · List 页收敛
 

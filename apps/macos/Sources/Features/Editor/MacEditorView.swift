@@ -296,7 +296,7 @@ struct MacEditorView: View {
                         labeledValue("起点", model.trimStart.timecode)
                         labeledValue("终点", model.trimEnd.timecode)
                         labeledValue("时长", model.selectedDuration.timecode)
-                        Button("重置区间", action: model.resetTrim)
+                        Button("重置区间") { model.resetTrim() }
                             .buttonStyle(.link)
                     }
                 }
