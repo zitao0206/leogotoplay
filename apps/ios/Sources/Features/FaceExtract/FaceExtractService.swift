@@ -39,8 +39,9 @@ enum FaceExtractError: LocalizedError {
 
 enum FaceExtractor {
 
-    /// 每秒抽 3 帧做检测：再密就只是重复同一张脸，再稀容易漏掉一闪而过的人。
-    static let samplesPerSecond: Double = 3
+    /// 取帧间隔（秒）：1 秒取 1 帧是最细的一档，最粗 10 秒取 1 帧。
+    static let frameIntervalRange: ClosedRange<Double> = 1...10
+    static let defaultFrameInterval: Double = 1
     /// 结果上限，避免几十号人的长视频生成上百张图
     static let maxFaces = 80
     /// 人脸最短边小于这个像素就丢掉（画面里的小路人脸裁出来也没用）
@@ -51,12 +52,14 @@ enum FaceExtractor {
         let duration: Double
         let frames: Int
         let seconds: Double
+        let interval: Double
 
-        /// 弹框第一行：「视频 00:08 · 抽检 24 帧」
+        /// 弹框第一行：「视频 00:08 · 每 1 秒 1 帧 · 8 帧」
         var summary: String {
-            duration > 0
-                ? "视频 \(duration.timecode) · 抽检 \(frames) 帧"
-                : "抽检 \(frames) 帧"
+            let intervalText = "每 \(Int(interval)) 秒 1 帧"
+            return duration > 0
+                ? "视频 \(duration.timecode) · \(intervalText) · \(frames) 帧"
+                : "\(intervalText) · \(frames) 帧"
         }
 
         /// 「约 6 秒」
@@ -67,14 +70,15 @@ enum FaceExtractor {
     private static let fallbackSecondsPerFrame: Double = 0.06
 
     /// 真正动手前先用中间帧实测一次检测耗时，按本机速度（模拟器 / 真机差好几倍）折算整段耗时。
-    static func estimate(url: URL) async -> Estimate {
+    static func estimate(url: URL, frameInterval: Double = defaultFrameInterval) async -> Estimate {
+        let interval = clamp(frameInterval, 1, 10)
         let asset = AVURLAsset(url: url)
         let duration = (try? await asset.load(.duration).seconds) ?? 0
-        let frames = max(1, Int((duration * samplesPerSecond).rounded(.up)))
+        let frames = max(1, Int((duration / interval).rounded(.up)))
         let perFrame = (await probeSecondsPerFrame(url: url)) ?? fallbackSecondsPerFrame
         // 每帧还要解码摆正；检测到的脸再做裁切，乘 1.25 兜这部分
         let seconds = clamp(1.0 + Double(frames) * perFrame * 1.25, 2, 900)
-        return Estimate(duration: duration, frames: frames, seconds: seconds)
+        return Estimate(duration: duration, frames: frames, seconds: seconds, interval: interval)
     }
 
     static func estimateLabel(_ seconds: Double) -> String {
@@ -143,6 +147,7 @@ enum FaceExtractor {
 
     static func run(
         url: URL,
+        frameInterval: Double = defaultFrameInterval,
         onProgress: @escaping (Double) -> Void
     ) async throws -> FaceExtractResult {
         let asset = AVURLAsset(url: url)
@@ -173,6 +178,7 @@ enum FaceExtractor {
             throw FaceExtractError.readerFailed(reader.error?.localizedDescription ?? "无法开始读取")
         }
 
+        let interval = clamp(frameInterval, 1, 10)
         let context = CIContext(options: [.cacheIntermediates: false])
         let detector = Detector()
         // 检测在 720 长边上跑：全分辨率只用来裁图，检测快了精度也够
@@ -189,7 +195,7 @@ enum FaceExtractor {
             }
             guard let pixelBuffer = CMSampleBufferGetImageBuffer(sample) else { continue }
             let pts = CMSampleBufferGetPresentationTimeStamp(sample).seconds
-            if lastSample >= 0, pts - lastSample < (1 / samplesPerSecond) - 0.001 { continue }
+            if lastSample >= 0, pts - lastSample < interval - 0.001 { continue }
             lastSample = pts
 
             try autoreleasepool {
@@ -422,5 +428,21 @@ private extension CGAffineTransform {
         let angle = atan2(b, a)
         let degrees = Int((angle * 180 / .pi).rounded())
         return abs(degrees) == 90 || abs(degrees) == 270
+    }
+}
+
+enum FaceExtractPrefs {
+    private static let intervalKey = "face.extract.interval"
+
+    /// 取帧间隔（秒），限制在 1…10
+    static var frameInterval: Double {
+        get {
+            let stored = UserDefaults.standard.double(forKey: intervalKey)
+            guard stored > 0 else { return FaceExtractor.defaultFrameInterval }
+            return min(max(stored, 1), 10)
+        }
+        set {
+            UserDefaults.standard.set(min(max(newValue, 1), 10), forKey: intervalKey)
+        }
     }
 }

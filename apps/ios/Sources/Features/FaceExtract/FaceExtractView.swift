@@ -19,6 +19,7 @@ struct FaceExtractView: View {
     @State private var isPreparing = false
     @State private var showConfirm = false
     @State private var estimate: FaceExtractor.Estimate?
+    @State private var frameInterval: Double = FaceExtractPrefs.frameInterval
     @State private var isProcessing = false
     @State private var progress: Double = 0
     @State private var result: FaceExtractResult?
@@ -63,6 +64,7 @@ struct FaceExtractView: View {
             ScrollView {
                 VStack(spacing: 20) {
                     introCard
+                    intervalCard
                     addCard
                     noteCard
                 }
@@ -76,6 +78,10 @@ struct FaceExtractView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") { dismiss() }
                 }
+            }
+            .onChange(of: frameInterval) { value in
+                saveInterval(value)
+                FaceExtractPrefs.frameInterval = value
             }
             .onChange(of: photoItem) { item in
                 guard let item else { return }
@@ -114,7 +120,7 @@ struct FaceExtractView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                bullet("每秒抽 3 帧扫完整段视频，同一张脸只留最清楚的一张")
+                bullet("按设定的取帧间隔扫完整段视频，同一张脸只留最清楚的一张")
                 bullet("按 3:4 竖图裁切，自带一点额头和头发，可以直接当头像用")
                 bullet("全程在本机处理，原视频不动，也不会上传")
             }
@@ -138,6 +144,48 @@ struct FaceExtractView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var intervalCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Label("取帧间隔", systemImage: "speedometer")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("每 \(Int(frameInterval)) 秒 1 帧")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.accent)
+                    .monospacedDigit()
+            }
+
+            Slider(value: $frameInterval, in: 1...10, step: 1)
+                .tint(Theme.accent)
+                .disabled(isPreparing || isProcessing)
+
+            HStack {
+                Text("1 秒（最细）")
+                Spacer()
+                Text("10 秒（最省）")
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+
+            Text("1 秒取 1 帧最不容易漏掉人脸，耗时也最长；往后每加 1 秒，抽检帧数和耗时约少一成，一闪而过的脸就更容易漏。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(uiColor: .secondarySystemGroupedBackground))
+        )
+    }
+
+    private func saveInterval(_ value: Double) {
+        frameInterval = min(max(value.rounded(), 1), 10)
     }
 
     private var addCard: some View {
@@ -461,7 +509,7 @@ struct FaceExtractView: View {
         cleanupTemp()
         tempURL = url
         // 先在本机实测一帧的检测速度，再折算整段耗时（模拟器和真机差好几倍）
-        let measured = await FaceExtractor.estimate(url: url)
+        let measured = await FaceExtractor.estimate(url: url, frameInterval: frameInterval)
         estimate = measured
         if autoStart {
             start()
@@ -480,7 +528,7 @@ struct FaceExtractView: View {
 
         taskBox.task = Task {
             do {
-                let res = try await FaceExtractor.run(url: url) { value in
+                let res = try await FaceExtractor.run(url: url, frameInterval: frameInterval) { value in
                     Task { @MainActor in
                         progress = value
                     }
