@@ -46,8 +46,35 @@ enum FaceExtractor {
     /// 人脸最短边小于这个像素就丢掉（画面里的小路人脸裁出来也没用）
     private static let minFacePixels: CGFloat = 48
 
-    static func estimate(duration: Double) -> Double {
-        1.2 + duration * 0.16
+    /// 估时结果：视频时长、要抽检的帧数、预估耗时
+    struct Estimate {
+        let duration: Double
+        let frames: Int
+        let seconds: Double
+
+        /// 弹框第一行：「视频 00:08 · 抽检 24 帧」
+        var summary: String {
+            duration > 0
+                ? "视频 \(duration.timecode) · 抽检 \(frames) 帧"
+                : "抽检 \(frames) 帧"
+        }
+
+        /// 「约 6 秒」
+        var durationLabel: String { FaceExtractor.estimateLabel(seconds) }
+    }
+
+    /// 拿不到实测速度时的兜底：每帧 60ms（真机 Vision 的真实量级）
+    private static let fallbackSecondsPerFrame: Double = 0.06
+
+    /// 真正动手前先用中间帧实测一次检测耗时，按本机速度（模拟器 / 真机差好几倍）折算整段耗时。
+    static func estimate(url: URL) async -> Estimate {
+        let asset = AVURLAsset(url: url)
+        let duration = (try? await asset.load(.duration).seconds) ?? 0
+        let frames = max(1, Int((duration * samplesPerSecond).rounded(.up)))
+        let perFrame = (await probeSecondsPerFrame(url: url)) ?? fallbackSecondsPerFrame
+        // 每帧还要解码摆正；检测到的脸再做裁切，乘 1.25 兜这部分
+        let seconds = clamp(1.0 + Double(frames) * perFrame * 1.25, 2, 900)
+        return Estimate(duration: duration, frames: frames, seconds: seconds)
     }
 
     static func estimateLabel(_ seconds: Double) -> String {
@@ -56,6 +83,62 @@ enum FaceExtractor {
         let rest = Int(seconds) % 60
         if rest == 0 { return "约 \(minutes) 分钟" }
         return "约 \(minutes) 分 \(rest) 秒"
+    }
+
+    /// 从视频中间取两帧跑检测并计时：第一帧含模型初始化，取第二帧的耗时当每帧成本。
+    private static func probeSecondsPerFrame(url: URL) async -> Double? {
+        let asset = AVURLAsset(url: url)
+        guard let track = asset.tracks(withMediaType: .video).first else { return nil }
+        let duration = (try? await asset.load(.duration).seconds) ?? 0
+        let transform = track.preferredTransform
+        let naturalSize = track.naturalSize
+        let size = transform.isQuarterTurn
+            ? CGSize(width: naturalSize.height, height: naturalSize.width)
+            : naturalSize
+        guard size.width > 1, size.height > 1 else { return nil }
+        guard let reader = try? AVAssetReader(asset: asset) else { return nil }
+
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ])
+        output.alwaysCopiesSampleData = false
+        guard reader.canAdd(output) else { return nil }
+        reader.add(output)
+
+        let start = clamp(duration / 2, 0, max(duration - 0.3, 0))
+        reader.timeRange = CMTimeRange(
+            start: CMTime(seconds: start, preferredTimescale: 600),
+            duration: CMTime(seconds: 0.5, preferredTimescale: 600)
+        )
+        guard reader.startReading() else { return nil }
+        defer { reader.cancelReading() }
+
+        let detector = Detector()
+        let scale = min(1, 720 / max(size.width, size.height))
+        var timings: [Double] = []
+
+        while timings.count < 3, let sample = output.copyNextSampleBuffer() {
+            guard let pixelBuffer = CMSampleBufferGetImageBuffer(sample) else { continue }
+            let image = orientedImage(pixelBuffer, transform: transform, size: size)
+            let detectionImage = scale < 1
+                ? image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+                : image
+            let began = CACurrentMediaTime()
+            _ = detector.detect(in: detectionImage)
+            timings.append(CACurrentMediaTime() - began)
+        }
+
+        guard let last = timings.last, last > 0 else { return nil }
+        // 第一帧含模型初始化，丢掉；后面几帧取平均，避免单帧抖动把估时带偏
+        let settled = timings.dropFirst()
+        let perFrame = settled.isEmpty
+            ? last / 2
+            : settled.reduce(0, +) / Double(settled.count)
+        return clamp(perFrame, 0.005, 2)
+    }
+
+    private static func clamp(_ value: Double, _ low: Double, _ high: Double) -> Double {
+        min(max(value, low), high)
     }
 
     static func run(

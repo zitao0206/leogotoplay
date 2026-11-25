@@ -16,10 +16,9 @@ struct FaceExtractView: View {
 
     @State private var photoItem: PhotosPickerItem?
     @State private var tempURL: URL?
-    @State private var sourceDuration: Double = 0
     @State private var isPreparing = false
     @State private var showConfirm = false
-    @State private var estimateLabel = ""
+    @State private var estimate: FaceExtractor.Estimate?
     @State private var isProcessing = false
     @State private var progress: Double = 0
     @State private var result: FaceExtractResult?
@@ -45,6 +44,9 @@ struct FaceExtractView: View {
             }
             if isProcessing {
                 processingMask
+            }
+            if showConfirm {
+                confirmOverlay
             }
         }
         .modifier(SheetBackground(isDark: isProcessing))
@@ -80,12 +82,6 @@ struct FaceExtractView: View {
                 Task { await prepare(item) }
             }
             .onAppear { debugAutoRunIfNeeded() }
-            .alert("开始提取？", isPresented: $showConfirm) {
-                Button("开始提取") { Task { @MainActor in start() } }
-                Button("取消", role: .cancel) { cleanupTemp() }
-            } message: {
-                Text("预计需要\(estimateLabel)。处理期间请不要锁屏或切换 App，否则会中断。")
-            }
             .alert("提取失败", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
@@ -192,6 +188,77 @@ struct FaceExtractView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Color(uiColor: .secondarySystemGroupedBackground))
         )
+    }
+
+    /// 开始前的确认卡片：把预估耗时放大、上主色，突出到一眼能看到
+    private var confirmOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture {}
+
+            VStack(spacing: 14) {
+                Text("开始提取人脸？")
+                    .font(.headline)
+
+                Text(estimate?.summary ?? "正在评估耗时…")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                VStack(spacing: 2) {
+                    Text("按本机速度预计需要")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(estimate?.durationLabel ?? "几秒")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                        .monospacedDigit()
+                }
+                .frame(maxWidth: .infinity)
+
+                HStack(spacing: 10) {
+                    Button {
+                        showConfirm = false
+                        cleanupTemp()
+                    } label: {
+                        Text("取消")
+                            .font(.subheadline.weight(.medium))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(
+                                Color(uiColor: .tertiarySystemFill),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        showConfirm = false
+                        Task { @MainActor in start() }
+                    } label: {
+                        Text("开始提取")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(
+                                Theme.accent,
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(20)
+            .frame(maxWidth: 320)
+            .background(
+                Color(uiColor: .secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+            )
+            .shadow(color: .black.opacity(0.18), radius: 26, y: 10)
+            .padding(.horizontal, 30)
+        }
     }
 
     // MARK: - 处理蒙版
@@ -393,9 +460,9 @@ struct FaceExtractView: View {
     private func configure(url: URL, autoStart: Bool = false) async {
         cleanupTemp()
         tempURL = url
-        let asset = AVURLAsset(url: url)
-        sourceDuration = (try? await asset.load(.duration).seconds) ?? 0
-        estimateLabel = FaceExtractor.estimateLabel(FaceExtractor.estimate(duration: sourceDuration))
+        // 先在本机实测一帧的检测速度，再折算整段耗时（模拟器和真机差好几倍）
+        let measured = await FaceExtractor.estimate(url: url)
+        estimate = measured
         if autoStart {
             start()
         } else {
