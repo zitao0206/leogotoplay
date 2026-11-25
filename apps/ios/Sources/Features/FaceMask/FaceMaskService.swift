@@ -98,17 +98,17 @@ enum FaceMasker {
         onProgress: @escaping (Double) -> Void
     ) async throws -> FaceMaskResult {
         let asset = AVURLAsset(url: url)
-        guard let videoTrack = asset.tracks(withMediaType: .video).first else {
+        guard let videoTrack = (try? await asset.loadTracks(withMediaType: .video))?.first else {
             throw FaceMaskError.noVideoTrack
         }
 
         let duration = (try? await asset.load(.duration).seconds) ?? 0
-        let transform = videoTrack.preferredTransform
-        let naturalSize = videoTrack.naturalSize
+        let transform = (try? await videoTrack.load(.preferredTransform)) ?? .identity
+        let naturalSize = (try? await videoTrack.load(.naturalSize)) ?? .zero
         let orientedSize = transform.isQuarterTurn
             ? CGSize(width: naturalSize.height, height: naturalSize.width)
             : naturalSize
-        let nominalFPS = max(videoTrack.nominalFrameRate, 1)
+        let nominalFPS = max((try? await videoTrack.load(.nominalFrameRate)) ?? 0, 1)
         let totalFrames = max(Int((duration * Double(nominalFPS)).rounded()), 1)
 
         // 读：视频逐帧 BGRA，音频直接透传
@@ -123,7 +123,7 @@ enum FaceMasker {
         }
         reader.add(videoOutput)
 
-        let audioTrack = asset.tracks(withMediaType: .audio).first
+        let audioTrack = (try? await asset.loadTracks(withMediaType: .audio))?.first
         var audioOutput: AVAssetReaderTrackOutput?
         if let audioTrack {
             let output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: nil)
@@ -166,7 +166,7 @@ enum FaceMasker {
         writer.add(videoInput)
 
         var audioInput: AVAssetWriterInput?
-        if let audioTrack, audioOutput != nil {
+        if audioOutput != nil {
             let input = AVAssetWriterInput(mediaType: .audio, outputSettings: nil)
             input.expectsMediaDataInRealTime = false
             if writer.canAdd(input) {

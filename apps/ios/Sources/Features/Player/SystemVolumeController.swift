@@ -35,7 +35,6 @@ final class SystemVolumeController: ObservableObject {
 
     init() {
         volumeView = MPVolumeView(frame: CGRect(x: 0, y: 0, width: 240, height: 44))
-        volumeView.showsRouteButton = false
         volumeView.showsVolumeSlider = true
         volumeView.alpha = 0.01
     }

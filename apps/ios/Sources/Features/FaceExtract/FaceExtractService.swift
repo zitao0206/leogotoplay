@@ -92,14 +92,11 @@ enum FaceExtractor {
     /// 从视频中间取两帧跑检测并计时：第一帧含模型初始化，取第二帧的耗时当每帧成本。
     private static func probeSecondsPerFrame(url: URL) async -> Double? {
         let asset = AVURLAsset(url: url)
-        guard let track = asset.tracks(withMediaType: .video).first else { return nil }
+        guard let geometry = await videoGeometry(of: asset) else { return nil }
+        let track = geometry.track
+        let transform = geometry.transform
+        let size = geometry.size
         let duration = (try? await asset.load(.duration).seconds) ?? 0
-        let transform = track.preferredTransform
-        let naturalSize = track.naturalSize
-        let size = transform.isQuarterTurn
-            ? CGSize(width: naturalSize.height, height: naturalSize.width)
-            : naturalSize
-        guard size.width > 1, size.height > 1 else { return nil }
         guard let reader = try? AVAssetReader(asset: asset) else { return nil }
 
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
@@ -145,25 +142,39 @@ enum FaceExtractor {
         min(max(value, low), high)
     }
 
+    private struct VideoGeometry {
+        let track: AVAssetTrack
+        let transform: CGAffineTransform
+        /// 摆正之后（rotation 已换算进去）的画面尺寸
+        let size: CGSize
+    }
+
+    /// 统一用 iOS 16 的异步 load 接口取轨道 / 方向 / 尺寸，避免同步弃用 API 的告警
+    private static func videoGeometry(of asset: AVURLAsset) async -> VideoGeometry? {
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first else { return nil }
+        let transform = (try? await track.load(.preferredTransform)) ?? .identity
+        let naturalSize = (try? await track.load(.naturalSize)) ?? .zero
+        guard naturalSize.width > 1, naturalSize.height > 1 else { return nil }
+        let size = transform.isQuarterTurn
+            ? CGSize(width: naturalSize.height, height: naturalSize.width)
+            : naturalSize
+        guard size.width > 1, size.height > 1 else { return nil }
+        return VideoGeometry(track: track, transform: transform, size: size)
+    }
+
     static func run(
         url: URL,
         frameInterval: Double = defaultFrameInterval,
         onProgress: @escaping (Double) -> Void
     ) async throws -> FaceExtractResult {
         let asset = AVURLAsset(url: url)
-        guard let videoTrack = asset.tracks(withMediaType: .video).first else {
+        guard let geometry = await videoGeometry(of: asset) else {
             throw FaceExtractError.noVideoTrack
         }
-
+        let videoTrack = geometry.track
+        let transform = geometry.transform
+        let orientedSize = geometry.size
         let duration = (try? await asset.load(.duration).seconds) ?? 0
-        let transform = videoTrack.preferredTransform
-        let naturalSize = videoTrack.naturalSize
-        let orientedSize = transform.isQuarterTurn
-            ? CGSize(width: naturalSize.height, height: naturalSize.width)
-            : naturalSize
-        guard orientedSize.width > 1, orientedSize.height > 1 else {
-            throw FaceExtractError.readerFailed("画面尺寸异常")
-        }
 
         let reader = try AVAssetReader(asset: asset)
         let output = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: [
@@ -179,6 +190,8 @@ enum FaceExtractor {
         }
 
         let interval = clamp(frameInterval, 1, 10)
+        // 相邻两帧最多隔 interval 秒，轨迹的连续窗口必须比它宽，否则稀疏取样时每帧都开一条新轨迹
+        let trackWindow = max(1.6, interval * 1.5)
         let context = CIContext(options: [.cacheIntermediates: false])
         let detector = Detector()
         // 检测在 720 长边上跑：全分辨率只用来裁图，检测快了精度也够
@@ -198,7 +211,7 @@ enum FaceExtractor {
             if lastSample >= 0, pts - lastSample < interval - 0.001 { continue }
             lastSample = pts
 
-            try autoreleasepool {
+            autoreleasepool {
                 let image = orientedImage(pixelBuffer, transform: transform, size: orientedSize)
                 let detectionImage = detScale < 1
                     ? image.transformed(by: CGAffineTransform(scaleX: detScale, y: detScale))
@@ -218,7 +231,7 @@ enum FaceExtractor {
 
                     // 和已有轨迹比对：位置重叠 + 时间相邻 → 认为是同一张脸，只在质量更好时替换
                     if let index = tracks.firstIndex(where: {
-                        $0.lastTime > pts - 1.6 && overlap($0.rect, crop) > 0.35
+                        $0.lastTime > pts - trackWindow && overlap($0.rect, crop) > 0.35
                     }) {
                         tracks[index].rect = crop
                         tracks[index].lastTime = pts
@@ -240,6 +253,9 @@ enum FaceExtractor {
             onProgress(min(max(pts / max(duration, 0.01), 0), 0.99))
         }
 
+        if reader.status == .failed {
+            throw FaceExtractError.readerFailed(reader.error?.localizedDescription ?? "读取中断")
+        }
         guard !faces.isEmpty else { throw FaceExtractError.noFaceFound }
 
         let sorted = faces.sorted { $0.time < $1.time }

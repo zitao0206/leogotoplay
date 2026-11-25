@@ -28,8 +28,9 @@ struct FaceExtractView: View {
     @State private var toastMessage: String?
     @State private var errorMessage: String?
     @State private var isSaving = false
+    @State private var hasSaved = false
 
-    private let taskBox = ProcessingTaskBox()
+    @State private var taskBox = ProcessingTaskBox()
     private let debugURL: URL?
 
     init(debugURL: URL? = nil) {
@@ -52,6 +53,14 @@ struct FaceExtractView: View {
         }
         .modifier(SheetBackground(isDark: isProcessing))
         .toast($toastMessage)
+        .alert("提取失败", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("知道了", role: .cancel) { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
         .fullScreenCover(item: $previewFace) { face in
             facePreview(face)
         }
@@ -88,14 +97,6 @@ struct FaceExtractView: View {
                 Task { await prepare(item) }
             }
             .onAppear { debugAutoRunIfNeeded() }
-            .alert("提取失败", isPresented: Binding(
-                get: { errorMessage != nil },
-                set: { if !$0 { errorMessage = nil } }
-            )) {
-                Button("知道了", role: .cancel) { errorMessage = nil }
-            } message: {
-                Text(errorMessage ?? "")
-            }
             .onDisappear {
                 if !isProcessing { cleanupTemp() }
             }
@@ -382,12 +383,12 @@ struct FaceExtractView: View {
                 Button {
                     Task { await saveToAlbum(result) }
                 } label: {
-                    Text(isSaving ? "保存中…" : "保存")
+                    Text(isSaving ? "保存中…" : (hasSaved ? "已保存" : "保存"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Theme.accent)
                         .frame(minWidth: 34, alignment: .trailing)
                 }
-                .disabled(isSaving)
+                .disabled(isSaving || hasSaved)
             }
             .padding(.horizontal, Theme.pagePadding)
             .padding(.vertical, 12)
@@ -491,6 +492,7 @@ struct FaceExtractView: View {
 
     // MARK: - 流程
 
+    @MainActor
     private func prepare(_ item: PhotosPickerItem) async {
         isPreparing = true
         defer { isPreparing = false }
@@ -538,6 +540,7 @@ struct FaceExtractView: View {
                     isProcessing = false
                     UIApplication.shared.isIdleTimerDisabled = false
                     result = res
+                    hasSaved = false
                     cleanupTemp()
                     #if DEBUG
                     // 截图钩子：-faceExtractAutoSave YES 出结果后自动存相册，方便验证批量保存
@@ -582,6 +585,7 @@ struct FaceExtractView: View {
         defer { isSaving = false }
         do {
             let count = try await FaceExtractor.save(faces: result.faces)
+            hasSaved = true
             toastMessage = "已保存 \(count) 张到相册"
         } catch {
             errorMessage = error.localizedDescription

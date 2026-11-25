@@ -96,6 +96,14 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - 模拟器实测（8s / 1080×1920 单人出镜片段）：1 秒/帧（8 帧）扫完约 3 秒，同一张脸去重后 1 张，裁出 276×367 的 3:4 竖图（源画面里脸本身只有约 183px 高，裁切不放大，保持原始像素）；5 秒/帧时弹框报「每 5 秒 1 帧 · 2 帧 · 约 2 秒」；三列网格 + 时间码角标正常，`faceExtractAutoSave` 批量写入相册 1 张成功（`DCIM` 里多出一张 276×367 的 JPG）。
 - 已知未做：侧脸 / 遮挡 / 小脸仍可能漏；只出图不自动进素材库；macOS 端未同步。
 
+#### V3.8.2 · 全工程 review：告警清零 + 修掉三类隐患
+
+- 编译告警从 64 条清到 0 条：`AVAsset.tracks(withMediaType:)` / `preferredTransform` / `naturalSize` / `nominalFrameRate` / `timeRange` / `formatDescriptions` 这批 iOS 16 起弃用的同步 API，全部换成 `loadTracks` / `track.load(...)` 的异步写法（`FaceMaskService`、`VideoEnhanceService`、`TextExtractor`、`FaceExtractService` 同步改；`writeVideo`、`screenLines` 顺势从同步 `throws` 改成 `async throws`，调用点补 `await`）。顺带清掉 `MPVolumeView.showsRouteButton`（iOS 13 弃用）与 `NavigationLink(isActive:)`（iOS 16 弃用，改成 `navigationDestination(isPresented:)`）。
+- 新功能两个真 bug：① 去重时间窗原来写死 1.6s，取帧间隔拉到 2 秒以上时每帧都会开新轨迹，同一张脸被重复出图——改成 `trackWindow = max(1.6, 间隔 × 1.5)`；② 「提取失败」的 `alert` 挂在选片页的子树里，进了结果页后这棵子树已经不在图层树里，保存失败之类的错误根本弹不出来——把 `alert` 抬到根 `ZStack`。
+- 健壮性：`AVAssetReader` 读失败不再当成「扫完了」静默返回，补 `reader.status == .failed` 抛错；`taskBox` 从 `private let` 改 `@State`（人脸提取 / 打码 / 增强三页同改），SwiftUI 重绘不会再把运行中的 `Task` 丢掉，取消按钮才真的能取消；保存后置 `hasSaved`，防止重复点「保存」把同一批图写两遍相册。
+- 顺手修掉一个既有功能 bug（打码 / 增强共用）：`一键视频增强` 对 22.05kHz 这类低采样率素材重编码音轨时会直接「Cannot Encode Media」失败——原因是对 22.05k 单声道也给了 96kbps/声道的码率，超出 AAC 编码器允许范围。改成按采样率折算 `min(96k, 采样率 × 2.5)` 并保底 24kbps，`enhance-test.mp4`（22.05k 单声道）现在能正常出片。
+- 回归结果（iPhone 15 Pro Max / iOS 17.2 模拟器，clean build 0 warning）：打码 `-openFaceMaskTest` 检出 1 人、00:08 出片且人脸被遮；增强 `-openEnhanceTest` 音质 + 画面都完成、00:01 出片；文字提取 `-openTextExtract` 出 19 条（画面 14 / 语音 5）；List 落库的 `-openFirstFolder YES` 深链正常。人脸提取本次未再跑，逻辑改动只涉及元信息读取与去重时间窗。
+
 ### V4.0 · App Icon
 
 - 有了正式图标（此前 `AppIcon.appiconset` 是空的，装到手机上就是白灰方块）：炭黑底 `#15171B` + 右上暖橙光晕，主体是主题色 `Theme.accent`（`#FF5C3D` → `#FF9A6B`）渐变的播放三角，中间被一道斜切缝劈开——一眼是「播放」，第二眼是「剪辑」，对应 Cut / List 两条主线。

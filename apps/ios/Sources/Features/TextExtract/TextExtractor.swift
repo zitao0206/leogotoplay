@@ -106,7 +106,7 @@ enum TextExtractor {
         var warnings: [String] = []
 
         if includeScreen {
-            let screen = try screenLines(url: url, duration: duration, total: framesTotal) { value in
+            let screen = try await screenLines(url: url, duration: duration, total: framesTotal) { value in
                 onProgress(value * screenWeight, "正在识别画面文字")
             }
             lines.append(contentsOf: screen)
@@ -136,9 +136,9 @@ enum TextExtractor {
         duration: Double,
         total: Int,
         onProgress: @escaping (Double) -> Void
-    ) throws -> [ExtractedLine] {
+    ) async throws -> [ExtractedLine] {
         let asset = AVURLAsset(url: url)
-        guard let track = asset.tracks(withMediaType: .video).first else {
+        guard let track = (try? await asset.loadTracks(withMediaType: .video))?.first else {
             throw TextExtractError.noVideoTrack
         }
 
@@ -153,7 +153,7 @@ enum TextExtractor {
             throw reader.error ?? TextExtractError.noVideoTrack
         }
 
-        let orientation = videoOrientation(for: track.preferredTransform)
+        let orientation = videoOrientation(for: (try? await track.load(.preferredTransform)) ?? .identity)
         let step = 0.5
         var nextSampleTime = 0.0
         var processed = 0
@@ -244,7 +244,7 @@ enum TextExtractor {
         }
 
         let asset = AVURLAsset(url: url)
-        guard !asset.tracks(withMediaType: .audio).isEmpty else {
+        guard (try? await asset.loadTracks(withMediaType: .audio))?.isEmpty == false else {
             throw TextExtractError.noAudioTrack
         }
 
@@ -380,14 +380,9 @@ enum TextExtractor {
             request.shouldReportPartialResults = false
             request.taskHint = .dictation
 
-            let lock = NSLock()
-            var finished = false
-            func finish(_ segments: [Segment]) {
-                lock.lock()
-                if finished { lock.unlock(); return }
-                finished = true
-                lock.unlock()
-                continuation.resume(returning: segments)
+            let once = OnceGate()
+            let finish: @Sendable ([Segment]) -> Void = { segments in
+                once.perform { continuation.resume(returning: segments) }
             }
 
             let task = recognizer.recognitionTask(with: request) { result, _ in
@@ -406,5 +401,22 @@ enum TextExtractor {
                 finish([])
             }
         }
+    }
+}
+
+/// 只放行第一次结果的闸门：语音识别回调与超时回调都会调用 finish。
+private final class OnceGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+
+    func perform(_ body: () -> Void) {
+        lock.lock()
+        if done {
+            lock.unlock()
+            return
+        }
+        done = true
+        lock.unlock()
+        body()
     }
 }

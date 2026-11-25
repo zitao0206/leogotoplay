@@ -78,12 +78,11 @@ struct AudioFormat {
 
     static let `default` = AudioFormat(sampleRate: 44100, channels: 2)
 
-    static func of(_ track: AVAssetTrack) -> AudioFormat {
-        guard let any = track.formatDescriptions.first else { return .default }
-        let generic = any as! CMFormatDescription
+    static func of(_ track: AVAssetTrack) async -> AudioFormat {
+        guard let descriptions = try? await track.load(.formatDescriptions),
+              let generic = descriptions.first else { return .default }
         guard CMFormatDescriptionGetMediaType(generic) == kCMMediaType_Audio else { return .default }
-        let audio = generic as! CMAudioFormatDescription
-        guard let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(audio)?.pointee else {
+        guard let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(generic)?.pointee else {
             return .default
         }
         let rate = Float(asbd.mSampleRate)
@@ -120,17 +119,18 @@ enum VideoEnhancer {
         onProgress: @escaping (Double) -> Void
     ) async throws -> EnhanceResult {
         let asset = AVURLAsset(url: url)
-        guard let videoTrack = asset.tracks(withMediaType: .video).first else {
+        guard let videoTrack = (try? await asset.loadTracks(withMediaType: .video))?.first else {
             throw EnhanceError.noVideoTrack
         }
 
         let duration = (try? await asset.load(.duration).seconds) ?? 0
         let wantsAudio = options.contains(.audio)
         let wantsVideo = options.contains(.video)
-        let audioTrack = asset.tracks(withMediaType: .audio).first
+        let audioTrack = (try? await asset.loadTracks(withMediaType: .audio))?.first
 
         let hasAudio = wantsAudio && audioTrack != nil
-        let audioFormat = audioTrack.map { AudioFormat.of($0) } ?? .default
+        var audioFormat = AudioFormat.default
+        if let audioTrack { audioFormat = await AudioFormat.of(audioTrack) }
 
         // MARK: 1. 声音
         var processedAudioURL: URL?
@@ -150,7 +150,7 @@ enum VideoEnhancer {
         // MARK: 2. 画面（只做声音时视频轨原样透传，不再逐帧重编码，少一次代际损失）
         var videoURL: URL?
         if wantsVideo {
-            videoURL = try writeVideo(
+            videoURL = try await writeVideo(
                 asset: asset,
                 track: videoTrack,
                 duration: duration,
@@ -190,13 +190,13 @@ enum VideoEnhancer {
         applyLook: Bool,
         progressSpan: ClosedRange<Double>,
         onProgress: @escaping (Double) -> Void
-    ) throws -> URL {
-        let transform = track.preferredTransform
-        let naturalSize = track.naturalSize
+    ) async throws -> URL {
+        let transform = (try? await track.load(.preferredTransform)) ?? .identity
+        let naturalSize = (try? await track.load(.naturalSize)) ?? .zero
         let orientedSize = transform.isQuarterTurn
             ? CGSize(width: naturalSize.height, height: naturalSize.width)
             : naturalSize
-        let nominalFPS = max(track.nominalFrameRate, 1)
+        let nominalFPS = max((try? await track.load(.nominalFrameRate)) ?? 0, 1)
         let totalFrames = max(Int((duration * Double(nominalFPS)).rounded()), 1)
 
         let reader = try AVAssetReader(asset: asset)
@@ -303,9 +303,9 @@ enum VideoEnhancer {
         }
 
         videoInput.markAsFinished()
-        let semaphore = DispatchSemaphore(value: 0)
-        writer.finishWriting { semaphore.signal() }
-        semaphore.wait()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            writer.finishWriting { continuation.resume() }
+        }
 
         if writer.status != .completed {
             try? FileManager.default.removeItem(at: outputURL)
@@ -350,11 +350,15 @@ enum VideoEnhancer {
             .appendingPathComponent("enhance-audio-\(UUID().uuidString).m4a")
         try? FileManager.default.removeItem(at: outputURL)
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .m4a)
+        // 96k/声道只适用于 44.1k/48k 素材；22.05k、16k 这类低采样率素材给同样的码率，
+        // AAC 编码器会直接以「Cannot Encode Media」失败，所以按采样率折算并设下限。
+        let perChannelBitRate = min(96_000, max(Int(format.sampleRate * 2.5), 24_000))
+        let bitRate = perChannelBitRate * format.channels
         let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: Double(format.sampleRate),
             AVNumberOfChannelsKey: format.channels,
-            AVEncoderBitRateKey: 96_000 * format.channels
+            AVEncoderBitRateKey: bitRate
         ])
         input.expectsMediaDataInRealTime = false
         guard writer.canAdd(input) else {
@@ -572,26 +576,33 @@ enum VideoEnhancer {
         let composition = AVMutableComposition()
         // videoURL == nil 表示只做声音，画面直接用原片透传，不经过任何重编码
         let videoSource = videoURL.map { AVURLAsset(url: $0) } ?? asset
-        guard let sourceVideo = videoSource.tracks(withMediaType: .video).first,
+        guard let sourceVideo = (try? await videoSource.loadTracks(withMediaType: .video))?.first,
               let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
         else {
             throw EnhanceError.writerFailed("无法组装画面轨道")
         }
-        let videoRange = sourceVideo.timeRange
+        let videoDuration = (try? await videoSource.load(.duration)) ?? .zero
+        let videoRange = (try? await sourceVideo.load(.timeRange))
+            ?? CMTimeRange(start: .zero, duration: videoDuration)
         try videoTrack.insertTimeRange(videoRange, of: sourceVideo, at: .zero)
 
-        let audioSource: AVURLAsset? = {
-            if let audioFile { return AVURLAsset(url: audioFile) }
-            if asset.tracks(withMediaType: .audio).first != nil { return asset }
-            return nil
-        }()
+        var audioSource: AVURLAsset?
+        if let audioFile {
+            audioSource = AVURLAsset(url: audioFile)
+        } else if (try? await asset.loadTracks(withMediaType: .audio))?.isEmpty == false {
+            audioSource = asset
+        }
+
         if let audioSource,
-           let sourceAudio = audioSource.tracks(withMediaType: .audio).first,
+           let sourceAudio = (try? await audioSource.loadTracks(withMediaType: .audio))?.first,
            let audioTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
-            let audioDuration = CMTimeMinimum(sourceAudio.timeRange.duration, videoRange.duration)
+            let audioFallback = (try? await audioSource.load(.duration)) ?? .zero
+            let audioRange = (try? await sourceAudio.load(.timeRange))
+                ?? CMTimeRange(start: .zero, duration: audioFallback)
+            let audioDuration = CMTimeMinimum(audioRange.duration, videoRange.duration)
             if audioDuration > .zero {
                 try? audioTrack.insertTimeRange(
-                    CMTimeRange(start: sourceAudio.timeRange.start, duration: audioDuration),
+                    CMTimeRange(start: audioRange.start, duration: audioDuration),
                     of: sourceAudio,
                     at: .zero
                 )

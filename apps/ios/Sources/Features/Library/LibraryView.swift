@@ -42,7 +42,17 @@ struct LibraryView: View {
             .padding(.bottom, 28)
         }
         .background(Color(uiColor: .systemGroupedBackground))
-        .background(debugFolderLink)
+        .navigationDestination(
+            isPresented: Binding(
+                get: { debugFolder != nil },
+                set: { if !$0 { debugFolder = nil } }
+            )
+        ) {
+            if let folder = debugFolder {
+                FolderDetailView(folder: folder)
+                    .environmentObject(library)
+            }
+        }
         .navigationTitle("List")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索视频名称")
@@ -217,24 +227,6 @@ struct LibraryView: View {
 
             folderList
         }
-    }
-
-    /// 仅 Debug 用的隐藏跳转。
-    private var debugFolderLink: some View {
-        NavigationLink(
-            isActive: Binding(
-                get: { debugFolder != nil },
-                set: { if !$0 { debugFolder = nil } }
-            )
-        ) {
-            if let folder = debugFolder {
-                FolderDetailView(folder: folder)
-                    .environmentObject(library)
-            }
-        } label: {
-            EmptyView()
-        }
-        .hidden()
     }
 
     /// V2.0.1：文件夹的列表形式（默认）。V2.0.2：移除顶部的新建文件夹 Cell。

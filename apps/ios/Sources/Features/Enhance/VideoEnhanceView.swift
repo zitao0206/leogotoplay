@@ -33,7 +33,8 @@ struct VideoEnhanceView: View {
     @State private var errorMessage: String?
     @State private var isSaving = false
 
-    private let taskBox = ProcessingTaskBox()
+    // 用 @State 持有，保证 SwiftUI 重绘时取消仍能命中正在运行的那个 Task
+    @State private var taskBox = ProcessingTaskBox()
     private let debugURL: URL?
 
     init(debugURL: URL? = nil) {
