@@ -124,14 +124,6 @@ enum FaceMasker {
         reader.add(videoOutput)
 
         let audioTrack = (try? await asset.loadTracks(withMediaType: .audio))?.first
-        var audioOutput: AVAssetReaderTrackOutput?
-        if let audioTrack {
-            let output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: nil)
-            if reader.canAdd(output) {
-                reader.add(output)
-                audioOutput = output
-            }
-        }
 
         // 写：旋转后的画面 + 原音频
         let outputURL = FileManager.default.temporaryDirectory
@@ -165,20 +157,12 @@ enum FaceMasker {
         }
         writer.add(videoInput)
 
-        var audioInput: AVAssetWriterInput?
-        if audioOutput != nil {
-            let input = AVAssetWriterInput(mediaType: .audio, outputSettings: nil)
-            input.expectsMediaDataInRealTime = false
-            if writer.canAdd(input) {
-                writer.add(input)
-                audioInput = input
-            }
-        }
 
         guard writer.startWriting(), reader.startReading() else {
             throw FaceMaskError.writerFailed(writer.error?.localizedDescription ?? reader.error?.localizedDescription ?? "无法开始")
         }
         writer.startSession(atSourceTime: .zero)
+
 
         let context = CIContext(options: [.cacheIntermediates: false])
 
@@ -287,17 +271,6 @@ enum FaceMasker {
         onProgress(0.96)
         videoInput.markAsFinished()
 
-        // 音频透传（视频写完再补，AVAssetWriter 允许各轨道各自单调追加）
-        if let audioInput, let audioOutput {
-            while let sample = audioOutput.copyNextSampleBuffer() {
-                while !audioInput.isReadyForMoreMediaData {
-                    usleep(3000)
-                }
-                if audioInput.append(sample) == false { break }
-            }
-            audioInput.markAsFinished()
-        }
-
         await writer.finishWriting()
         onProgress(1)
 
@@ -310,18 +283,80 @@ enum FaceMasker {
             throw FaceMaskError.noFaceFound
         }
 
+        // 音轨单独封一层：AVAssetWriter 的音频「透传」输入在 mp4 上 canAdd 直接返回 false
+        // （这正是打码成片一直没声音的原因），改成把无声视频和原音轨用 passthrough 重新封装。
+        var finalURL = outputURL
+        if audioTrack != nil {
+            finalURL = try await muxAudio(from: asset, video: outputURL)
+            try? FileManager.default.removeItem(at: outputURL)
+        }
+
         #if DEBUG
         NSLog("FACEMASK timing total=%.1fs frames=%d detect=%.1fs mask=%.1fs render=%.1fs append=%.1fs faces=%d",
               Date().timeIntervalSince(runStart), frameIndex, tDetect, tMask, tRender, tAppend, tracker.totalFaces)
         #endif
 
         return FaceMaskResult(
-            url: outputURL,
+            url: finalURL,
             duration: duration,
             faceCount: tracker.totalFaces,
             framesWithFaces: framesWithFaces,
             style: style
         )
+    }
+
+    /// 把无声的视频文件和原片的音轨用 passthrough 封到一起（不重编码）。
+    private static func muxAudio(from asset: AVURLAsset, video: URL) async throws -> URL {
+        let composition = AVMutableComposition()
+        let videoAsset = AVURLAsset(url: video)
+        guard let sourceVideo = (try? await videoAsset.loadTracks(withMediaType: .video))?.first,
+              let compVideo = composition.addMutableTrack(
+                withMediaType: .video,
+                preferredTrackID: kCMPersistentTrackID_Invalid
+              ) else {
+            throw FaceMaskError.writerFailed("无法封装视频轨")
+        }
+        let videoDuration = (try? await videoAsset.load(.duration)) ?? .zero
+        let videoRange = (try? await sourceVideo.load(.timeRange))
+            ?? CMTimeRange(start: .zero, duration: videoDuration)
+        try compVideo.insertTimeRange(videoRange, of: sourceVideo, at: .zero)
+        if let transform = try? await sourceVideo.load(.preferredTransform) {
+            compVideo.preferredTransform = transform
+        }
+
+        if let audioTrack = (try? await asset.loadTracks(withMediaType: .audio))?.first,
+           let compAudio = composition.addMutableTrack(
+                withMediaType: .audio,
+                preferredTrackID: kCMPersistentTrackID_Invalid
+           ),
+           let audioRange = try? await audioTrack.load(.timeRange) {
+            let audioLength = CMTimeMinimum(audioRange.duration, videoRange.duration)
+            if audioLength > .zero {
+                try? compAudio.insertTimeRange(
+                    CMTimeRange(start: audioRange.start, duration: audioLength),
+                    of: audioTrack,
+                    at: .zero
+                )
+            }
+        }
+
+        guard let session = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
+            throw FaceMaskError.writerFailed("无法创建封装会话")
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("face-mask-mux-\(UUID().uuidString).mp4")
+        try? FileManager.default.removeItem(at: url)
+        session.outputURL = url
+        let types = session.supportedFileTypes
+        session.outputFileType = types.contains(.mp4) ? .mp4 : (types.first ?? .mov)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            session.exportAsynchronously { continuation.resume() }
+        }
+        guard session.status == .completed else {
+            try? FileManager.default.removeItem(at: url)
+            throw FaceMaskError.writerFailed(session.error?.localizedDescription ?? "音频封装失败")
+        }
+        return url
     }
 
     // MARK: - 画面处理

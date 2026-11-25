@@ -104,6 +104,14 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - 顺手修掉一个既有功能 bug（打码 / 增强共用）：`一键视频增强` 对 22.05kHz 这类低采样率素材重编码音轨时会直接「Cannot Encode Media」失败——原因是对 22.05k 单声道也给了 96kbps/声道的码率，超出 AAC 编码器允许范围。改成按采样率折算 `min(96k, 采样率 × 2.5)` 并保底 24kbps，`enhance-test.mp4`（22.05k 单声道）现在能正常出片。
 - 回归结果（iPhone 15 Pro Max / iOS 17.2 模拟器，clean build 0 warning）：打码 `-openFaceMaskTest` 检出 1 人、00:08 出片且人脸被遮；增强 `-openEnhanceTest` 音质 + 画面都完成、00:01 出片；文字提取 `-openTextExtract` 出 19 条（画面 14 / 语音 5）；List 落库的 `-openFirstFolder YES` 深链正常。人脸提取本次未再跑，逻辑改动只涉及元信息读取与去重时间窗。
 
+#### V3.8.3 · Bugfix：相册重选、成片音轨、导出回导
+
+- 相册「再选一次没反应」：`PhotosPicker` 的绑定 `photoItem` 选完不清空，再选同一段视频时值没变化，`onChange` 不触发，看起来就是点了没反应。四个工具页（打码 / 增强 / 文字提取 / 人脸提取）改成在 `onChange` 里先把 `photoItem = nil` 再起 `Task`；Cut 从相册选片、List / 文件夹导入原本就在 `defer` 里清空，逻辑不变。
+- **打码成片一直是无声的（真 bug，不是新功能带来）**：原来想「音轨透传」，给 `AVAssetWriter` 加的是 `outputSettings: nil` 的音频输入，但这个输入在 mp4 上 `writer.canAdd()` 直接返回 false（模拟器实测打日志确认 `input=n`），音轨根本没进去。改成两段式：先写无声的 h264 mp4，再用 `AVMutableComposition` + `AVAssetExportPresetPassthrough` 把原音轨（按 `timeRange` 裁到视频长度）封回去。`face-test.mp4` 复测：输出 1 条视频轨 + 1 条 AAC 22050 单声道音轨，音频 RMS 0.137、峰值 1.02，确认有声。
+- 剪辑导出加了两层保险：① `VideoExporter.export(videoURL:trimRange:)`（单段 / macOS 用）和 `buildComposition` 都按音轨真实 `timeRange` 裁起止再插入——以前 `try? insertTimeRange` 吞掉「音轨比视频短 20ms」的插入失败，会直接导出一条没有音轨的片子；② `EditorViewModel.export()` 出片后自检：没有视频轨、时长读不出来，或源片有声音而成片没音轨，直接报错「导出的视频没有声音轨道，请重试」，不再把无声片存进相册 / 素材库。
+- 素材库入库校验：没有视频轨、时长 ≤ 0.01s、或连封面都抽不出来的文件，一律拒绝（`VideoImportError.unsupported`），避免坏文件变成一条点开黑屏的记录。
+- 回导实测（iPhone 15 Pro Max / iOS 17.2 模拟器）：剪辑导出（单段 / 两段 / 变速 / 混速 / 调音量）都能读、`dur` 正确、音频 RMS 0.08～0.14；增强成片 0.6s、音视频轨齐全、RMS 0.172；打码新成片 8s、音轨齐全、可入库并生成封面；打码旧成片（修复前）确认 audio=0；人为截断的坏 mp4 入库被拒（提示「无法读取该视频，请换一个文件试试」）。
+
 ### V4.0 · App Icon
 
 - 有了正式图标（此前 `AppIcon.appiconset` 是空的，装到手机上就是白灰方块）：炭黑底 `#15171B` + 右上暖橙光晕，主体是主题色 `Theme.accent`（`#FF5C3D` → `#FF9A6B`）渐变的播放三角，中间被一道斜切缝劈开——一眼是「播放」，第二眼是「剪辑」，对应 Cut / List 两条主线。

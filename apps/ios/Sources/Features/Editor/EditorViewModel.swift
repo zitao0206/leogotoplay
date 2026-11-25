@@ -518,7 +518,9 @@ final class EditorViewModel: ObservableObject {
         // 素材真实时长是插入的硬边界，区间越界会让导出直接失败（AVFoundationErrorDomain -11800）
         let loadedDuration = (try? await asset.load(.duration).seconds) ?? duration
         let mediaEnd = loadedDuration.isFinite && loadedDuration > 0 ? loadedDuration : duration
-        let audioEnd = (try? await audioTrack?.load(.timeRange).end.seconds) ?? mediaEnd
+        let audioTimeRange = try? await audioTrack?.load(.timeRange)
+        let audioStart = max(0, audioTimeRange?.start.seconds ?? 0)
+        let audioEnd = audioTimeRange?.end.seconds ?? mediaEnd
 
         let parameters = compAudio.map { AVMutableAudioMixInputParameters(track: $0) }
         var cursor = CMTime.zero
@@ -541,7 +543,7 @@ final class EditorViewModel: ObservableObject {
 
             // 音轨可能比视频短，只插入它真正覆盖到的部分，并保留段内偏移
             if let audioTrack, let compAudio {
-                let aStart = max(start, 0)
+                let aStart = max(start, audioStart)
                 let aEnd = min(end, audioEnd)
                 if aEnd - aStart > 0.01 {
                     let offset = CMTime(seconds: aStart - start, preferredTimescale: 600)
@@ -605,7 +607,7 @@ final class EditorViewModel: ObservableObject {
         defer { isExporting = false }
 
         do {
-            return try await VideoExporter.export(
+            let url = try await VideoExporter.export(
                 sourceURL: source.url,
                 clips: clips.map {
                     VideoExporter.Clip(
@@ -620,10 +622,37 @@ final class EditorViewModel: ObservableObject {
                     self?.exportProgress = progress
                 }
             )
+            // 导出后自检：文件必须能被 AVFoundation 正常读出来；源片有声音时成片也得有音轨，
+            // 否则宁可直接报错，也不要把一条无声的片子存进相册 / 素材库。
+            if let problem = await exportProblem(with: url) {
+                try? FileManager.default.removeItem(at: url)
+                errorMessage = problem
+                return nil
+            }
+            return url
         } catch {
             errorMessage = error.localizedDescription
             return nil
         }
+    }
+
+    /// 导出结果自检，返回 nil 表示没问题，否则返回给用户看的错误文案。
+    private func exportProblem(with url: URL) async -> String? {
+        let output = AVURLAsset(url: url)
+        let duration = (try? await output.load(.duration).seconds) ?? 0
+        let videoCount = (try? await output.loadTracks(withMediaType: .video))?.count ?? 0
+        guard videoCount > 0, duration.isFinite, duration > 0.05 else {
+            return "导出的视频无法正常读取，请重试"
+        }
+        let sourceHasAudio = ((try? await AVURLAsset(url: source.url).loadTracks(withMediaType: .audio))?.isEmpty == false)
+        let wantsAudio = sourceHasAudio && clips.contains { $0.volume > 0.001 }
+        if wantsAudio {
+            let outputHasAudio = ((try? await output.loadTracks(withMediaType: .audio))?.isEmpty == false)
+            if !outputHasAudio {
+                return "导出的视频没有声音轨道，请重试"
+            }
+        }
+        return nil
     }
 
     // MARK: - 播放监听

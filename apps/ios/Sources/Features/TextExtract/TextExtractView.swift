@@ -66,6 +66,8 @@ struct TextExtractView: View {
             }
             .onChange(of: photoItem) { item in
                 guard let item else { return }
+                // 立刻清空：绑定一直留着同一个 item 时，再选同一个视频不会触发 onChange，看起来就是「点了没反应」
+                photoItem = nil
                 Task { await prepare(item) }
             }
             .onAppear { debugAutoRunIfNeeded() }
