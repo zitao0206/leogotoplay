@@ -1,3 +1,4 @@
+import AVFoundation
 import PhotosUI
 import SwiftUI
 import LeogotoPlayCore
@@ -21,6 +22,8 @@ struct CutHomeView: View {
     @State private var toastMessage: String?
     /// V3.5：一键提取文字页面
     @State private var textExtractRequest: TextExtractRequest?
+    /// V3.6：一键人脸打码页面
+    @State private var faceMaskRequest: FaceMaskRequest?
     /// 丢弃草稿后让「最近编辑」重新读一遍草稿状态
     @State private var draftRevision = 0
 
@@ -46,6 +49,23 @@ struct CutHomeView: View {
             } else if UserDefaults.standard.bool(forKey: "textExtractPageOnly") {
                 textExtractRequest = TextExtractRequest(url: nil)
             }
+            // 截图钩子：用测试视频（Documents/face-test.mp4）打开「一键人脸打码」
+            if UserDefaults.standard.bool(forKey: "openFaceMaskTest") {
+                let testURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                    .appendingPathComponent("face-test.mp4")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    faceMaskRequest = FaceMaskRequest(url: testURL)
+                }
+            }
+            // 截图钩子：直接打开「一键人脸打码」
+            if UserDefaults.standard.bool(forKey: "openFaceMask") {
+                let url = library.videos.first?.fileURL
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    faceMaskRequest = FaceMaskRequest(url: url)
+                }
+            } else if UserDefaults.standard.bool(forKey: "faceMaskPageOnly") {
+                faceMaskRequest = FaceMaskRequest(url: nil)
+            }
         }
         #endif
         .navigationTitle("Cut")
@@ -65,6 +85,10 @@ struct CutHomeView: View {
         }
         .fullScreenCover(item: $textExtractRequest) { request in
             TextExtractView(debugURL: request.url)
+        }
+        .fullScreenCover(item: $faceMaskRequest) { request in
+            FaceMaskView(debugURL: request.url)
+                .environmentObject(library)
         }
         .fullScreenCover(item: $editorSource, onDismiss: {
             if let url = pendingTempURL {
@@ -103,7 +127,9 @@ struct CutHomeView: View {
                 toolEntry(icon: "text.viewfinder", title: "一键提取文字") {
                     textExtractRequest = TextExtractRequest(url: nil)
                 }
-                toolEntry(icon: "text.bubble", title: "智能字幕")
+                toolEntry(icon: "face.dashed", title: "一键人脸打码") {
+                    faceMaskRequest = FaceMaskRequest(url: nil)
+                }
             }
         }
         .padding(18)

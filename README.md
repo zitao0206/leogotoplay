@@ -38,6 +38,20 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - 提取页用 `fullScreenCover` 呈现（原来是 sheet，处理时父页面会在顶部露出一条浅色边），页内仍是 `NavigationStack`，日常态有导航栏、处理态隐藏。
 - 调试钩子：`-openTextExtract YES`（带素材库首个视频进页面）、`-textExtractPageOnly YES`（只开空页面）、`-textExtractSkipConfirm YES`（跳过估时确认直接开跑）。sheet 用 `sheet(item:)` 承载（`TextExtractRequest`），否则内容闭包会拿到未落库的 `nil` URL。
 
+### V3.6 · 一键人脸打码
+
+- Cut 页热门工具里「智能字幕」换成「一键人脸打码」（`face.dashed` 图标），点进去是独立页面：能力介绍卡、中央虚线大按钮「从相册中选片」、四种打码方式（马赛克 / 高斯模糊 / 纯色黑块 / 模糊 + 轻噪点）各带一句人话说明和示意图标，末尾一张「说明」卡（重编码会有轻微画质损失、侧脸/被挡住的脸/画面里很小的脸可能漏检）。四条规则细节见每条说明：马赛克块大小 = 脸宽/12，模糊半径跟着脸宽走，黑块最保险但不好看，模糊 + 轻噪点抗「人脸还原」工具的效果稍好。
+- 选中的方式存本地 `UserDefaults`（`face.mask.style`，见 `FaceMaskPrefs.styleKey`），下次进来还是上次那条。
+- 选中相册视频后先算估时（`1.5 + 0.9×时长`，模糊 + 轻噪点再 +0.1×时长），弹「开始打码？」确认框写明「预计需要约 N 秒，处理期间请不要锁屏或切换 App」；确认后才开跑。
+- 处理中整屏黑场（`#0D0D0F`）+ 正中一颗主色系光球（`Theme.accent` #FF5C3D → `accentSecondary` #FF9A6B → 浅橙 #FFD4BC 的 11s 流光 + 2.2s 呼吸，外层白泛光），球下「人脸打码中 17%」+ 灰字「正在定位并遮挡人脸，请不要锁屏或切换程序」；顶部返回箭头弹「停止打码？」。期间 `isIdleTimerDisabled = true`，结束/失败/取消都复位。
+- 完成后进结果页：`AVPlayer` 预览 + 可拖动进度条（一碰进度条就暂停播放、松手也不自动续播，拖到哪停哪，方便停住看清某一帧有没有漏打；页面里不再放「拖动进度条…」那句说明文案），标签行是「检测到 N 个人 / 时长 / 所用方式」（挪到标题下方），视频播放区不再限 9:16 / 430pt，而是一路向下填满到屏幕底部安全区，播放键和时间条压在视频卡片底部；底部动作条和「存入素材库」「再打一条」全部去掉，只有右上角一个「保存」，点了直接存相册并 toast「已保存到相册」。
+- 检测链路：`AVAssetReader` 逐帧 BGRA → 按 `preferredTransform` 摆正（`orientation` 已是 `.up`，不能再把 transform 传给 Vision，否则会转两遍、竖拍视频一张脸都检不出）→ 缩到 720 长边 → Vision `VNDetectFaceRectanglesRequest` revision 3 → 按位置串轨迹（`FaceTracker`，Vision 跳帧时 uuid 不稳，所以按中心距离匹配，同一张脸不会重复计数）→ `CIPixellate` / `CIGaussianBlur` / 纯色 / 模糊+噪点 合成 → `AVAssetWriter`（h264，码率 ≈ w·h·fps·0.10）+ 原音轨透传。
+- 检测节奏按实测耗时自适应：每帧算一次检测耗时做 EMA，>120ms 就放稀（最多每 8 帧检一次），<40ms 就加密（最快每 2 帧），慢机器自动变快、快机器少漏检。
+- **踩到的坑（就是「检测不到人脸」的原因）**：这台 Intel Mac 上的模拟器建不了 Vision 的 GPU/Metal 推理上下文，`VNImageRequestHandler` 一跑就抛 `Could not create inference context`，退回的 `CIDetector` 在模拟器里也全返回 0（拿素材库里九条视频、每秒抽帧扫一遍都是 0，而同一帧在 macOS 原生 Vision 上是能检出 1 张脸的）。解法是给 `VNDetectFaceRectanglesRequest` 开 `usesCPUOnly`（iOS 16 起标记废弃，但仍是唯一公开入口）——CPU 推理下同一帧稳定返回 1 张脸；代码里 `#if targetEnvironment(simulator)` 直接走 CPU 推理，真机上仍然 GPU 优先、失败才降 CPU，再不行才退 `CIDetector`。
+- 调试钩子：`-openFaceMask YES`（素材库首个视频进打码页）、`-openFaceMaskTest YES`（用 `Documents/face-test.mp4`）、`-faceMaskPageOnly YES`（只开空页面）、`-faceMaskSkipConfirm YES`（跳过估时确认直接开跑）、`-faceMaskMock YES`（用固定框验证渲染链路，绕过检测）。
+- 模拟器实测（8s / 1080×1920 竖拍口播片段，人物正脸）：检测 240 帧里每帧 1 张脸、人脸计数 1，四种方式写出正常 mp4；耗时 70s，其中检测 3.6s、掩码合成 0.1s、渲染 65s（软件渲染慢，真机走 Metal 会快得多）。
+- 已知未做：侧脸 / 遮挡 / 画面里很小的脸仍可能漏；不支持手动补框；macOS 端未同步。
+
 ### V4.0 · App Icon
 
 - 有了正式图标（此前 `AppIcon.appiconset` 是空的，装到手机上就是白灰方块）：炭黑底 `#15171B` + 右上暖橙光晕，主体是主题色 `Theme.accent`（`#FF5C3D` → `#FF9A6B`）渐变的播放三角，中间被一道斜切缝劈开——一眼是「播放」，第二眼是「剪辑」，对应 Cut / List 两条主线。
