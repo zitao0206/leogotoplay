@@ -33,6 +33,15 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - 编辑器 `MacEditorModel` 的 `source` 改成可选，新增 `open(_:)` 支持页面内换素材；载入时按 `libraryVideoID` 找草稿还原现场，离开页面（返回或关窗）写回草稿。
 - 顺手把 `MacLibraryView` 的 body 拆成 `decorated` + `content` 两个子视图：原来那一大坨修饰器把类型推断压超时，报 `unable to type-check this expression in reasonable time`，拆完编译恢复正常。
 
+### Mac-V2.2 · 剪映式时间轴
+
+- 「开始编辑」改成居中一条（加号 + 文字居中，宽度与热门工具卡对齐），点了进空剪辑页；Cut 页彻底去掉「素材库」入口、`MacSourcePickerSheet`、`startFromLocalFile`、`isImporting` 等从素材库挑片 / 选本地文件的旧逻辑，导入只剩剪辑页内的「添加视频」。
+- 剪辑页按剪映专业版布局：左栏 = 视频列表（一行一个，末尾固定「＋ 添加视频」）+ 编辑区；右栏 = 播放器，导出按钮挪到播放器右上角。
+- 载入改成拖放：列表行 `onDrag` 传 `UUID`，编辑区空态是虚线框，拖进来才 `open`，否则只提示「拖动即载入」。
+- 编辑模型从「单区间 trimStart/trimEnd」升级为多片段：`MacClip` + `MacEditorDraft`（旧草稿的 `trimStart/trimEnd` 自动迁移成一个片段，编码只写新字段）。预览用 `AVMutableComposition` 逐片段拼视频/音频轨，播放头按「成片时间」映射回片段 + 源时间。
+- 时间轴上方工具：撤销（栈深 20）、重置、分割、向左分割、向右分割、缩小、放大（`pixelsPerSecond` 24–320）。`MacTimelineView` 按每秒像素铺片段块、画白色播放头，点击或拖动即 seek。
+- 导出走 core 的多片段接口（`VideoExporter.export(sourceURL:clips:quality:progressHandler:)`），清晰度可选最高质量 / 1080p / 720p，可勾静音、可存入素材库。
+
 ### V1.0.4 · List 页收敛
 
 - 去掉文件夹区域的布局切换按钮（列表 / 卡片），固定列表展示；卡片视图代码一并移除。

@@ -14,8 +14,6 @@ struct MacCutView: View {
 
     @State private var route: MacCutRoute = .home
     @State private var playingVideo: VideoItem?
-    @State private var showLibraryPicker = false
-    @State private var isImporting = false
     @State private var toast: String?
     /// 删掉草稿后让「最近编辑」重新读一遍草稿状态
     @State private var draftRevision = 0
@@ -58,12 +56,6 @@ struct MacCutView: View {
         .background(MacTheme.canvas)
         .sheet(item: $playingVideo) { item in
             MacPlayerView(item: item)
-        }
-        .sheet(isPresented: $showLibraryPicker) {
-            MacSourcePickerSheet { item in
-                route = .editor(MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id))
-            }
-            .environmentObject(library)
         }
         .overlay(alignment: .bottom) {
             if let toast {
@@ -144,67 +136,31 @@ struct MacCutView: View {
     // MARK: - 添加 + 开始编辑
 
     private var startEditCard: some View {
-        HStack(spacing: 0) {
-            Button {
-                // V2.1：进入剪辑页（先空着，等用户在页面里挑素材）
-                route = .editor(nil)
-            } label: {
-                HStack(spacing: 14) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(MacTheme.accent)
-                        .frame(width: 42, height: 42)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(MacTheme.accent.opacity(0.18))
-                        )
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(isImporting ? "正在读取…" : "开始编辑")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.white)
-                        Text("进入剪辑台，挑选视频开始编辑")
-                            .font(.caption)
-                            .foregroundStyle(Color.white.opacity(0.58))
-                    }
-
-                    Spacer(minLength: 12)
-
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.45))
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 15)
-                .contentShape(Rectangle())
+        Button {
+            // 进入剪辑页（先空着，视频从页面内的列表拖进去载入）
+            route = .editor(nil)
+        } label: {
+            HStack(spacing: 12) {
+                Spacer(minLength: 0)
+                Image(systemName: "plus")
+                    .font(.system(size: 19, weight: .bold))
+                    .foregroundStyle(MacTheme.accent)
+                    .frame(width: 40, height: 40)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(MacTheme.accent.opacity(0.18))
+                    )
+                Text("开始编辑")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain)
-            .disabled(isImporting)
-
-            Rectangle()
-                .fill(Color.white.opacity(0.08))
-                .frame(width: 1)
-                .padding(.vertical, 14)
-
-            Button {
-                showLibraryPicker = true
-            } label: {
-                VStack(spacing: 5) {
-                    Image(systemName: "square.stack.3d.up")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.82))
-                    Text("素材库")
-                        .font(.caption2)
-                        .foregroundStyle(Color.white.opacity(0.52))
-                }
-                .frame(width: 76)
-                .frame(maxHeight: .infinity)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("从素材库里挑一个视频")
+            .padding(.vertical, 17)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity, minHeight: 74)
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -276,27 +232,6 @@ struct MacCutView: View {
     }
 
     // MARK: - 动作
-
-    private func startFromLocalFile() {
-        guard let url = MacAlerts.chooseVideoFile() else { return }
-        Task {
-            isImporting = true
-            defer { isImporting = false }
-            do {
-                let temp = try VideoImporter.prepare(from: url)
-                let item = try await library.importVideo(
-                    fromTempURL: temp,
-                    source: .files,
-                    suggestedTitle: url.deletingPathExtension().lastPathComponent
-                )
-                VideoImporter.cleanTemporaryFile(at: temp)
-                toast = "已导入「\(item.title)」"
-                route = .editor(MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id))
-            } catch {
-                toast = error.localizedDescription
-            }
-        }
-    }
 
     private func delete(_ item: VideoItem) {
         guard MacAlerts.confirmDelete(
@@ -438,70 +373,5 @@ private struct MacRecentEditCard: View {
             return "未编辑 · \(item.fileSize.fileSizeText)"
         }
         return "草稿 · \(Self.relativeFormatter.localizedString(for: draft.updatedAt, relativeTo: Date()))"
-    }
-}
-
-/// 从素材库挑一个视频去剪辑。
-struct MacSourcePickerSheet: View {
-    @EnvironmentObject private var library: LibraryStore
-    @Environment(\.dismiss) private var dismiss
-
-    let onPick: (VideoItem) -> Void
-
-    @State private var searchText = ""
-
-    private var videos: [VideoItem] {
-        let keyword = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !keyword.isEmpty else { return library.videos }
-        return library.searchVideos(keyword: keyword)
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("选择素材").font(.headline)
-                TextField("搜索标题", text: $searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 200)
-                Spacer()
-                Button("取消") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-            }
-            .padding(16)
-            Divider()
-            if videos.isEmpty {
-                MacEmptyStateView(symbol: "film.stack", title: "素材库为空", message: "先去「素材库」导入视频。")
-            } else {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(videos) { item in
-                            Button {
-                                onPick(item)
-                                dismiss()
-                            } label: {
-                                HStack(spacing: 12) {
-                                    MacThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 6)
-                                        .frame(width: 80, height: 50)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(item.title).font(.callout)
-                                        Text("\(item.duration.timecode) · \(item.fileSize.fileSizeText)")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            Divider().padding(.leading, 16)
-                        }
-                    }
-                }
-            }
-        }
-        .frame(width: 520, height: 520)
     }
 }
