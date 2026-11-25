@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import LeogotoPlayCore
 
@@ -5,6 +6,11 @@ import LeogotoPlayCore
 struct LeogotoPlayMacApp: App {
     @StateObject private var library = LibraryStore()
     @StateObject private var auth = AuthStore()
+
+    init() {
+        // V2.0：整个 App 走深色外观（黑底 + 暖红点缀），和 Cut 页的黑红主视觉一致
+        NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+    }
 
     var body: some Scene {
         WindowGroup {

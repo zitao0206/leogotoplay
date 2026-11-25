@@ -12,6 +12,7 @@
 		5F6B5E1FD76A3D5CA7985434 /* MacTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0636332518459CAED2A14EAF /* MacTheme.swift */; };
 		2A8ED1C618EA9CC1A627F78E /* MacCutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FCBB293AC1B2365543E5BE /* MacCutView.swift */; };
 		1D22EE923CB26B5B6E4CF857 /* MacEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1560606A3D0E1CEB03204FAA /* MacEditorView.swift */; };
+		8B1C4D2E5F3A6970C81D22B4 /* MacEditorDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D5E7A9B1F2468A0C2E4D6F /* MacEditorDraft.swift */; };
 		9F92DECA8C3D684BE4E0D95A /* MacTrimSlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC4907B57A01DF664F4C9B1 /* MacTrimSlider.swift */; };
 		606DC1D95FCF8524CF296CE0 /* MacLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E12B02FE275144FE3E7D39 /* MacLibraryView.swift */; };
 		92781D3A96A22DA0080251F8 /* MacSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B8236CFDEA17F2C322D8DC2 /* MacSheets.swift */; };
@@ -28,6 +29,7 @@
 		0636332518459CAED2A14EAF /* MacTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTheme.swift; sourceTree = "<group>"; };
 		37FCBB293AC1B2365543E5BE /* MacCutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCutView.swift; sourceTree = "<group>"; };
 		1560606A3D0E1CEB03204FAA /* MacEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacEditorView.swift; sourceTree = "<group>"; };
+		C3D5E7A9B1F2468A0C2E4D6F /* MacEditorDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacEditorDraft.swift; sourceTree = "<group>"; };
 		5EC4907B57A01DF664F4C9B1 /* MacTrimSlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTrimSlider.swift; sourceTree = "<group>"; };
 		D4E12B02FE275144FE3E7D39 /* MacLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLibraryView.swift; sourceTree = "<group>"; };
 		3B8236CFDEA17F2C322D8DC2 /* MacSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSheets.swift; sourceTree = "<group>"; };
@@ -106,6 +108,7 @@
 			children = (
 				1560606A3D0E1CEB03204FAA /* child */,
 				5EC4907B57A01DF664F4C9B1 /* child */,
+				C3D5E7A9B1F2468A0C2E4D6F /* child */,
 			);
 			path = Editor;
 			sourceTree = "<group>";
@@ -255,6 +258,7 @@
 				5F6B5E1FD76A3D5CA7985434 /* MacTheme.swift in Sources */,
 				2A8ED1C618EA9CC1A627F78E /* MacCutView.swift in Sources */,
 				1D22EE923CB26B5B6E4CF857 /* MacEditorView.swift in Sources */,
+				8B1C4D2E5F3A6970C81D22B4 /* MacEditorDraft.swift in Sources */,
 				9F92DECA8C3D684BE4E0D95A /* MacTrimSlider.swift in Sources */,
 				606DC1D95FCF8524CF296CE0 /* MacLibraryView.swift in Sources */,
 				92781D3A96A22DA0080251F8 /* MacSheets.swift in Sources */,

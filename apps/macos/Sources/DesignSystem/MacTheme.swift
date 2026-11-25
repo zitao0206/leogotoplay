@@ -9,6 +9,17 @@ enum MacTheme {
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
+    // V2.0：Cut 页的深色淡红底（页面底色 / 卡片 / 卡片描边），和 App 的暖色强调色配成一套
+    static let canvas = Color(hex: 0x0F0F11)
+    static let surface = Color(hex: 0x1A1B20)
+    static let surfaceElevated = Color(hex: 0x212228)
+    static let inkStroke = Color.white.opacity(0.07)
+    static let inkGradient = LinearGradient(
+        colors: [Color(hex: 0x1A1B20), Color(hex: 0x2A1C17)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
     static let sidebarWidth: CGFloat = 208
     static let cardRadius: CGFloat = 12
     static let pagePadding: CGFloat = 24

@@ -57,6 +57,14 @@ final class MacEditorModel: ObservableObject {
         if duration <= 0 { duration = 0.01 }
         trimStart = 0
         trimEnd = duration
+        // 有草稿就先还原上次的现场（裁剪区间、静音），下次从「最近编辑」点回来接着剪
+        if let videoID = source.libraryVideoID, let draft = MacEditorDraftStore.draft(for: videoID) {
+            let gap = minTrimGap
+            trimStart = min(max(draft.trimStart, 0), max(0, duration - gap))
+            trimEnd = max(min(draft.trimEnd, duration), trimStart + gap)
+            isMuted = draft.isMuted
+            player.isMuted = isMuted
+        }
         let frames = await ThumbnailService.generateFrames(forVideoAt: source.url, duration: duration, count: 12)
         filmstrip = frames.map { NSImage(cgImage: $0, size: .zero) }
         isLoading = false
@@ -104,6 +112,15 @@ final class MacEditorModel: ObservableObject {
     func resetTrim() {
         trimStart = 0
         trimEnd = duration
+    }
+
+    /// 离开剪辑页时调用：打开过就存成草稿（只有素材库视频有 id）
+    func saveDraft() {
+        guard let videoID = source.libraryVideoID, duration > 0.1 else { return }
+        MacEditorDraftStore.save(
+            MacEditorDraft(trimStart: trimStart, trimEnd: trimEnd, isMuted: isMuted, updatedAt: Date()),
+            for: videoID
+        )
     }
 
     func toggleMute() {
@@ -191,6 +208,7 @@ struct MacEditorView: View {
         }
         .frame(minWidth: 940, minHeight: 620)
         .task { await model.load() }
+        .onDisappear { model.saveDraft() }
         .alert("提示", isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }
