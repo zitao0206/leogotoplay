@@ -24,6 +24,8 @@ struct CutHomeView: View {
     @State private var textExtractRequest: TextExtractRequest?
     /// V3.6：一键人脸打码页面
     @State private var faceMaskRequest: FaceMaskRequest?
+    /// V3.7：一键视频增强页面
+    @State private var enhanceRequest: VideoEnhanceRequest?
     /// 丢弃草稿后让「最近编辑」重新读一遍草稿状态
     @State private var draftRevision = 0
     /// 最近编辑里待删除的视频
@@ -93,6 +95,19 @@ struct CutHomeView: View {
             } else if UserDefaults.standard.bool(forKey: "faceMaskPageOnly") {
                 faceMaskRequest = FaceMaskRequest(url: nil)
             }
+            // 截图钩子：用测试视频（Documents/face-test.mp4）打开「一键视频增强」
+            if UserDefaults.standard.bool(forKey: "openEnhanceTest") {
+                let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                let shortURL = docs.appendingPathComponent("enhance-test.mp4")
+                let testURL = FileManager.default.fileExists(atPath: shortURL.path)
+                    ? shortURL
+                    : docs.appendingPathComponent("face-test.mp4")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    enhanceRequest = VideoEnhanceRequest(url: testURL)
+                }
+            } else if UserDefaults.standard.bool(forKey: "enhancePageOnly") {
+                enhanceRequest = VideoEnhanceRequest(url: nil)
+            }
         }
         #endif
         .navigationTitle("Cut")
@@ -115,6 +130,10 @@ struct CutHomeView: View {
         }
         .fullScreenCover(item: $faceMaskRequest) { request in
             FaceMaskView(debugURL: request.url)
+                .environmentObject(library)
+        }
+        .fullScreenCover(item: $enhanceRequest) { request in
+            VideoEnhanceView(debugURL: request.url)
                 .environmentObject(library)
         }
         .fullScreenCover(item: $editorSource, onDismiss: {
@@ -149,14 +168,17 @@ struct CutHomeView: View {
                 columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
                 spacing: 10
             ) {
-                toolEntry(icon: "sparkles", title: "AI 画质增强")
-                toolEntry(icon: "wand.and.stars", title: "一键去水印")
+                toolEntry(icon: "sparkles", title: "一键视频增强") {
+                    enhanceRequest = VideoEnhanceRequest(url: nil)
+                }
                 toolEntry(icon: "text.viewfinder", title: "一键提取文字") {
                     textExtractRequest = TextExtractRequest(url: nil)
                 }
                 toolEntry(icon: "face.dashed", title: "一键人脸打码") {
                     faceMaskRequest = FaceMaskRequest(url: nil)
                 }
+                // V3.7.1：去水印还没做，入口挪到最后，先把已上线的三个放前面
+                toolEntry(icon: "wand.and.stars", title: "一键去水印")
             }
         }
         .padding(18)
