@@ -26,6 +26,13 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - 原「从相册选片」入口从 Cut 页移除（V2.0 只按本地视频 + 素材库两条主线走），相簿相关代码（`PhotosPicker` 绑定、`importPhoto`）一并删掉。
 - 调试钩子：`-startSection cut` 直达 Cut，`-autoOpenFirstVideo YES` 延迟 1s 打开最近一个视频的剪辑窗口（用来验草稿还原）。
 
+### Mac-V2.1 · 剪辑页改整页
+
+- 剪辑从 sheet 改成整页：Cut 页用 `MacCutRoute`（home / editor）切换，剪辑页左上角「‹ 剪辑台」返回。点「开始编辑」进空剪辑页，点「最近编辑」卡片直接进剪辑页并载入该视频 + 还原草稿（裁剪区间、静音）。
+- 剪辑页按剪映专业版的骨架分左右两栏：左栏宽 340，上半是视频列表（素材库全部视频，缩略图 + 标题 + 时长，当前载入的高亮），下半是编辑区 + 时间轴（胶片条双柄裁剪、播放头、播放键、静音开关、存入素材库 / 保存到照片）；右栏是播放器（黑底画布 + 底部时间码 / 播放键 / 回到开头）。
+- 编辑器 `MacEditorModel` 的 `source` 改成可选，新增 `open(_:)` 支持页面内换素材；载入时按 `libraryVideoID` 找草稿还原现场，离开页面（返回或关窗）写回草稿。
+- 顺手把 `MacLibraryView` 的 body 拆成 `decorated` + `content` 两个子视图：原来那一大坨修饰器把类型推断压超时，报 `unable to type-check this expression in reasonable time`，拆完编译恢复正常。
+
 ### V1.0.4 · List 页收敛
 
 - 去掉文件夹区域的布局切换按钮（列表 / 卡片），固定列表展示；卡片视图代码一并移除。

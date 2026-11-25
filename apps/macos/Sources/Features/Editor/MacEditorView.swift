@@ -3,7 +3,7 @@ import AppKit
 import SwiftUI
 import LeogotoPlayCore
 
-/// 编辑器数据源（macOS）：素材库视频，或从相册 / 文件临时导入的视频。
+/// 编辑器数据源（macOS）：素材库视频，或从文件导入的视频。
 struct MacEditorSource: Identifiable {
     let id = UUID()
     let url: URL
@@ -13,8 +13,8 @@ struct MacEditorSource: Identifiable {
 
 @MainActor
 final class MacEditorModel: ObservableObject {
-    let source: MacEditorSource
-    let player: AVPlayer
+    @Published private(set) var source: MacEditorSource?
+    let player = AVPlayer()
 
     @Published var duration: Double = 0
     @Published var trimStart: Double = 0
@@ -23,7 +23,7 @@ final class MacEditorModel: ObservableObject {
     @Published var isPlaying = false
     @Published var isMuted = false
     @Published var filmstrip: [NSImage] = []
-    @Published var isLoading = true
+    @Published var isLoading = false
     @Published var isExporting = false
     @Published var exportProgress: Double = 0
     @Published var errorMessage: String?
@@ -32,9 +32,11 @@ final class MacEditorModel: ObservableObject {
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
 
-    init(source: MacEditorSource) {
+    init(source: MacEditorSource?) {
         self.source = source
-        self.player = AVPlayer(url: source.url)
+        if let url = source?.url {
+            player.replaceCurrentItem(with: AVPlayerItem(url: url))
+        }
         observePlayer()
     }
 
@@ -47,11 +49,32 @@ final class MacEditorModel: ObservableObject {
         }
     }
 
+    var hasSource: Bool { source != nil }
+
     var selectedDuration: Double { max(0, trimEnd - trimStart) }
 
     private var minTrimGap: Double { min(0.2, max(0.05, duration * 0.01)) }
 
     func load() async {
+        guard let source else { return }
+        await loadSource(source)
+    }
+
+    /// 换一条素材：重置播放器并读时长 / 胶片 / 草稿
+    func open(_ newSource: MacEditorSource) async {
+        pause()
+        source = nil
+        duration = 0
+        trimStart = 0
+        trimEnd = 0
+        currentTime = 0
+        filmstrip = []
+        source = newSource
+        player.replaceCurrentItem(with: AVPlayerItem(url: newSource.url))
+        await loadSource(newSource)
+    }
+
+    private func loadSource(_ source: MacEditorSource) async {
         isLoading = true
         duration = await VideoImporter.duration(of: source.url)
         if duration <= 0 { duration = 0.01 }
@@ -114,21 +137,22 @@ final class MacEditorModel: ObservableObject {
         trimEnd = duration
     }
 
+    func toggleMute() {
+        isMuted.toggle()
+        player.isMuted = isMuted
+    }
+
     /// 离开剪辑页时调用：打开过就存成草稿（只有素材库视频有 id）
     func saveDraft() {
-        guard let videoID = source.libraryVideoID, duration > 0.1 else { return }
+        guard let videoID = source?.libraryVideoID, duration > 0.1 else { return }
         MacEditorDraftStore.save(
             MacEditorDraft(trimStart: trimStart, trimEnd: trimEnd, isMuted: isMuted, updatedAt: Date()),
             for: videoID
         )
     }
 
-    func toggleMute() {
-        isMuted.toggle()
-        player.isMuted = isMuted
-    }
-
     func export() async -> URL? {
+        guard let source else { return nil }
         guard selectedDuration > 0.1 else {
             errorMessage = "裁剪区间太短，至少需要 0.1 秒"
             return nil
@@ -173,7 +197,7 @@ final class MacEditorModel: ObservableObject {
 
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
-            object: player.currentItem,
+            object: nil,
             queue: .main
         ) { [weak self] _ in
             guard let self else { return }
@@ -182,17 +206,19 @@ final class MacEditorModel: ObservableObject {
     }
 }
 
-/// macOS 剪辑窗口：预览 + 裁剪 + 导出/入库。
+/// macOS 剪辑页（V2.1）：左边上下两块（视频列表 / 编辑区 + 时间轴），右边播放器。
 struct MacEditorView: View {
     @EnvironmentObject private var library: LibraryStore
-    @Environment(\.dismiss) private var dismiss
 
     @StateObject private var model: MacEditorModel
+    private let onClose: () -> Void
+
     @State private var quality: VideoExporter.Quality = ExportSettings.quality
     @State private var toast: String?
 
-    init(source: MacEditorSource) {
-        _model = StateObject(wrappedValue: MacEditorModel(source: source))
+    init(initialSource: MacEditorSource?, onClose: @escaping () -> Void) {
+        _model = StateObject(wrappedValue: MacEditorModel(source: initialSource))
+        self.onClose = onClose
     }
 
     var body: some View {
@@ -200,13 +226,19 @@ struct MacEditorView: View {
             header
             Divider()
             HStack(spacing: 0) {
-                preview
+                VStack(spacing: 0) {
+                    mediaPanel
+                        .frame(height: 250)
+                    Divider()
+                    editingPanel
+                }
+                .frame(width: 340)
+
                 Divider()
-                inspector
-                    .frame(width: 300)
+                playerPanel
             }
         }
-        .frame(minWidth: 940, minHeight: 620)
+        .background(MacTheme.canvas)
         .task { await model.load() }
         .onDisappear { model.saveDraft() }
         .alert("提示", isPresented: Binding(
@@ -224,177 +256,266 @@ struct MacEditorView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(.black.opacity(0.8), in: Capsule())
-                    .padding(.bottom, 18)
-                    .transition(.opacity)
+                    .background(.black.opacity(0.82), in: Capsule())
+                    .padding(.bottom, 20)
             }
         }
-        .animation(.easeOut(duration: 0.2), value: toast)
     }
+
+    // MARK: - 顶栏
 
     private var header: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("剪辑 · \(model.source.title)")
-                    .font(.title3.weight(.semibold))
+            Button {
+                model.saveDraft()
+                onClose()
+            } label: {
+                Label("剪辑台", systemImage: "chevron.left")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(MacTheme.accent)
+
+            Divider().frame(height: 16)
+
+            Text(model.source?.title ?? "新建编辑")
+                .font(.headline)
+                .foregroundStyle(.white)
+                .lineLimit(1)
+
+            if model.hasSource {
                 Text("\(model.selectedDuration.timecode) / \(model.duration.timecode)")
-                    .font(.caption)
+                    .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
+
             Spacer()
-            if model.isLoading {
-                ProgressView().controlSize(.small)
+
+            if model.isExporting {
+                ProgressView(value: model.exportProgress)
+                    .frame(width: 90)
+                Text("\(Int(model.exportProgress * 100))%")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
             }
+
+            Picker("", selection: $quality) {
+                ForEach(VideoExporter.Quality.allCases) { q in
+                    Text(q.title).tag(q)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 210)
+            .onChange(of: quality) { newValue in
+                UserDefaults.standard.set(newValue.rawValue, forKey: ExportSettings.qualityKey)
+            }
+
             Button {
-                dismiss()
+                Task { await exportAndSaveToFile() }
             } label: {
-                Image(systemName: "xmark")
+                Label("导出", systemImage: "square.and.arrow.up")
             }
-            .buttonStyle(.bordered)
-            .help("关闭")
+            .buttonStyle(.borderedProminent)
+            .disabled(!model.hasSource || model.isExporting)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
     }
 
-    private var preview: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                Color.black
-                MacPlayerSurface(player: model.player)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    // MARK: - 左侧：视频列表
 
-            VStack(spacing: 10) {
+    private var mediaPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("视频")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(library.videos.count)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+
+            if library.videos.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "film.stack")
+                        .font(.title3)
+                        .foregroundStyle(MacTheme.accent.opacity(0.7))
+                    Text("素材库还没有视频")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 4) {
+                        ForEach(library.videos) { item in
+                            mediaRow(item)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 10)
+                }
+            }
+        }
+        .background(MacTheme.surface)
+    }
+
+    private func mediaRow(_ item: VideoItem) -> some View {
+        let selected = model.source?.libraryVideoID == item.id
+        return Button {
+            Task {
+                await model.open(MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id))
+            }
+        } label: {
+            HStack(spacing: 10) {
+                MacThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 6)
+                    .frame(width: 56, height: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title)
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Text(item.duration.timecode)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(selected ? MacTheme.accent.opacity(0.20) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - 左下：编辑区 + 时间轴
+
+    private var editingPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if model.hasSource {
                 MacTrimSlider(
                     filmstrip: model.filmstrip,
                     duration: model.duration,
-                    start: Binding(
-                        get: { model.trimStart },
-                        set: { model.updateStart($0) }
-                    ),
-                    end: Binding(
-                        get: { model.trimEnd },
-                        set: { model.updateEnd($0) }
-                    ),
+                    start: Binding(get: { model.trimStart }, set: { model.updateStart($0) }),
+                    end: Binding(get: { model.trimEnd }, set: { model.updateEnd($0) }),
                     currentTime: model.currentTime,
                     onScrub: { model.seek(to: $0) }
                 )
+                .frame(height: 90)
 
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     Button {
                         model.togglePlay()
                     } label: {
                         Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                            .frame(width: 22)
+                            .frame(width: 20)
                     }
                     .buttonStyle(.borderedProminent)
-                    .help(model.isPlaying ? "暂停" : "播放")
 
                     Text(model.currentTime.timecode)
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
 
+                    Text("起点 \(model.trimStart.timecode) · 终点 \(model.trimEnd.timecode)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+
                     Spacer()
 
-                    Button("回到开头") { model.seek(to: model.trimStart) }
-                        .buttonStyle(.link)
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 14)
-            }
-        }
-    }
-
-    private var inspector: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                section("裁剪") {
-                    VStack(alignment: .leading, spacing: 6) {
-                        labeledValue("起点", model.trimStart.timecode)
-                        labeledValue("终点", model.trimEnd.timecode)
-                        labeledValue("时长", model.selectedDuration.timecode)
-                        Button("重置区间") { model.resetTrim() }
-                            .buttonStyle(.link)
-                    }
-                }
-
-                section("音频") {
-                    Toggle("静音导出", isOn: Binding(
+                    Toggle("静音", isOn: Binding(
                         get: { model.isMuted },
                         set: { _ in model.toggleMute() }
                     ))
                     .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .font(.caption)
                 }
 
-                section("导出清晰度") {
-                    Picker("", selection: $quality) {
-                        ForEach(VideoExporter.Quality.allCases) { q in
-                            Text(q.title).tag(q)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .onChange(of: quality) { newValue in
-                        UserDefaults.standard.set(newValue.rawValue, forKey: ExportSettings.qualityKey)
-                    }
-                }
-
-                if model.isExporting {
-                    section("导出进度") {
-                        ProgressView(value: model.exportProgress)
-                        Text("\(Int(model.exportProgress * 100))%")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                section("完成后") {
-                    VStack(spacing: 8) {
-                        Button {
-                            Task { await exportAndSaveToFile() }
-                        } label: {
-                            Label("导出并另存为…", systemImage: "square.and.arrow.down")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-
-                        Button {
-                            Task { await exportAndImportToLibrary() }
-                        } label: {
-                            Label("存入素材库", systemImage: "square.stack.3d.up")
-                                .frame(maxWidth: .infinity)
-                        }
+                HStack(spacing: 8) {
+                    Button("存入素材库") { Task { await exportAndImportToLibrary() } }
                         .buttonStyle(.bordered)
-                        .controlSize(.large)
-
-                        Button {
-                            Task { await exportAndSaveToPhotos() }
-                        } label: {
-                            Label("保存到「照片」", systemImage: "photo.on.rectangle")
-                                .frame(maxWidth: .infinity)
-                        }
+                    Button("保存到「照片」") { Task { await exportAndSaveToPhotos() } }
                         .buttonStyle(.bordered)
-                        .controlSize(.large)
-                    }
-                    .disabled(model.isExporting)
                 }
+                .controlSize(.small)
+                .disabled(model.isExporting)
 
                 Spacer(minLength: 0)
+            } else {
+                VStack(spacing: 10) {
+                    Image(systemName: "scissors")
+                        .font(.system(size: 26, weight: .light))
+                        .foregroundStyle(MacTheme.accent.opacity(0.7))
+                    Text("从上面的视频列表里选一条开始编辑")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .padding(18)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .padding(14)
+    }
+
+    // MARK: - 右侧：播放器
+
+    private var playerPanel: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Color.black
+                if model.hasSource {
+                    MacPlayerSurface(player: model.player)
+                } else {
+                    VStack(spacing: 10) {
+                        Image(systemName: "play.rectangle")
+                            .font(.system(size: 40, weight: .light))
+                            .foregroundStyle(Color.white.opacity(0.25))
+                        Text(model.isLoading ? "读取中…" : "还没有载入视频")
+                            .font(.callout)
+                            .foregroundStyle(Color.white.opacity(0.4))
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if model.hasSource {
+                HStack(spacing: 12) {
+                    Text(model.currentTime.timecode)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    Button {
+                        model.togglePlay()
+                    } label: {
+                        Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Text(model.duration.timecode)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("回到开头") { model.seek(to: model.trimStart) }
+                        .buttonStyle(.link)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+            }
+        }
+        .background(Color.black)
     }
 
     // MARK: - 动作
 
     private func exportAndSaveToFile() async {
         guard let exported = await model.export() else { return }
-        guard let destination = MacAlerts.chooseSaveURL(suggestedName: "\(model.source.title)-\(Int(Date().timeIntervalSince1970)).mp4") else {
-            return
-        }
+        let suggested = "\(model.source?.title ?? "clip")-\(Int(Date().timeIntervalSince1970)).mp4"
+        guard let destination = MacAlerts.chooseSaveURL(suggestedName: suggested) else { return }
         do {
             try VideoExporter.moveExport(exported, to: destination)
             show("已保存到 \(destination.lastPathComponent)")
@@ -406,7 +527,7 @@ struct MacEditorView: View {
     private func exportAndImportToLibrary() async {
         guard let exported = await model.export() else { return }
         do {
-            try await library.importExport(fileURL: exported, title: "\(model.source.title) 剪辑")
+            try await library.importExport(fileURL: exported, title: "\(model.source?.title ?? "剪辑") 剪辑")
             show("已存入素材库")
         } catch {
             model.errorMessage = error.localizedDescription
@@ -428,26 +549,6 @@ struct MacEditorView: View {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 2_200_000_000)
             if toast == text { toast = nil }
-        }
-    }
-
-    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title.uppercased())
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(.secondary)
-            content()
-        }
-    }
-
-    private func labeledValue(_ label: String, _ value: String) -> some View {
-        HStack {
-            Text(label)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .font(.callout.monospacedDigit())
         }
     }
 }

@@ -2,11 +2,17 @@ import AppKit
 import SwiftUI
 import LeogotoPlayCore
 
+/// Cut 页的两个去处：首页，或剪辑页（可带一条已选素材）。
+private enum MacCutRoute {
+    case home
+    case editor(MacEditorSource?)
+}
+
 /// macOS 剪辑台（V2.0）：深色淡红底，首页三段式 —— 热门工具 / 添加并开始编辑 / 最近编辑。
 struct MacCutView: View {
     @EnvironmentObject private var library: LibraryStore
 
-    @State private var editingSource: MacEditorSource?
+    @State private var route: MacCutRoute = .home
     @State private var playingVideo: VideoItem?
     @State private var showLibraryPicker = false
     @State private var isImporting = false
@@ -23,6 +29,22 @@ struct MacCutView: View {
     ]
 
     var body: some View {
+        Group {
+            switch route {
+            case .home:
+                home
+            case .editor(let source):
+                // V2.1：剪辑改成整页（不再弹 sheet），返回时把草稿状态刷新回「最近编辑」
+                MacEditorView(initialSource: source) {
+                    draftRevision += 1
+                    route = .home
+                }
+                .environmentObject(library)
+            }
+        }
+    }
+
+    private var home: some View {
         ScrollView {
             VStack(spacing: 18) {
                 hotTools
@@ -34,17 +56,12 @@ struct MacCutView: View {
             .padding(.bottom, 24)
         }
         .background(MacTheme.canvas)
-        .sheet(item: $editingSource) { source in
-            MacEditorView(source: source)
-                .environmentObject(library)
-                .onDisappear { draftRevision += 1 }
-        }
         .sheet(item: $playingVideo) { item in
             MacPlayerView(item: item)
         }
         .sheet(isPresented: $showLibraryPicker) {
             MacSourcePickerSheet { item in
-                editingSource = MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id)
+                route = .editor(MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id))
             }
             .environmentObject(library)
         }
@@ -68,12 +85,10 @@ struct MacCutView: View {
     /// Debug 启动参数 `-autoOpenFirstVideo YES`：直接打开最近一个视频的剪辑窗口，方便截图与联调。
     private func openFirstVideoIfNeeded() {
         #if DEBUG
-        guard UserDefaults.standard.bool(forKey: "autoOpenFirstVideo"),
-              editingSource == nil else { return }
-        // 等窗口铺好再弹 sheet，否则 sheet 会和首个渲染帧抢时序
+        guard UserDefaults.standard.bool(forKey: "autoOpenFirstVideo") else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            guard editingSource == nil, let item = library.recentVideos.first else { return }
-            editingSource = MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id)
+            guard case .home = route, let item = library.recentVideos.first else { return }
+            route = .editor(MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id))
         }
         #endif
     }
@@ -131,7 +146,8 @@ struct MacCutView: View {
     private var startEditCard: some View {
         HStack(spacing: 0) {
             Button {
-                startFromLocalFile()
+                // V2.1：进入剪辑页（先空着，等用户在页面里挑素材）
+                route = .editor(nil)
             } label: {
                 HStack(spacing: 14) {
                     Image(systemName: "plus")
@@ -147,7 +163,7 @@ struct MacCutView: View {
                         Text(isImporting ? "正在读取…" : "开始编辑")
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(.white)
-                        Text("添加一个本地视频，进入剪辑台")
+                        Text("进入剪辑台，挑选视频开始编辑")
                             .font(.caption)
                             .foregroundStyle(Color.white.opacity(0.58))
                     }
@@ -246,7 +262,7 @@ struct MacCutView: View {
                                 item: item,
                                 draft: MacEditorDraftStore.draft(for: item.id),
                                 onOpen: {
-                                    editingSource = MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id)
+                                    route = .editor(MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id))
                                 },
                                 onDelete: { delete(item) }
                             )
@@ -275,7 +291,7 @@ struct MacCutView: View {
                 )
                 VideoImporter.cleanTemporaryFile(at: temp)
                 toast = "已导入「\(item.title)」"
-                editingSource = MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id)
+                route = .editor(MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id))
             } catch {
                 toast = error.localizedDescription
             }

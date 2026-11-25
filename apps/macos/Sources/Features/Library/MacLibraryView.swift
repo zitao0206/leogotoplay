@@ -31,6 +31,86 @@ struct MacLibraryView: View {
     }
 
     var body: some View {
+        decorated
+            .sheet(item: $playingVideo) { item in
+                MacPlayerView(item: item)
+            }
+            .sheet(item: $editingSource) { source in
+                MacEditorView(initialSource: source) { editingSource = nil }
+                    .environmentObject(library)
+            }
+            .sheet(item: $renameVideoTarget) { item in
+                MacRenameSheet(title: "重命名视频", currentName: item.title) { newName in
+                    library.renameVideo(item.id, to: newName)
+                }
+            }
+            .sheet(item: $renameFolderTarget) { folder in
+                MacRenameSheet(title: "重命名文件夹", currentName: folder.name) { newName in
+                    library.renameFolder(folder.id, to: newName)
+                }
+            }
+            .sheet(item: $moveVideoTarget) { item in
+                MacMoveSheet(folders: library.folders, currentFolderID: item.folderID) { folderID in
+                    library.moveVideo(item.id, to: folderID)
+                }
+            }
+            .sheet(isPresented: $showNewFolder) {
+                MacNewFolderSheet { name in
+                    library.createFolder(named: name)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if let toast {
+                    Text(toast)
+                        .font(.callout)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(.black.opacity(0.8), in: Capsule())
+                        .padding(.bottom, 20)
+                }
+            }
+    }
+
+    /// 页面主体 + 工具栏 / 搜索 / 导入事件（拆出来单纯是为了让类型推断能过）
+    private var decorated: some View {
+        content
+            .background(Color(nsColor: .windowBackgroundColor))
+            .toolbar {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    if isImporting {
+                        ProgressView().controlSize(.small)
+                    }
+                    PhotosPicker(selection: $photoPickerItem, matching: .videos) {
+                        Label("从相册导入", systemImage: "photo.on.rectangle")
+                    }
+                    Button {
+                        if let url = MacAlerts.chooseVideoFile() {
+                            Task { await importFile(url) }
+                        }
+                    } label: {
+                        Label("导入视频", systemImage: "plus")
+                    }
+                    Button {
+                        showNewFolder = true
+                    } label: {
+                        Label("新建文件夹", systemImage: "folder.badge.plus")
+                    }
+                }
+            }
+            .searchable(text: $searchText, prompt: "搜索视频标题")
+            .onChange(of: photoPickerItem) { newValue in
+                guard let newValue else { return }
+                Task { await importPhoto(newValue) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .macImportVideo)) { _ in
+                if let url = MacAlerts.chooseVideoFile() {
+                    Task { await importFile(url) }
+                }
+            }
+    }
+
+    private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 header
@@ -42,77 +122,6 @@ struct MacLibraryView: View {
                 videoSection
             }
             .padding(MacTheme.pagePadding)
-        }
-        .background(Color(nsColor: .windowBackgroundColor))
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                if isImporting {
-                    ProgressView().controlSize(.small)
-                }
-                PhotosPicker(selection: $photoPickerItem, matching: .videos) {
-                    Label("从相册导入", systemImage: "photo.on.rectangle")
-                }
-                Button {
-                    if let url = MacAlerts.chooseVideoFile() {
-                        Task { await importFile(url) }
-                    }
-                } label: {
-                    Label("导入视频", systemImage: "plus")
-                }
-                Button {
-                    showNewFolder = true
-                } label: {
-                    Label("新建文件夹", systemImage: "folder.badge.plus")
-                }
-            }
-        }
-        .searchable(text: $searchText, prompt: "搜索视频标题")
-        .onChange(of: photoPickerItem) { newValue in
-            guard let newValue else { return }
-            Task { await importPhoto(newValue) }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .macImportVideo)) { _ in
-            if let url = MacAlerts.chooseVideoFile() {
-                Task { await importFile(url) }
-            }
-        }
-        .sheet(item: $playingVideo) { item in
-            MacPlayerView(item: item)
-        }
-        .sheet(item: $editingSource) { source in
-            MacEditorView(source: source)
-                .environmentObject(library)
-        }
-        .sheet(item: $renameVideoTarget) { item in
-            MacRenameSheet(title: "重命名视频", currentName: item.title) { newName in
-                library.renameVideo(item.id, to: newName)
-            }
-        }
-        .sheet(item: $renameFolderTarget) { folder in
-            MacRenameSheet(title: "重命名文件夹", currentName: folder.name) { newName in
-                library.renameFolder(folder.id, to: newName)
-            }
-        }
-        .sheet(item: $moveVideoTarget) { item in
-            MacMoveSheet(folders: library.folders, currentFolderID: item.folderID) { folderID in
-                library.moveVideo(item.id, to: folderID)
-            }
-        }
-        .sheet(isPresented: $showNewFolder) {
-            MacNewFolderSheet { name in
-                library.createFolder(named: name)
-            }
-        }
-        .overlay(alignment: .bottom) {
-            if let toast {
-                Text(toast)
-                    .font(.callout)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(.black.opacity(0.8), in: Capsule())
-                    .padding(.bottom, 20)
-            }
         }
     }
 
