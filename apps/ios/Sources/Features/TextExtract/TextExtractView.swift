@@ -288,7 +288,7 @@ struct TextExtractView: View {
                         Text("\(phaseText)，请不要锁屏或切换程序")
                             .font(.system(size: 15))
                             .foregroundStyle(.white.opacity(0.42))
-                            .multilineTextAlignment(.center)
+                             .multilineTextAlignment(.center)
                     }
                 }
                 .offset(y: -36)

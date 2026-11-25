@@ -80,6 +80,20 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
   - `floats()` 改用 `CMBlockBufferCopyDataBytes`（分块缓冲不再越界读），采样率 / 声道数从音轨 ASBD 读取，单声道素材不再被当成双声道错位处理；进度按 PTS 算，不再用 `index/(index+6)` 这种永远到不了 1 的公式。
 - 仍待做：真正的频谱降噪（vDSP STFT 谱减 + 最小统计噪声估计）和去混响，门控做不到「降噪」，只做 −3 dB 的轻度抑制。
 
+### V3.8 · 一键提取人脸
+
+- Cut 页热门工具四宫格（2×2）最终顺序：一键人脸打码 → 一键提取文字 → 一键视频增强 → 一键提取人脸（`person.crop.rectangle`）；原来占位的「一键去水印」入口已删除（功能仍未做）。
+- 点进去是独立页面（`Features/FaceExtract/`，结构沿用打码 / 增强页）：能力介绍卡（三条 bullet）、中央 54×54 圆角「+」大按钮「从相册中选片」、底部「说明」卡（侧脸 / 遮挡 / 小脸可能抓不到、最多 80 张、同一张脸只留质量最好的一帧、原视频不动）。
+- 选片后先算估时（`1.2 + 0.16×时长`；每秒抽 3 帧，10 秒片约 3 秒、1 分钟约 11 秒），弹「开始提取？」确认框写明「预计需要约 N 秒，处理期间请不要锁屏或切换 App」，点「开始提取」才开跑，取消则清掉临时文件。
+- 处理中整屏黑场 + 复用 `ProcessingOrb` 光球，球下「人脸提取中 37%」+ 灰字「正在逐帧扫描人脸，请不要锁屏或切换程序」；顶部返回箭头弹「停止提取？」（已扫过的丢弃、原视频不受影响）。期间 `isIdleTimerDisabled = true`，完成 / 失败 / 取消都复位。
+- 完成后进结果页：顶部「关闭 / 提取完成 / 保存」，标签行「共 N 张 / 时长 / 3:4 裁切」，下面三列网格铺满所有脸，每张左下角压一个入镜时间码角标，点任意一张全屏看大图。右上「保存」一次性把所有图片写进系统相册（`PHPhotoLibrary.performChanges` 里逐条 `PHAssetCreationRequest.addResource`，`.addOnly` 授权），成功后 toast「已保存 N 张到相册」。
+- 检测链路：`AVAssetReader` 逐帧 BGRA → 按 `preferredTransform` 摆正（同打码页的坑：摆正后不要再把 transform 传给 Vision）→ 缩到 720 长边 → Vision `VNDetectFaceCaptureQualityRequest`（顺带拿 `faceCaptureQuality` 作为择优依据）→ 失败退 `VNDetectFaceRectanglesRequest` rev3 → 再退 `CIDetector`。每张脸的框按「脸高 ×2、3:4 竖版、中心上移 0.15 倍脸高」裁切并夹进画面边缘，最短边小于 48px 的小脸直接丢。
+- Vision 后端按「GPU → CPU（`usesCPUOnly`）→ CoreImage → 放弃」一次性降级，同打码页：这台 Intel Mac 的模拟器建不了 GPU 推理上下文，靠 CPU 那级才出结果；降级只试一次，不会每帧白跑一遍失败请求。
+- 去重：同一秒内和已有轨迹 IoU > 0.35 且时间跨度 < 1.6s 视为同一张脸；新帧质量分比已存的 > 0.06 才替换，所以吐出来的是「每个出现过的人一张最清楚的图」。超过 80 张时按质量分取前 80 张，再按时间排序输出。
+- 调试钩子：`-openFaceExtractTest YES`（用 `Documents/face-test.mp4`）、`-faceExtractPageOnly YES`（只开空页面）、`-faceExtractSkipConfirm YES`（跳过估时确认直接开跑）、`-faceExtractAutoSave YES`（出结果后自动存相册，验证批量保存）。
+- 模拟器实测（8s / 1080×1920 单人出镜片段）：每秒 3 帧扫完，同一张脸去重后 1 张，裁出 276×367 的 3:4 竖图（源画面里脸本身只有约 183px 高，裁切不放大，保持原始像素）；三列网格 + 时间码角标正常，`faceExtractAutoSave` 批量写入相册 1 张成功（`DCIM` 里多出一张 276×367 的 JPG）。
+- 已知未做：侧脸 / 遮挡 / 小脸仍可能漏；只出图不自动进素材库；macOS 端未同步。
+
 ### V4.0 · App Icon
 
 - 有了正式图标（此前 `AppIcon.appiconset` 是空的，装到手机上就是白灰方块）：炭黑底 `#15171B` + 右上暖橙光晕，主体是主题色 `Theme.accent`（`#FF5C3D` → `#FF9A6B`）渐变的播放三角，中间被一道斜切缝劈开——一眼是「播放」，第二眼是「剪辑」，对应 Cut / List 两条主线。

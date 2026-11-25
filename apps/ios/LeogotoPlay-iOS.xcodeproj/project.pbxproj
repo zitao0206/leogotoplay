@@ -22,6 +22,8 @@
 		B569E6FF816F7D61CC38A4F3 /* VideoEnhanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B47BE2C267013D3EFF86361 /* VideoEnhanceView.swift */; };
 		5A4DFAB9F2F24FA40ACAA0BF /* FaceMaskService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D09D6408EC54201AA94707D /* FaceMaskService.swift */; };
 		D45EF3596C4C89D4E6FC21D1 /* FaceMaskView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72022010F0C61AE06C605CBF /* FaceMaskView.swift */; };
+		3F5A7C9E1B2D4C6A8E0F1A2B /* FaceExtractService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B1D3F5A7C0E2A4B6D8F0A1C /* FaceExtractService.swift */; };
+		6D8E0A2C4F1B3D5A7C9E0F1B /* FaceExtractView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E4A6C8B0D1F3A5C7E9B0D2A /* FaceExtractView.swift */; };
 		A7FF6E24E22B4D2FD5E191F6 /* AllVideosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16C0A3663A28D4A3852D488 /* AllVideosView.swift */; };
 		4719FB49D8B93EB21DFDF843 /* FolderDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57DB7297C90416408E287037 /* FolderDetailView.swift */; };
 		94A4CEF0A499566C017C8D65 /* LibrarySheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98E0708CF451EC1E27B8B218 /* LibrarySheets.swift */; };
@@ -57,6 +59,8 @@
 		8B47BE2C267013D3EFF86361 /* VideoEnhanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoEnhanceView.swift; sourceTree = "<group>"; };
 		2D09D6408EC54201AA94707D /* FaceMaskService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceMaskService.swift; sourceTree = "<group>"; };
 		72022010F0C61AE06C605CBF /* FaceMaskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceMaskView.swift; sourceTree = "<group>"; };
+		9B1D3F5A7C0E2A4B6D8F0A1C /* FaceExtractService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceExtractService.swift; sourceTree = "<group>"; };
+		2E4A6C8B0D1F3A5C7E9B0D2A /* FaceExtractView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceExtractView.swift; sourceTree = "<group>"; };
 		F16C0A3663A28D4A3852D488 /* AllVideosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllVideosView.swift; sourceTree = "<group>"; };
 		57DB7297C90416408E287037 /* FolderDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderDetailView.swift; sourceTree = "<group>"; };
 		98E0708CF451EC1E27B8B218 /* LibrarySheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySheets.swift; sourceTree = "<group>"; };
@@ -171,6 +175,15 @@
 			path = FaceMask;
 			sourceTree = "<group>";
 		};
+		45B7D9F1A3C5E7B9D1F3A5C7 /* FaceExtract */ = {
+			isa = PBXGroup;
+			children = (
+				9B1D3F5A7C0E2A4B6D8F0A1C /* child */,
+				2E4A6C8B0D1F3A5C7E9B0D2A /* child */,
+			);
+			path = FaceExtract;
+			sourceTree = "<group>";
+		};
 		34C541A921114A6E4C06A30E /* Library */ = {
 			isa = PBXGroup;
 			children = (
@@ -221,6 +234,7 @@
 				23D0D225515EA3BEAB4A5CD8 /* child */,
 				DA1B77679B9A67A9890431E7 /* child */,
 				3EC134892F19A42372C96AEB /* child */,
+				45B7D9F1A3C5E7B9D1F3A5C7 /* child */,
 				34C541A921114A6E4C06A30E /* child */,
 				8BF2A95017CA3A387C871BF3 /* child */,
 				9C2540D373A25EC7F353B475 /* child */,
@@ -339,6 +353,8 @@
 				B569E6FF816F7D61CC38A4F3 /* VideoEnhanceView.swift in Sources */,
 				5A4DFAB9F2F24FA40ACAA0BF /* FaceMaskService.swift in Sources */,
 				D45EF3596C4C89D4E6FC21D1 /* FaceMaskView.swift in Sources */,
+				3F5A7C9E1B2D4C6A8E0F1A2B /* FaceExtractService.swift in Sources */,
+				6D8E0A2C4F1B3D5A7C9E0F1B /* FaceExtractView.swift in Sources */,
 				A7FF6E24E22B4D2FD5E191F6 /* AllVideosView.swift in Sources */,
 				4719FB49D8B93EB21DFDF843 /* FolderDetailView.swift in Sources */,
 				94A4CEF0A499566C017C8D65 /* LibrarySheets.swift in Sources */,
