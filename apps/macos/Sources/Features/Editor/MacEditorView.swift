@@ -94,6 +94,8 @@ final class MacEditorModel: ObservableObject {
 
     /// 时间轴可视宽度（由 MacTimelineView 上报，用于算可视窗口与内容落点）
     var timelineViewportWidth: CGFloat = 0
+    /// 还原草稿时希望时间轴滚到的播放头时间，视图拿到可视宽度后消费一次
+    var restoredScrollTime: Double?
 
     /// 默认间隔：整段时长除以 16
     var baseThumbnailInterval: Double {
@@ -194,12 +196,15 @@ final class MacEditorModel: ObservableObject {
         if let draft {
             isMuted = draft.isMuted
         }
-        rebuildComposition(preserveTime: 0)
+        let restoredTime = min(max(draft?.currentTime ?? 0, 0), max(0, clips.reduce(0) { $0 + $1.duration } - 0.02))
+        rebuildComposition(preserveTime: restoredTime)
         player.isMuted = isMuted
-        // 换素材：缩放到默认档（整段 16 张），胶片整块作废后重建
+        // 换素材：胶片整块作废后重建；缩放档位按草稿还原（没有草稿就是默认档）
         filmstrip = [:]
         filmstripInterval = 0
-        zoomLevel = 0
+        setZoomLevel(draft?.zoomLevel ?? 0)
+        // 从「最近编辑」进来时让时间轴滚回上次的位置
+        restoredScrollTime = draft?.currentTime
         updateVisibleWindow(offset: timelineScrollOffset)
     }
 
@@ -406,6 +411,7 @@ final class MacEditorModel: ObservableObject {
         clips = previous
         canUndo = !undoStack.isEmpty
         rebuildComposition(preserveTime: currentTime)
+        saveDraft()
     }
 
     /// 重置：整条原片一段
@@ -413,20 +419,20 @@ final class MacEditorModel: ObservableObject {
         pushUndo()
         clips = [MacClip(start: 0, end: assetDuration)]
         rebuildComposition(preserveTime: 0)
+        saveDraft()
     }
 
     /// 在播放头处把当前片段切成两段
     func splitAtPlayhead() {
         guard let anchor = clipAt(currentTime) else { return }
         let clip = clips[anchor.index]
-        guard anchor.sourceTime - clip.start > 0.05, clip.end - anchor.sourceTime > 0.05 else {
-            errorMessage = "播放头离片段端点太近，分割不出有意义的片段"
-            return
-        }
+        // 播放头正好压在片段端点（比如刚在这一刀切过）什么都不做，不弹提示
+        guard anchor.sourceTime - clip.start > 0.05, clip.end - anchor.sourceTime > 0.05 else { return }
         pushUndo()
         clips[anchor.index] = MacClip(start: clip.start, end: anchor.sourceTime)
         clips.insert(MacClip(start: anchor.sourceTime, end: clip.end), at: anchor.index + 1)
         rebuildComposition(preserveTime: currentTime)
+        saveDraft()
     }
 
     /// 播放头当前落在哪个片段（时间轴的选中框跟着它走）
@@ -434,16 +440,13 @@ final class MacEditorModel: ObservableObject {
     @Published var isClipSelected = true
     var currentClipIndex: Int? { isClipSelected ? clipAt(currentTime)?.index : nil }
 
-    /// 删除播放头所在的片段（最后一段不给删，否则时间轴就空了）
+    /// 删除播放头所在的片段；删到一段不剩就回到「素材拖进来」的空状态
     func deleteClipAtPlayhead() {
-        guard clips.count > 1 else {
-            errorMessage = "至少要保留一个片段"
-            return
-        }
         guard let anchor = clipAt(currentTime) else { return }
         pushUndo()
         clips.remove(at: anchor.index)
         rebuildComposition(preserveTime: currentTime)
+        saveDraft()
     }
 
     /// 向左分割：保留播放头左侧，裁掉右边（只作用于当前片段）
@@ -454,6 +457,7 @@ final class MacEditorModel: ObservableObject {
         pushUndo()
         clips[anchor.index] = MacClip(start: clip.start, end: anchor.sourceTime)
         rebuildComposition(preserveTime: currentTime)
+        saveDraft()
     }
 
     /// 向右分割：保留播放头右侧，裁掉左边（只作用于当前片段）
@@ -464,6 +468,7 @@ final class MacEditorModel: ObservableObject {
         pushUndo()
         clips[anchor.index] = MacClip(start: anchor.sourceTime, end: clip.end)
         rebuildComposition(preserveTime: currentTime)
+        saveDraft()
     }
 
     private func pushUndo() {
@@ -530,7 +535,9 @@ final class MacEditorModel: ObservableObject {
             cursor = cursor + range.duration
         }
 
-        outputDuration = max(CMTimeGetSeconds(cursor), 0)
+        // 用片段时长求和而不是 CMTime 取整后的结果：切割前后总长严格相等，
+        // 缩略图间隔不会因为几微秒的取整误差被判成「换档」，胶片就不会整块重取
+        outputDuration = max(clips.reduce(0) { $0 + $1.duration }, 0)
         let target = min(max(preserveTime ?? 0, 0), max(0, outputDuration - 0.02))
         isRebuildingPlayer = true
         player.replaceCurrentItem(with: AVPlayerItem(asset: composition))
@@ -552,9 +559,19 @@ final class MacEditorModel: ObservableObject {
     // MARK: - 草稿 / 导出
 
     func saveDraft() {
-        guard let videoID = source?.libraryVideoID, !clips.isEmpty else { return }
+        guard let videoID = source?.libraryVideoID else { return }
+        guard !clips.isEmpty else {
+            MacEditorDraftStore.clear(for: videoID)
+            return
+        }
         MacEditorDraftStore.save(
-            MacEditorDraft(clips: clips, isMuted: isMuted, updatedAt: Date()),
+            MacEditorDraft(
+            clips: clips,
+            isMuted: isMuted,
+            updatedAt: Date(),
+            currentTime: currentTime,
+            zoomLevel: zoomLevel
+        ),
             for: videoID
         )
     }
@@ -958,7 +975,7 @@ struct MacEditorView: View {
 
     private var editingPanel: some View {
         VStack(spacing: 0) {
-            if model.hasSource {
+            if model.hasSource && !model.clips.isEmpty {
                 toolRow
                     .padding(.horizontal, 12)
                     .padding(.top, 10)
@@ -984,6 +1001,11 @@ struct MacEditorView: View {
                     onViewportChange: { width in
                         timelineWidth = width
                         model.timelineViewportWidth = width
+                        // 从「最近编辑」进来：把上次的播放头位置滚进视野（只消费一次）
+                        if let t = model.restoredScrollTime, width > 1 {
+                            model.restoredScrollTime = nil
+                            timelineOffset = max(0, timelineInset + CGFloat(t) * model.pixelsPerSecond - width / 3)
+                        }
                         model.updateVisibleWindow(offset: timelineOffset)
                     },
                     onDeselect: {
@@ -1022,8 +1044,8 @@ struct MacEditorView: View {
             toolRow
                 .padding(.horizontal, 12)
                 .padding(.top, 10)
-                .disabled(true)
-                .opacity(0.40)
+                .disabled(!model.hasSource)
+                .opacity(model.hasSource ? 1 : 0.40)
 
             emptyRuler
                 .frame(height: 26)

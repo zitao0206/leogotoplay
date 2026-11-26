@@ -15,17 +15,29 @@ struct MacEditorDraft: Codable, Equatable {
     var clips: [MacClip]
     var isMuted: Bool
     var updatedAt: Date
+    /// 上次退出时播放头的位置（V2.7.12：从「最近编辑」进来要还原现场）
+    var currentTime: Double?
+    /// 上次退出时的缩放档位
+    var zoomLevel: Double?
 
     var outputDuration: Double { clips.reduce(0) { $0 + $1.duration } }
 
-    init(clips: [MacClip], isMuted: Bool, updatedAt: Date) {
+    init(
+        clips: [MacClip],
+        isMuted: Bool,
+        updatedAt: Date,
+        currentTime: Double? = nil,
+        zoomLevel: Double? = nil
+    ) {
         self.clips = clips
         self.isMuted = isMuted
         self.updatedAt = updatedAt
+        self.currentTime = currentTime
+        self.zoomLevel = zoomLevel
     }
 
     private enum CodingKeys: String, CodingKey {
-        case clips, isMuted, updatedAt
+        case clips, isMuted, updatedAt, currentTime, zoomLevel
         // V2.0 的旧草稿只有一条裁剪区间，读的时候降级成单片段
         case trimStart, trimEnd
     }
@@ -34,6 +46,8 @@ struct MacEditorDraft: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         isMuted = try container.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+        currentTime = try container.decodeIfPresent(Double.self, forKey: .currentTime)
+        zoomLevel = try container.decodeIfPresent(Double.self, forKey: .zoomLevel)
 
         if let stored = try container.decodeIfPresent([MacClip].self, forKey: .clips), !stored.isEmpty {
             clips = stored
@@ -49,6 +63,8 @@ struct MacEditorDraft: Codable, Equatable {
         try container.encode(clips, forKey: .clips)
         try container.encode(isMuted, forKey: .isMuted)
         try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(currentTime, forKey: .currentTime)
+        try container.encodeIfPresent(zoomLevel, forKey: .zoomLevel)
     }
 }
 
