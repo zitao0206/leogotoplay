@@ -14,10 +14,14 @@ struct MacTimelineView: View {
     let onSeek: (Double) -> Void
 
     private let trackHeight: CGFloat = 87
+    /// 时间轴两端各留 100pt 的空白滑动距离（合计 200pt），拖到头还能再滑一段
+    private let sideInset: CGFloat = 100
     private let handleWidth: CGFloat = 8
     private let clipGap: CGFloat = 2
 
-    private var contentWidth: CGFloat { max(CGFloat(outputDuration) * CGFloat(pixelsPerSecond), 1) }
+    private var contentWidth: CGFloat {
+        max(CGFloat(outputDuration) * CGFloat(pixelsPerSecond), 1) + sideInset * 2
+    }
     private var pps: CGFloat { CGFloat(pixelsPerSecond) }
 
     var body: some View {
@@ -34,6 +38,15 @@ struct MacTimelineView: View {
                 scrollBar(width: width, maxOffset: maxOffset, offset: offset)
                     .padding(.bottom, 2)
             }
+            .onAppear {
+                // 默认让片段起点贴着可视区左边，空白距离留出来给用户自己拖
+                if scrollOffset == 0 {
+                    scrollOffset = min(sideInset, maxOffset)
+                }
+            }
+            .onChange(of: outputDuration) { _ in
+                scrollOffset = min(sideInset, maxOffset)
+            }
         }
     }
 
@@ -43,10 +56,10 @@ struct MacTimelineView: View {
         ZStack(alignment: .topLeading) {
             clipRow
                 .padding(.top, 20)
-                .offset(x: -offset)
+                .offset(x: sideInset - offset)
 
             playhead
-                .offset(x: CGFloat(currentTime) * pps - 4 - offset, y: 0)
+                .offset(x: sideInset + CGFloat(currentTime) * pps - 4 - offset, y: 0)
         }
         .frame(width: width, height: trackHeight + 20, alignment: .topLeading)
         .clipped()
@@ -54,7 +67,7 @@ struct MacTimelineView: View {
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { value in
-                    onSeek(Double(max(0, value.location.x + offset)) / pixelsPerSecond)
+                    onSeek(Double(max(0, value.location.x + offset - sideInset)) / pixelsPerSecond)
                 }
         )
     }
