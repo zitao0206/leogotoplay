@@ -106,6 +106,12 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - 整段除不尽时，最后一格的取帧时间夹到视频末帧（`assetDuration - 0.04`），尾部不会再留空槽位。
 - 缩放状态从「绝对间隔」改成「档位 `zoomLevel`」，间隔由档位和当前整段时长实时算出来：裁完片段后密度自动按新时长重算，不会留着旧时长的间隔；间隔一变胶片缓存整块作废重建。
 
+### Mac-V2.8.11 · 修「两个视频一起拖进时间轴就崩」
+
+- 崩溃点：`MacTimelineView.filmstrip` 里 `ForEach(renderFirst..<renderLast)` 的区间倒置（`_assertionFailure` / `Range requires lowerBound <= upperBound`）。
+- 成因：可视窗口下界没夹回片段自己的 `[clip.start, clip.end]`，一旦滚动位置比该片段末尾更靠右，`renderFirst` 就被推到 `lastSlot` 之后，而 `renderLast` 又被 `min(lastSlot, …)` 压回来，区间变成「17..<2」直接 trap。多条片段一起入轨时滚动位置与片段区间最容易出现这种错位。
+- 修法：可视窗口先夹到片段区间，再对 `renderFirst` / `renderLast` 各夹一次，保证 `renderFirst ≤ lastSlot - 1` 且 `renderLast ≥ renderFirst + 1`；同时 `visibleStart/visibleEnd` 也夹一次并用 `max(ppsD, 0.0001)` 兜住除零，避免 `Int(floor(∞))` 这类转换 trap。
+
 ### Mac-V2.8.10 · 导入不上轨 + 拖放不再在回调里改状态
 
 - 撤回上一版「多选导入直接排到时间轴」：一次选多个只把素材放进左侧列表并全部选中（提示「已添加 N 个视频，拖到时间轴即可」），要上轨一律靠手动拖；时间轴内容只由拖放改变。

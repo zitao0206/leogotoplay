@@ -72,8 +72,9 @@ struct MacTimelineView: View {
             let trackTopGap = max(6, (available - trackHeight - 8) / 2 - 50)
 
             // 可视窗口对应的时间范围，缩略图只渲染这段内的槽位
-            let visibleStart = (Double(offset - ins) / ppsD)
-            let visibleEnd = (Double(offset + width - ins) / ppsD)
+            // V2.8.11：夹一次，保证 ClosedRange 一定合法（pps 未就绪或位移为负时不会构造出倒置区间）
+            let visibleStart = max(0, Double(offset - ins) / max(ppsD, 0.0001))
+            let visibleEnd = max(visibleStart, Double(offset + width - ins) / max(ppsD, 0.0001))
 
             ZStack(alignment: .topLeading) {
                 VStack(spacing: 0) {
@@ -419,11 +420,17 @@ struct MacTimelineView: View {
         let firstSlot = Int(floor(clip.start / interval))
         let lastSlot = max(Int(ceil(clip.end / interval)), firstSlot + 1)
 
-        let assetVisibleStart = clip.start + max(0, visibleRange.lowerBound - timelineStart)
-        let assetVisibleEnd = min(clip.end, clip.start + max(0, visibleRange.upperBound - timelineStart))
+        // 可视窗口先夹回本片段自己的区间：滚动位置比片段末尾还靠右时，
+        // 未夹紧的 lowerBound 会把 first 推到 last 之后，ForEach(renderFirst..<renderLast) 直接 trap
+        // （Mac-V2.8.11 修复：两个视频一起拖进时间轴时的崩溃就出在这里）
+        let assetVisibleStart = min(clip.end, clip.start + max(0, visibleRange.lowerBound - timelineStart))
+        let assetVisibleEnd = min(clip.end, max(assetVisibleStart, clip.start + max(0, visibleRange.upperBound - timelineStart)))
         // 两端各多留一格，避免「只露半张」的槽位被裁掉
-        let renderFirst = max(firstSlot, Int(floor(assetVisibleStart / interval)) - 1)
-        let renderLast = min(lastSlot, max(Int(ceil(assetVisibleEnd / interval)) + 1, renderFirst + 1))
+        let rawFirst = max(firstSlot, Int(floor(assetVisibleStart / interval)) - 1)
+        let rawLast = max(Int(ceil(assetVisibleEnd / interval)) + 1, rawFirst + 1)
+        // 最后再夹一次上界：保证 lowerBound <= upperBound，绝不构造空/倒置区间
+        let renderFirst = min(max(firstSlot, rawFirst), lastSlot - 1)
+        let renderLast = max(renderFirst + 1, min(lastSlot, rawLast))
 
         let width = max(CGFloat(clip.duration) * pps, 4)
         let slotWidth = CGFloat(interval) * pps
