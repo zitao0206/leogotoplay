@@ -695,6 +695,8 @@ struct MacEditorView: View {
     @State private var timelineWidth: CGFloat = 0
     /// 导出进度弹框
     @State private var isExportSheetPresented = false
+    /// 新项目空态里的「从素材库选择」弹框（V2.8.3）
+    @State private var isLibrarySheetPresented = false
     /// 导出失败文案（弹框内展示，不走全局 alert）
     @State private var exportErrorText: String?
 
@@ -738,6 +740,9 @@ struct MacEditorView: View {
             MacExportSheet(model: model, errorText: exportErrorText) {
                 isExportSheetPresented = false
             }
+        }
+        .sheet(isPresented: $isLibrarySheetPresented) {
+            libraryPickerSheet
         }
         .overlay(alignment: .bottom) {
             if let toast {
@@ -810,6 +815,166 @@ struct MacEditorView: View {
 
     /// 素材区（V2.3）：参考剪映的素材面板 —— 顶部「导入」+「全部」，下面是两列以上的卡片墙
     private var mediaPanel: some View {
+        Group {
+            // V2.8.3：新项目（首页「开始编辑」进来、还没载入素材）素材区保持全空，
+            // 不再把整个 App 素材库铺进项目里，避免"一进新项目就看到上次那条视频"
+            if isFreshBlankProject {
+                blankProjectMediaPanel
+            } else {
+                libraryMediaPanel
+            }
+        }
+        .background(
+            MacTheme.surface
+                .contentShape(Rectangle())
+                .onTapGesture { selectedVideoIDs.removeAll() }
+        )
+    }
+
+    private var isFreshBlankProject: Bool { model.source == nil }
+
+    /// 新项目空态：只留「添加视频」「从素材库选择」两个入口
+    private var blankProjectMediaPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text("素材")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                Spacer(minLength: 0)
+                if isImporting {
+                    Text("正在读取…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+
+            VStack(spacing: 14) {
+                Image(systemName: "film.stack")
+                    .font(.system(size: 30, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.30))
+                Text("新项目还没有素材")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text("添加一条本地视频，或者从素材库挑一条，\n拖到下面的时间轴就可以开始剪。")
+                    .font(.caption)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.white.opacity(0.45))
+
+                HStack(spacing: 10) {
+                    Button {
+                        addVideo()
+                    } label: {
+                        Label("添加视频", systemImage: "plus")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(MacTheme.accentGradient, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isImporting)
+
+                    Button {
+                        isLibrarySheetPresented = true
+                    } label: {
+                        Text(library.videos.isEmpty ? "素材库是空的" : "从素材库选择（\(library.videos.count)）")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(library.videos.isEmpty ? Color.white.opacity(0.35) : Color.white.opacity(0.80))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(Color.white.opacity(0.06), in: Capsule())
+                            .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(library.videos.isEmpty)
+                }
+                .padding(.top, 2)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 34)
+            .background(
+                Color.white.opacity(0.04),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.white.opacity(0.10), style: StrokeStyle(lineWidth: 1, dash: [6, 5]))
+            )
+            .padding(.horizontal, 14)
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// 从素材库挑一条载进时间轴（新项目空态里的入口）
+    private var libraryPickerSheet: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Text("从素材库选择")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                Spacer(minLength: 0)
+                Button("取消") { isLibrarySheetPresented = false }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
+
+            Divider()
+
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 132, maximum: 132), spacing: 12, alignment: .top)], alignment: .leading, spacing: 12) {
+                    ForEach(library.videos) { item in
+                        Button {
+                            isLibrarySheetPresented = false
+                            loadFromLibrary(item)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 7) {
+                                ZStack(alignment: .topTrailing) {
+                                    MacThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 8)
+                                        .frame(width: 132, height: 132)
+                                        .clipped()
+                                    Text(item.duration.timecode)
+                                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                                        .foregroundStyle(.white)
+                                        .shadow(color: .black.opacity(0.65), radius: 2, y: 1)
+                                        .padding(6)
+                                }
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                                )
+                                Text(item.title)
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.62))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            .padding(2)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("载入「\(item.title)」")
+                    }
+                }
+                .padding(18)
+            }
+        }
+        .frame(width: 620, height: 460)
+        .background(MacTheme.surface)
+    }
+
+    private func loadFromLibrary(_ item: VideoItem) {
+        Task {
+            await model.open(MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id))
+        }
+    }
+
+    private var libraryMediaPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 if isImporting {
@@ -868,11 +1033,6 @@ struct MacEditorView: View {
                 }
             }
         }
-        .background(
-            MacTheme.surface
-                .contentShape(Rectangle())
-                .onTapGesture { selectedVideoIDs.removeAll() }
-        )
     }
 
     /// 点卡片：默认单选，⌘ 点击切换选中
