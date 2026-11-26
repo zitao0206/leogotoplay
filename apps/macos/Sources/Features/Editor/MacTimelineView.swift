@@ -1,7 +1,8 @@
 import CoreGraphics
 import SwiftUI
 
-/// 剪映 / App 风格的时间轴（V2.4）：每段铺满源视频的逐帧缩略图，播放头所在的段落带白色选中框和两个夹持把手。
+/// 剪映 / App 风格的时间轴（V2.6）：每段铺满逐帧缩略图、播放头所在的段落带白色选中框，
+/// 下面跟一条横向滑杆，可以拖动查看时间轴两端。
 struct MacTimelineView: View {
     let clips: [MacClip]
     let frames: [CGImage?]
@@ -9,6 +10,7 @@ struct MacTimelineView: View {
     let outputDuration: Double
     let currentTime: Double
     let pixelsPerSecond: Double
+    @Binding var scrollOffset: CGFloat
     let onSeek: (Double) -> Void
 
     private let trackHeight: CGFloat = 58
@@ -20,30 +22,38 @@ struct MacTimelineView: View {
 
     var body: some View {
         GeometryReader { geo in
-            ScrollView(.horizontal, showsIndicators: false) {
-                ZStack(alignment: .topLeading) {
-                    clipRow
-                        .padding(.top, 16)
+            let width = max(geo.size.width, 1)
+            let maxOffset = max(0, contentWidth - width)
+            let offset = min(max(0, scrollOffset), maxOffset)
 
-                    playhead
-                }
-                .frame(
-                    width: max(contentWidth, geo.size.width),
-                    height: max(geo.size.height, 1),
-                    alignment: .topLeading
-                )
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            onSeek(Double(max(0, value.location.x)) / pixelsPerSecond)
-                        }
-                )
+            VStack(spacing: 12) {
+                track(width: width, offset: offset)
+                scrollBar(width: width, maxOffset: maxOffset, offset: offset)
             }
         }
     }
 
-    // MARK: - 片段行
+    // MARK: - 轨道
+
+    private func track(width: CGFloat, offset: CGFloat) -> some View {
+        ZStack(alignment: .topLeading) {
+            clipRow
+                .padding(.top, 14)
+                .offset(x: -offset)
+
+            playhead
+                .offset(x: CGFloat(currentTime) * pps - 4 - offset, y: 0)
+        }
+        .frame(width: width, height: 72, alignment: .topLeading)
+        .clipped()
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    onSeek(Double(max(0, value.location.x + offset)) / pixelsPerSecond)
+                }
+        )
+    }
 
     private var clipRow: some View {
         HStack(spacing: clipGap) {
@@ -143,6 +153,38 @@ struct MacTimelineView: View {
         .clipped()
     }
 
+    // MARK: - 横向滑杆
+
+    private func scrollBar(width: CGFloat, maxOffset: CGFloat, offset: CGFloat) -> some View {
+        let visibleRatio = contentWidth > 0 ? min(1, width / contentWidth) : 1
+        let thumbWidth = max(44, width * visibleRatio)
+        let travel = max(width - thumbWidth, 1)
+        let ratio = maxOffset > 0 ? min(max(offset / maxOffset, 0), 1) : 0
+
+        return ZStack(alignment: .leading) {
+            Capsule()
+                .fill(Color.white.opacity(0.10))
+                .frame(height: 8)
+
+            Capsule()
+                .fill(Color.white.opacity(0.42))
+                .frame(width: thumbWidth, height: 8)
+                .offset(x: travel * ratio)
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let location = min(max(0, value.location.x - thumbWidth / 2), travel)
+                            scrollOffset = (location / travel) * maxOffset
+                        }
+                )
+                .onHover { inside in
+                    if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
+                }
+        }
+        .frame(height: 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     // MARK: - 播放头
 
     private var playhead: some View {
@@ -155,7 +197,6 @@ struct MacTimelineView: View {
                 .fill(Color.white)
                 .frame(width: 2, height: trackHeight + 10)
         }
-        .offset(x: CGFloat(currentTime) * pps - 4, y: 0)
         .allowsHitTesting(false)
     }
 }

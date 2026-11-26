@@ -394,6 +394,8 @@ struct MacEditorView: View {
     @State private var toast: String?
     @State private var isImporting = false
     @State private var isDropTarget = false
+    /// 时间轴的横向滚动位置（由下面的滑杆控制）
+    @State private var timelineOffset: CGFloat = 0
 
     init(initialSource: MacEditorSource?, onClose: @escaping () -> Void) {
         _model = StateObject(wrappedValue: MacEditorModel(source: initialSource))
@@ -606,9 +608,14 @@ struct MacEditorView: View {
     // MARK: - 编辑区
 
     private var editingPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(spacing: 0) {
             if model.hasSource {
                 toolRow
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+
+                Spacer(minLength: 8)
+
                 MacTimelineView(
                     clips: model.clips,
                     frames: model.filmstrip,
@@ -616,15 +623,19 @@ struct MacEditorView: View {
                     outputDuration: model.outputDuration,
                     currentTime: model.currentTime,
                     pixelsPerSecond: Double(model.pixelsPerSecond),
+                    scrollOffset: $timelineOffset,
                     onSeek: { model.seek(to: $0) }
                 )
-                .frame(height: 92)
+                .frame(height: 102)
+                .padding(.horizontal, 12)
+
+                Spacer(minLength: 8)
             } else {
                 dropHint
+                    .padding(12)
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
         }
-        .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(MacTheme.canvas)
         .overlay(
@@ -667,14 +678,19 @@ struct MacEditorView: View {
             MacToolIconButton(title: "分割", icon: "scissors", enabled: true) {
                 model.splitAtPlayhead()
             }
-            MacToolIconButton(title: "删除", icon: "trash", enabled: model.currentClipIndex != nil) {
-                model.deleteClipAtPlayhead()
-            }
             MacToolIconButton(title: "向左分割", icon: "arrow.left.to.line", enabled: true) {
                 model.keepLeftOfPlayhead()
             }
             MacToolIconButton(title: "向右分割", icon: "arrow.right.to.line", enabled: true) {
                 model.keepRightOfPlayhead()
+            }
+            MacToolIconButton(
+                title: "删除",
+                icon: "trash",
+                enabled: model.currentClipIndex != nil,
+                emphasized: model.currentClipIndex != nil
+            ) {
+                model.deleteClipAtPlayhead()
             }
 
             Spacer(minLength: 0)
@@ -831,6 +847,7 @@ private struct MacToolIconButton: View {
     let title: String
     let icon: String
     let enabled: Bool
+    var emphasized: Bool = false
     let action: () -> Void
 
     @State private var hovering = false
@@ -839,11 +856,19 @@ private struct MacToolIconButton: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 15, weight: .regular))
-                .foregroundStyle(enabled ? Color.white.opacity(hovering ? 1 : 0.82) : Color.white.opacity(0.22))
+                .foregroundStyle(enabled ? Color.white.opacity(hovering ? 1 : (emphasized ? 0.95 : 0.82)) : Color.white.opacity(0.22))
                 .frame(width: 34, height: 32)
                 .background(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Color.white.opacity(hovering && enabled ? 0.10 : 0))
+                        .fill(
+                            hovering && enabled
+                                ? Color.white.opacity(0.12)
+                                : Color.white.opacity(emphasized ? 0.07 : 0)
+                        )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .stroke(Color.white.opacity(emphasized ? 0.12 : 0), lineWidth: 1)
                 )
                 .contentShape(Rectangle())
         }
