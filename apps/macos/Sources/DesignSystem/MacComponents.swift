@@ -240,6 +240,18 @@ enum MacAlerts {
         return panel.runModal() == .OK ? panel.url : nil
     }
 
+    /// 用 NSOpenPanel 选多个本地视频（⌘ / Shift 多选，一次导入多条素材）。
+    @MainActor
+    static func chooseVideoFiles() -> [URL] {
+        let panel = NSOpenPanel()
+        panel.title = "选择要导入的视频（可多选）"
+        panel.prompt = "添加"
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.movie, .mpeg4Movie, .quickTimeMovie]
+        return panel.runModal() == .OK ? panel.urls : []
+    }
+
     @MainActor
     static func confirmDelete(title: String, message: String) -> Bool {
         let alert = NSAlert()

@@ -1530,25 +1530,36 @@ struct MacEditorView: View {
         model.deleteClipAtPlayhead()
     }
 
-    /// V2.8.4：编辑页不再导入素材库 —— 选中的本地文件直接载进时间轴
+    /// 添加本地视频：一次可以选多条，全部进素材列表（上不上时间轴由用户拖决定）
     private func addVideo() {
-        guard let url = MacAlerts.chooseVideoFile() else { return }
-        importVideo(from: url)
+        let urls = MacAlerts.chooseVideoFiles()
+        guard !urls.isEmpty else { return }
+        importVideos(from: urls)
     }
 
-    /// 选中的本地文件拷进项目目录，只进素材列表（V2.8.6：要不要上时间轴由用户拖决定）
-    private func importVideo(from url: URL) {
+    /// 逐个把选中的本地文件拷进项目目录，只进素材列表；全部导入后一起选中，方便一次拖上时间轴
+    private func importVideos(from urls: [URL]) {
         Task {
             isImporting = true
             defer { isImporting = false }
-            guard let material = await model.importMaterial(from: url) else {
-                if let message = model.errorMessage {
-                    show(message)
-                    model.errorMessage = nil
+            var imported: [UUID] = []
+            var failure: String?
+            for url in urls {
+                if let material = await model.importMaterial(from: url) {
+                    imported.append(material.id)
+                } else if failure == nil {
+                    failure = model.errorMessage
                 }
-                return
+                model.errorMessage = nil
             }
-            selectedMaterialIDs = [material.id]
+            selectedMaterialIDs = Set(imported)
+            if !imported.isEmpty {
+                show(imported.count == 1 ? "已添加 1 个视频" : "已添加 \(imported.count) 个视频")
+            }
+            if let failure {
+                let failed = urls.count - imported.count
+                show(failed == urls.count ? failure : "\(failed) 个视频导入失败")
+            }
         }
     }
 
