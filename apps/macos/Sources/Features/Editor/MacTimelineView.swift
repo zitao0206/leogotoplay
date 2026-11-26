@@ -13,7 +13,7 @@ struct MacTimelineView: View {
     @Binding var scrollOffset: CGFloat
     let onSeek: (Double) -> Void
 
-    private let trackHeight: CGFloat = 58
+    private let trackHeight: CGFloat = 87
     private let handleWidth: CGFloat = 8
     private let clipGap: CGFloat = 2
 
@@ -26,9 +26,13 @@ struct MacTimelineView: View {
             let maxOffset = max(0, contentWidth - width)
             let offset = min(max(0, scrollOffset), maxOffset)
 
-            VStack(spacing: 12) {
+            // V2.7：轨道在编辑区竖直居中，滑杆贴在最底部
+            VStack(spacing: 0) {
+                Spacer(minLength: 6)
                 track(width: width, offset: offset)
+                Spacer(minLength: 6)
                 scrollBar(width: width, maxOffset: maxOffset, offset: offset)
+                    .padding(.bottom, 2)
             }
         }
     }
@@ -38,13 +42,13 @@ struct MacTimelineView: View {
     private func track(width: CGFloat, offset: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
             clipRow
-                .padding(.top, 14)
+                .padding(.top, 20)
                 .offset(x: -offset)
 
             playhead
                 .offset(x: CGFloat(currentTime) * pps - 4 - offset, y: 0)
         }
-        .frame(width: width, height: 72, alignment: .topLeading)
+        .frame(width: width, height: trackHeight + 20, alignment: .topLeading)
         .clipped()
         .contentShape(Rectangle())
         .gesture(
@@ -117,7 +121,7 @@ struct MacTimelineView: View {
         .overlay(
             Capsule()
                 .fill(Color.black.opacity(0.55))
-                .frame(width: 3, height: 22)
+                .frame(width: 4, height: 32)
         )
     }
 

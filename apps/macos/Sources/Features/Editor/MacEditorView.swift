@@ -112,21 +112,51 @@ final class MacEditorModel: ObservableObject {
         loadFilmstrip(url: newSource.url, duration: assetDuration)
     }
 
-    /// 时间轴胶片：源视频每秒取一帧，边解边填（缩放/拖动时都用这套帧）
+    /// 时间轴胶片：源视频每秒取一帧，边解边填（缩放/拖动时都用这套帧）。
+    /// 这里自己开关容差（0.05s），不能用 core 那张「无限容差取最近关键帧」的流式接口，
+    /// 否则长 GOP 的视频会整条胶片都变成同一帧。
     private func loadFilmstrip(url: URL, duration: Double) {
         filmstripTask?.cancel()
         guard duration > 0 else {
             filmstrip = []
             return
         }
+
         let count = max(2, min(Int(ceil(duration)) + 1, 900))
         filmstrip = Array(repeating: nil, count: count)
-        let times = (0..<count).map { Double($0) }
+
+        let asset = AVURLAsset(url: url)
+        var times: [NSValue] = []
+        var indexByKey: [String: Int] = [:]
+        for index in 0..<count {
+            let time = CMTime(seconds: Double(index), preferredTimescale: 600)
+            indexByKey["\(time.value)-\(time.timescale)"] = index
+            times.append(NSValue(time: time))
+        }
+
         filmstripTask = Task { [weak self] in
-            _ = await ThumbnailService.generateFramesStreaming(forVideoAt: url, times: times) { index, image in
-                Task { @MainActor [weak self] in
-                    guard let self, index < self.filmstrip.count, self.filmstrip[index] == nil else { return }
-                    self.filmstrip[index] = image
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 200, height: 200)
+            generator.requestedTimeToleranceBefore = CMTime(seconds: 0.05, preferredTimescale: 600)
+            generator.requestedTimeToleranceAfter = CMTime(seconds: 0.05, preferredTimescale: 600)
+
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                let lock = NSLock()
+                var remaining = count
+                generator.generateCGImagesAsynchronously(forTimes: times) { requested, image, _, _, _ in
+                    let key = "\(requested.value)-\(requested.timescale)"
+                    if let index = indexByKey[key], let image {
+                        Task { @MainActor [weak self] in
+                            guard let self, index < self.filmstrip.count, self.filmstrip[index] == nil else { return }
+                            self.filmstrip[index] = image
+                        }
+                    }
+                    lock.lock()
+                    remaining -= 1
+                    let finished = remaining <= 0
+                    lock.unlock()
+                    if finished { continuation.resume() }
                 }
             }
         }
@@ -626,10 +656,8 @@ struct MacEditorView: View {
                     scrollOffset: $timelineOffset,
                     onSeek: { model.seek(to: $0) }
                 )
-                .frame(height: 102)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 12)
-
-                Spacer(minLength: 8)
             } else {
                 dropHint
                     .padding(12)
