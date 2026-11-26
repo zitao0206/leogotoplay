@@ -306,7 +306,7 @@ final class MacEditorModel: ObservableObject {
     }
 
     /// 把素材拖进时间轴：按拖入顺序整段追加（时间轴依次排开）
-    func appendMaterials(_ ids: [UUID]) {
+    func appendMaterials(_ ids: [UUID], groupID: UUID? = nil) {
         let valid = ids.filter { id in
             materials.contains { $0.id == id } && materialTracks[id]?.videoTrack != nil
         }
@@ -318,7 +318,7 @@ final class MacEditorModel: ObservableObject {
         var appended = false
         for id in valid {
             guard let duration = materialTracks[id]?.duration, duration > 0.05 else { continue }
-            clips.append(MacClip(sourceID: id, start: 0, end: duration))
+            clips.append(MacClip(sourceID: id, start: 0, end: duration, groupID: groupID))
             appended = true
         }
         guard appended else {
@@ -1568,9 +1568,14 @@ struct MacEditorView: View {
                 }
                 model.errorMessage = nil
             }
-            selectedMaterialIDs = Set(imported)
-            if !imported.isEmpty {
-                show(imported.count == 1 ? "已添加 1 个视频" : "已添加 \(imported.count) 个视频")
+            if imported.count > 1 {
+                // 一次选了多个：按顺序整组放到时间轴末尾，组内无缝连成一条、内部仍是多段
+                model.appendMaterials(imported, groupID: UUID())
+                selectedMaterialIDs.removeAll()
+                show("已添加 \(imported.count) 个视频，已按顺序排到时间轴上")
+            } else if let only = imported.first {
+                selectedMaterialIDs = [only]
+                show("已添加 1 个视频")
             }
             if let failure {
                 let failed = urls.count - imported.count
@@ -1597,7 +1602,7 @@ struct MacEditorView: View {
                 guard !ids.isEmpty else { return }
                 Task { @MainActor in
                     self.selectedMaterialIDs = Set(ids)
-                    self.model.appendMaterials(ids)
+                    self.model.appendMaterials(ids, groupID: ids.count > 1 ? UUID() : nil)
                 }
             }
         }
@@ -1621,7 +1626,7 @@ struct MacEditorView: View {
         let ids = materialIDs(from: payload)
         guard !ids.isEmpty else { return }
         selectedMaterialIDs = Set(ids)
-        model.appendMaterials(ids)
+        model.appendMaterials(ids, groupID: ids.count > 1 ? UUID() : nil)
     }
 
     private func materialIDs(from payload: String) -> [UUID] {

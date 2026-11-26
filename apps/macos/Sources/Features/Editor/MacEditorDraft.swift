@@ -11,6 +11,9 @@ struct MacClip: Codable, Equatable, Identifiable {
     var sourceID: UUID?
     var start: Double
     var end: Double
+    /// 同一次拖入的一组素材共享同一个 group id：时间轴上组内无缝连成一条，
+    /// 但每段仍是独立片段（可单独裁剪 / 分割 / 拖动）
+    var groupID: UUID?
 
     var duration: Double { max(0, end - start) }
 }

@@ -301,7 +301,8 @@ struct MacTimelineView: View {
 
     private func clipRow(visibleRange: ClosedRange<Double>, offset: CGFloat, inset ins: CGFloat) -> some View {
         let starts = timelineStarts()
-        return HStack(spacing: clipGap) {
+        // V2.8.9：同一次拖入的一组素材组内不留缝（连成一条「一个视频」），组与组之间仍是 clipGap
+        return HStack(spacing: 0) {
             ForEach(Array(clips.enumerated()), id: \.element.id) { index, clip in
                 clipBlock(
                     clip,
@@ -309,11 +310,27 @@ struct MacTimelineView: View {
                     timelineStart: starts[index],
                     visibleRange: visibleRange,
                     offset: offset,
-                    inset: ins
+                    inset: ins,
+                    leadingGap: gapBefore(index)
                 )
             }
         }
         .frame(height: trackHeight, alignment: .topLeading)
+    }
+
+    /// 这一段左边的缝：组内相邻为 0（无缝），其余 clipGap；第一段不占缝
+    private func gapBefore(_ index: Int) -> CGFloat {
+        guard index > 0, index < clips.count else { return 0 }
+        if let gid = clips[index].groupID, gid == clips[index - 1].groupID { return 0 }
+        return clipGap
+    }
+
+    /// 组内序号（「段 k/n」），不在组里就返回 nil
+    private func groupSlot(_ index: Int) -> (slot: Int, total: Int)? {
+        guard let gid = clips[index].groupID else { return nil }
+        let members = clips.filter { $0.groupID == gid }
+        guard members.count > 1, let slot = members.firstIndex(where: { $0.id == clips[index].id }) else { return nil }
+        return (slot + 1, members.count)
     }
 
     /// 每个片段在时间轴上的起点（按先后顺次累加时长；素材入点 clip.start 只用于取帧）
@@ -327,16 +344,25 @@ struct MacTimelineView: View {
         return out
     }
 
+    /// 片段角标文案：组内标「段 k/n」，独立片段仍是「片段 i」
+    private func label(for index: Int, clip: MacClip) -> String {
+        if let g = groupSlot(index) {
+            return "段 \(g.slot)/\(g.total) · \(clip.duration.timecode)"
+        }
+        return "片段 \(index + 1) · \(clip.duration.timecode)"
+    }
+
     private func clipBlock(
         _ clip: MacClip,
         index: Int,
         timelineStart: Double,
         visibleRange: ClosedRange<Double>,
         offset: CGFloat,
-        inset ins: CGFloat
+        inset ins: CGFloat,
+        leadingGap: CGFloat
     ) -> some View {
-        // 缝宽从片段宽度里扣：HStack 再补上 clipGap，第 i 段的左边缘仍精确落在时间点上
-        let width = max(CGFloat(clip.duration) * pps - clipGap, 6)
+        // 缝宽从片段宽度里扣：外层再补上这段的缝，第 i 段的左边缘仍精确落在时间点上
+        let width = max(CGFloat(clip.duration) * pps - leadingGap, 6)
         let selected = index == selectedIndex
         let drawWidth = max(width, 4)
 
@@ -354,7 +380,7 @@ struct MacTimelineView: View {
                 )
 
             if drawWidth > 64 {
-                Text("片段 \(index + 1) · \(clip.duration.timecode)")
+                Text(label(for: index, clip: clip))
                     .font(.system(size: 10, weight: .semibold).monospacedDigit())
                     .foregroundStyle(.white)
                     .padding(.horizontal, 5)
@@ -365,6 +391,7 @@ struct MacTimelineView: View {
             }
         }
         .frame(width: drawWidth, height: trackHeight, alignment: .topLeading)
+        .padding(.leading, leadingGap)
         .contentShape(Rectangle())
         // 拖这一段可以换顺序（落点由时间轴统一算插入位置）
         .onDrag {
