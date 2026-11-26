@@ -33,9 +33,9 @@ struct MacTimelineView: View {
     static let leadingInset: CGFloat = 0
     /// 右侧留 100pt 余量：滚到最右时末帧后面还有些空间，播放指针贴末尾也不会被裁
     static let trailingInset: CGFloat = 100
-    /// V2.7.17：片段之间留 2pt 缝。缝宽从每个片段自己的宽度里扣，而不是加到后面去，
+    /// V2.7.17：片段之间留缝（V2.7.20 起 3pt）。缝宽从每个片段自己的宽度里扣，而不是加到后面去，
     /// 所以第 i 段左边缘仍等于「前面所有时长 × pps」，播放指针、刻度尺不会随段数往后漂。
-    private let clipGap: CGFloat = 2
+    private let clipGap: CGFloat = 3
     private let rulerHeight: CGFloat = 26
     /// 底部拖动条区域总高（6 间距 + 10 条 + 2 底边距）
     private let bottomBarSpace: CGFloat = 18
