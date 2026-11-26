@@ -30,8 +30,8 @@ final class MacEditorModel: ObservableObject {
     @Published var canUndo = false
     /// 时间轴胶片：按「源视频第几秒」存一帧，nil 表示还没解出来
     @Published private(set) var filmstrip: [CGImage?] = []
-    /// 时间轴缩放（1 = 每秒 50pt）
-    @Published var zoomScale: Double = 1
+    /// 时间轴缩放：每秒占多少 pt（V2.7.2 直接存值，不再用倍率）
+    @Published private(set) var zoomPPS: Double = 50
 
     private var asset: AVURLAsset?
     private var assetDuration: Double = 0
@@ -60,7 +60,33 @@ final class MacEditorModel: ObservableObject {
 
     var hasSource: Bool { source != nil }
 
-    var pixelsPerSecond: CGFloat { CGFloat(50 * zoomScale) }
+    var pixelsPerSecond: CGFloat { CGFloat(zoomPPS) }
+
+    // MARK: - 时间轴缩放（V2.7.2）
+
+    /// 时间轴可视宽度（由 MacTimelineView 上报，用于计算缩放下限）
+    var timelineViewportWidth: CGFloat = 0
+
+    /// 缩放上限：约 25pt/帧（按 30fps ≈ 750pt/秒），正好能逐帧点选、看清帧边界
+    static let maxPixelsPerSecond: Double = 750
+
+    /// 缩放下限：整条内容刚好铺满可视宽度就停（不会缩成窄条，也不会两端大片空白）
+    var minPixelsPerSecond: Double {
+        guard outputDuration > 0.1, timelineViewportWidth > 1 else { return 2 }
+        return max(0.5, Double(timelineViewportWidth) / outputDuration)
+    }
+
+    var canZoomIn: Bool { zoomPPS < Self.maxPixelsPerSecond - 0.5 }
+    var canZoomOut: Bool { zoomPPS > minPixelsPerSecond + 0.01 }
+
+    /// 连续缩放入口（捏合手势 / 未来滑杆），自动夹进 [下限, 上限]
+    func setZoom(_ pps: Double) {
+        zoomPPS = min(max(pps, minPixelsPerSecond), Self.maxPixelsPerSecond)
+    }
+
+    /// 档位式步进（每次 ×1.3，对齐剪映的按钮手感）
+    func zoomIn() { setZoom(zoomPPS * 1.3) }
+    func zoomOut() { setZoom(zoomPPS / 1.3) }
 
     // MARK: - 载入
 
@@ -277,10 +303,6 @@ final class MacEditorModel: ObservableObject {
         rebuildComposition(preserveTime: currentTime)
     }
 
-    func zoomIn() { zoomScale = min(6, zoomScale * 1.5) }
-
-    func zoomOut() { zoomScale = max(0.4, zoomScale / 1.5) }
-
     private func pushUndo() {
         undoStack.append(clips)
         if undoStack.count > 30 { undoStack.removeFirst() }
@@ -426,6 +448,8 @@ struct MacEditorView: View {
     @State private var isDropTarget = false
     /// 时间轴的横向滚动位置（由下面的滑杆控制）
     @State private var timelineOffset: CGFloat = 0
+    /// 时间轴可视宽度（时间轴上报，缩放时用于夹取偏移）
+    @State private var timelineWidth: CGFloat = 0
 
     init(initialSource: MacEditorSource?, onClose: @escaping () -> Void) {
         _model = StateObject(wrappedValue: MacEditorModel(source: initialSource))
@@ -654,7 +678,12 @@ struct MacEditorView: View {
                     currentTime: model.currentTime,
                     pixelsPerSecond: Double(model.pixelsPerSecond),
                     scrollOffset: $timelineOffset,
-                    onSeek: { model.seek(to: $0) }
+                    onSeek: { model.seek(to: $0) },
+                    onZoom: { model.setZoom($0) },
+                    onViewportChange: { width in
+                        timelineWidth = width
+                        model.timelineViewportWidth = width
+                    }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 12)
@@ -723,11 +752,11 @@ struct MacEditorView: View {
 
             Spacer(minLength: 0)
 
-            MacToolIconButton(title: "时间轴缩小", icon: "minus.magnifyingglass", enabled: model.zoomScale > 0.4) {
-                model.zoomOut()
+            MacToolIconButton(title: "时间轴缩小", icon: "minus.magnifyingglass", enabled: model.canZoomOut) {
+                zoomTimeline(multiplying: 1 / 1.3)
             }
-            MacToolIconButton(title: "时间轴放大", icon: "plus.magnifyingglass", enabled: model.zoomScale < 6) {
-                model.zoomIn()
+            MacToolIconButton(title: "时间轴放大", icon: "plus.magnifyingglass", enabled: model.canZoomIn) {
+                zoomTimeline(multiplying: 1.3)
             }
         }
     }
@@ -814,6 +843,30 @@ struct MacEditorView: View {
     }
 
     // MARK: - 动作
+
+    /// V2.7.2：按钮档位式缩放（每次 ×1.3 / ÷1.3），以播放指针为锚点——
+    /// 缩放前后指针在屏上的位置不动，同时把偏移夹进新内容范围。
+    private func zoomTimeline(multiplying factor: Double) {
+        let t = model.currentTime
+        let oldPPS = model.pixelsPerSecond
+        let oldInset = timelineInset(pps: oldPPS)
+        let anchorX = oldInset + CGFloat(t) * oldPPS - timelineOffset
+
+        factor > 1 ? model.zoomIn() : model.zoomOut()
+
+        let newPPS = model.pixelsPerSecond
+        let newInset = timelineInset(pps: newPPS)
+        let maxOffset = max(0, CGFloat(model.outputDuration) * newPPS + newInset * 2 - timelineWidth)
+        timelineOffset = min(max(0, newInset + CGFloat(t) * newPPS - anchorX), maxOffset)
+    }
+
+    /// 与 MacTimelineView 一致的内容落点：放不下留 100pt 滑动余量，放得下则居中
+    private func timelineInset(pps: CGFloat) -> CGFloat {
+        let track = CGFloat(model.outputDuration) * pps
+        return track + MacTimelineView.sideInset * 2 > timelineWidth
+            ? MacTimelineView.sideInset
+            : max((timelineWidth - track) / 2, 8)
+    }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         guard let provider = providers.first else { return false }
