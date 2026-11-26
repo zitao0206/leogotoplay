@@ -191,18 +191,37 @@ struct MacTimelineView: View {
     // MARK: - 时间刻度尺
 
     /// 主刻度间隔：按「间距 ≈ 80pt」自动挑一档（0.1s ~ 1h）
+    /// 主刻度间隔：不再死守 80pt，而是按「最长标签的实际像素宽度 + 间距」动态挑一档比例尺，
+    /// 再小也保证两个标签之间留得下（V2.8.15：缩小到几小时量级时不再叠字）
     private func majorTickInterval(pps: CGFloat) -> Double {
-        let candidates: [Double] = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600]
-        let target = 80 / Double(max(pps, 1))
-        return candidates.first { $0 >= target } ?? 3600
+        let candidates: [Double] = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 90, 120, 180, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400]
+        let widest = max(labelWidth(tickLabel(duration, interval: 3600)), labelWidth("00:00"))
+        let need = widest + 18
+        var step = candidates.first { CGFloat($0) * max(pps, 0.0001) >= need } ?? candidates[candidates.count - 1]
+        while CGFloat(step) * max(pps, 0.0001) < need { step *= 2 }
+        return step
     }
 
-    /// 高倍放大时主刻度不到 1s，标签补一位小数，避免一串 00:00 挤在一起
+    /// 9pt 等宽数字字体的实际宽度，用来判断标签挤不挤
+    private func labelWidth(_ text: String) -> CGFloat {
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium)
+        return (text as NSString).size(withAttributes: [.font: font]).width
+    }
+
+    /// 刻度标签：<1s 补一位小数；<1h 用 mm:ss；≥1h 用 h:mm:ss（`01:00:00` 这种，和参考图一致）
     private func tickLabel(_ t: Double, interval: Double) -> String {
-        guard interval < 1 else { return t.timecode }
-        let minutes = Int(t) / 60
-        let seconds = Int(t.truncatingRemainder(dividingBy: 60))
-        return String(format: "%02d:%02d.%d", minutes, seconds, Int((t - Double(Int(t))) * 10 + 0.0001))
+        if interval < 1 {
+            let minutes = Int(t) / 60
+            let seconds = Int(t.truncatingRemainder(dividingBy: 60))
+            return String(format: "%02d:%02d.%d", minutes, seconds, Int((t - Double(Int(t))) * 10 + 0.0001))
+        }
+        let total = Int(max(0, t).rounded())
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+        return hours > 0
+            ? String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+            : String(format: "%02d:%02d", minutes, seconds)
     }
 
     /// 拖拽平移：按下时记住起点 offset，拖动时按位移反向推内容
@@ -237,7 +256,10 @@ struct MacTimelineView: View {
     private func ruler(width: CGFloat, offset: CGFloat, inset ins: CGFloat) -> some View {
         Canvas { ctx, size in
             let interval = majorTickInterval(pps: pps)
-            let minorStep = interval / 5
+            // 次刻度：分钟以上按 4 等分（15 分钟一格），秒级按 5 等分；太密就不画，免得变成一片灰
+            let minorCount = interval >= 60 ? 4 : 5
+            let minorStep = interval / Double(minorCount)
+            let drawMinor = CGFloat(minorStep) * pps >= 9
 
             // 只画可视窗口内的刻度（时间轴可能宽达几十万 pt）
             let startT = max(0, ((Double(offset - ins) / ppsD) / interval).rounded(.down) * interval)
@@ -248,9 +270,9 @@ struct MacTimelineView: View {
                 let x = ins + CGFloat(t) * pps - offset
                 let time = t
 
-                if time > 0.0001 && time <= duration {
-                    // 次刻度（主刻度五等分）
-                    for i in 1..<5 {
+                if drawMinor, time > 0.0001, time <= duration {
+                    // 次刻度
+                    for i in 1..<minorCount {
                         let minorTime = time + Double(i) * minorStep
                         guard minorTime <= duration else { continue }
                         let mx = x + CGFloat(Double(i) * minorStep) * pps
