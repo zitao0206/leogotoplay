@@ -43,9 +43,7 @@ final class MacEditorWindowManager: NSObject, NSWindowDelegate {
         window.center()
         window.delegate = self
 
-        let root = MacEditorView(initialSource: source) { [weak window] in
-            window?.close()
-        }
+        let root = MacEditorView(initialSource: source)
         .environmentObject(library)
         .tint(MacTheme.accent)
 

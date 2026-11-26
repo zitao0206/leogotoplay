@@ -87,6 +87,8 @@ final class MacEditorModel: ObservableObject {
     /// 缩小一档间隔 ×2：t/8、t/4（t/4 已是最小宽度）
     static let zoomOutStep: Double = 2
     static let maxZoomOutLevels: Double = 2
+    /// 剪辑后为了保持「每秒像素不变」允许停到更稀的档位（界面上的缩小按钮仍只到 2 档）
+    static let maxScaleOutLevels: Double = 5
     /// 放大一档按「当前档位 × 1.5」继续缩：t/(16·1.5)、t/(16·1.5²)…
     static let zoomInStep: Double = 1.5
     /// 最密：1/30s，即每秒 30 帧——到这一档就是极限
@@ -111,7 +113,8 @@ final class MacEditorModel: ObservableObject {
         } else {
             raw = base * pow(Self.zoomOutStep, -zoomLevel)
         }
-        return min(max(raw, Self.minThumbnailInterval), base * pow(Self.zoomOutStep, Self.maxZoomOutLevels))
+        // 上限留宽一点：剪辑后为了「每秒像素不变」可能短暂越过按钮的缩小边界
+        return min(max(raw, Self.minThumbnailInterval), base * pow(Self.zoomOutStep, Self.maxScaleOutLevels))
     }
 
     /// 每秒像素由间隔反推：一张正方形缩略图正好占一个间隔的宽度，胶片才严丝合缝
@@ -124,7 +127,8 @@ final class MacEditorModel: ObservableObject {
     /// 唯一缩放入口：档位与捏合都走这里
     func setZoomLevel(_ level: Double) {
         let base = baseThumbnailInterval
-        var lv = min(max(level, -Self.maxZoomOutLevels), 0)
+        // 剪辑后可能停在比按钮更稀的档位，捏合/按钮都不应该把它硬拽回来
+        var lv = min(max(level, -max(Self.maxZoomOutLevels, -zoomLevel)), 0)
         if level > 0 {
             // 放大到 1/30s 就是极限，档位再高也夹住
             let ceiling = base > Self.minThumbnailInterval
@@ -408,9 +412,11 @@ final class MacEditorModel: ObservableObject {
     /// 撤销：片段表快照回退
     func undo() {
         guard let previous = undoStack.popLast() else { return }
+        let oldInterval = thumbnailInterval
         clips = previous
         canUndo = !undoStack.isEmpty
         rebuildComposition(preserveTime: currentTime)
+        keepScale(oldInterval)
         saveDraft()
     }
 
@@ -439,37 +445,67 @@ final class MacEditorModel: ObservableObject {
     /// 播放头当前落在哪个片段（时间轴的选中框跟着它走）
     /// 是否选中了时间轴上的片段：点编辑区空白会取消，点时间轴/用工具按钮会重新选中
     @Published var isClipSelected = true
+    /// 加一次就让时间轴滚回最左（向左分割后剩余内容顶头显示）
+    @Published var scrollToStartToken = 0
     var currentClipIndex: Int? { isClipSelected ? clipAt(currentTime)?.index : nil }
 
     /// 删除播放头所在的片段；删到一段不剩就回到「素材拖进来」的空状态
     func deleteClipAtPlayhead() {
         guard let anchor = clipAt(currentTime) else { return }
+        let oldInterval = thumbnailInterval
         pushUndo()
         clips.remove(at: anchor.index)
         rebuildComposition(preserveTime: currentTime)
+        keepScale(oldInterval)
         saveDraft()
     }
 
-    /// 向左分割：保留播放头左侧，裁掉右边（只作用于当前片段）
-    func keepLeftOfPlayhead() {
-        guard let anchor = clipAt(currentTime) else { return }
-        let clip = clips[anchor.index]
-        guard anchor.sourceTime - clip.start > 0.05 else { return }
-        pushUndo()
-        clips[anchor.index] = MacClip(id: clip.id, start: clip.start, end: anchor.sourceTime)
-        rebuildComposition(preserveTime: currentTime)
-        saveDraft()
-    }
-
-    /// 向右分割：保留播放头右侧，裁掉左边（只作用于当前片段）
-    func keepRightOfPlayhead() {
+    /// 向左分割（V2.7.14）：保留播放头右侧，左边全删——当前片段的左半 + 前面所有片段一起没，
+    /// 剩下的时间轴从 00:00 顶头开始，播放指针回到最左。
+    func cutBeforePlayhead() {
         guard let anchor = clipAt(currentTime) else { return }
         let clip = clips[anchor.index]
         guard clip.end - anchor.sourceTime > 0.05 else { return }
+        let oldInterval = thumbnailInterval
         pushUndo()
-        clips[anchor.index] = MacClip(id: clip.id, start: anchor.sourceTime, end: clip.end)
-        rebuildComposition(preserveTime: currentTime)
+        var rest = anchor.index + 1 < clips.count ? Array(clips[(anchor.index + 1)...]) : []
+        rest.insert(MacClip(id: clip.id, start: anchor.sourceTime, end: clip.end), at: 0)
+        clips = rest
+        rebuildComposition(preserveTime: 0)
+        keepScale(oldInterval)
+        scrollToStartToken += 1
         saveDraft()
+    }
+
+    /// 向右分割（V2.7.14）：保留播放头左侧，右边全删——当前片段右半 + 后面所有片段一起没，
+    /// 剩下的时间轴原样不动，播放指针停在原地（也就是新的末尾）。
+    func cutAfterPlayhead() {
+        guard let anchor = clipAt(currentTime) else { return }
+        let clip = clips[anchor.index]
+        guard anchor.sourceTime - clip.start > 0.05 else { return }
+        let oldInterval = thumbnailInterval
+        pushUndo()
+        clips = Array(clips[..<anchor.index])
+            + [MacClip(id: clip.id, start: clip.start, end: anchor.sourceTime)]
+        rebuildComposition(preserveTime: currentTime)
+        keepScale(oldInterval)
+        saveDraft()
+    }
+
+    /// 剪辑后把缩放换算回「每秒像素不变」的档位：剩下的时间轴只变短，不被重新拉伸
+    private func keepScale(_ interval: Double) {
+        guard outputDuration > 0.05, interval > 0 else { return }
+        let base = baseThumbnailInterval
+        let raw = interval <= base
+            ? log(base / interval) / log(Self.zoomInStep)
+            : -log(interval / base) / log(Self.zoomOutStep)
+        let ceiling = base > Self.minThumbnailInterval
+            ? log(base / Self.minThumbnailInterval) / log(Self.zoomInStep)
+            : 0
+        let level = raw > 0 ? min(raw, ceiling) : max(raw, -Self.maxScaleOutLevels)
+        guard abs(level - zoomLevel) > 1e-6 else { return }
+        zoomLevel = level
+        updateVisibleWindow(offset: timelineScrollOffset)
     }
 
     private func pushUndo() {
@@ -636,7 +672,6 @@ struct MacEditorView: View {
     @EnvironmentObject private var library: LibraryStore
 
     @StateObject private var model: MacEditorModel
-    private let onClose: () -> Void
 
     @State private var toast: String?
     @State private var isImporting = false
@@ -646,9 +681,8 @@ struct MacEditorView: View {
     /// 时间轴可视宽度（时间轴上报，缩放时用于夹取偏移）
     @State private var timelineWidth: CGFloat = 0
 
-    init(initialSource: MacEditorSource?, onClose: @escaping () -> Void) {
+    init(initialSource: MacEditorSource?) {
         _model = StateObject(wrappedValue: MacEditorModel(source: initialSource))
-        self.onClose = onClose
     }
 
     var body: some View {
@@ -667,6 +701,11 @@ struct MacEditorView: View {
             }
         }
         .background(MacTheme.canvas)
+        .modifier(DeleteKeyMonitor { handleDeleteKey() })
+        .onChange(of: model.scrollToStartToken) { _ in
+            // 向左分割后剩下一段从 00:00 开始，把时间轴滚回最左跟着走
+            timelineOffset = timelineInset
+        }
         .task { await model.load() }
         .onDisappear { model.saveDraft() }
         .alert("提示", isPresented: Binding(
@@ -694,17 +733,6 @@ struct MacEditorView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Button {
-                model.saveDraft()
-                onClose()
-            } label: {
-                Label("关闭", systemImage: "xmark")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(MacTheme.accent)
-
-            Divider().frame(height: 16)
-
             Text(model.source?.title ?? "新建编辑")
                 .font(.headline)
                 .foregroundStyle(.white)
@@ -752,21 +780,11 @@ struct MacEditorView: View {
     private var mediaPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Button {
-                    addVideo()
-                } label: {
-                    Label(isImporting ? "正在读取…" : "导入", systemImage: "square.and.arrow.down")
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(MacTheme.accent)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(
-                            MacTheme.accent.opacity(0.10),
-                            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        )
+                if isImporting {
+                    Text("正在读取…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
-                .disabled(isImporting)
 
                 Spacer(minLength: 0)
 
@@ -823,7 +841,6 @@ struct MacEditorView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { selectedVideoIDs.removeAll() }
         )
-        .modifier(MediaDeleteKeyMonitor { deleteSelectedVideos() })
     }
 
     /// 点卡片：默认单选，⌘ 点击切换选中
@@ -841,6 +858,16 @@ struct MacEditorView: View {
 
     private func deleteSelectedVideos() {
         deleteVideos(ids: selectedVideoIDs)
+    }
+
+    /// Delete 键（V2.7.14）：先删素材列表里选中的视频；素材没选中时删时间轴上选中的片段
+    private func handleDeleteKey() {
+        if !selectedVideoIDs.isEmpty {
+            deleteSelectedVideos()
+            return
+        }
+        guard model.isClipSelected, model.currentClipIndex != nil else { return }
+        model.deleteClipAtPlayhead()
     }
 
     /// 删除选中的视频：连同文件、缩略图、草稿一起删，删前确认
@@ -1152,10 +1179,10 @@ struct MacEditorView: View {
                 model.splitAtPlayhead()
             }
             MacGlyphButton(title: "向左分割", kind: .keepLeft, enabled: true) {
-                model.keepLeftOfPlayhead()
+                model.cutBeforePlayhead()
             }
             MacGlyphButton(title: "向右分割", kind: .keepRight, enabled: true) {
-                model.keepRightOfPlayhead()
+                model.cutAfterPlayhead()
             }
             MacGlyphButton(
                 title: "删除",
@@ -1557,7 +1584,7 @@ private struct MacGlyphButton: View {
 // MARK: - 素材列表的 Delete 键监听
 
 /// 剪辑窗口里按 Delete / 前向 Delete 删掉选中的素材（不吞主窗口和其他文字输入的键）
-private struct MediaDeleteKeyMonitor: ViewModifier {
+private struct DeleteKeyMonitor: ViewModifier {
     let onDelete: () -> Void
     @State private var monitor: Any?
 
