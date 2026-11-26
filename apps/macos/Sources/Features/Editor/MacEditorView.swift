@@ -703,13 +703,13 @@ struct MacEditorView: View {
             MacToolIconButton(title: "重置", icon: "arrow.counterclockwise", enabled: true) {
                 model.resetTimeline()
             }
-            MacToolIconButton(title: "分割", icon: "scissors", enabled: true) {
+            MacGlyphToolButton(title: "分割", glyph: .split) {
                 model.splitAtPlayhead()
             }
-            MacToolIconButton(title: "向左分割", icon: "arrow.left.to.line", enabled: true) {
+            MacGlyphToolButton(title: "向左分割", glyph: .keepLeft) {
                 model.keepLeftOfPlayhead()
             }
-            MacToolIconButton(title: "向右分割", icon: "arrow.right.to.line", enabled: true) {
+            MacGlyphToolButton(title: "向右分割", glyph: .keepRight) {
                 model.keepRightOfPlayhead()
             }
             MacToolIconButton(
@@ -902,6 +902,100 @@ private struct MacToolIconButton: View {
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
+        .onHover { hovering = $0 }
+        .help(title)
+    }
+}
+
+// MARK: - 分割类自绘图标
+
+/// V2.7.1：分割 / 向左分割 / 向右分割 用参考图里的「花括号 + 虚线」图标，
+/// 实线括号表示保留的边，虚线表示被裁掉的一侧。
+private struct MacSplitGlyph: View {
+    enum Style {
+        case split
+        case keepLeft
+        case keepRight
+    }
+
+    let style: Style
+    var tint: Color = .white
+
+    private let designSize: CGFloat = 22
+
+    var body: some View {
+        Canvas { context, size in
+            let scale = min(size.width, size.height) / designSize
+            let stroke = 1.8 * scale
+            let topY: CGFloat = 2
+            let bottomY: CGFloat = 20
+            let tick: CGFloat = 5
+
+            func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+                CGPoint(x: x * scale, y: y * scale)
+            }
+
+            var solid = Path()
+            func bracket(barX: CGFloat, ticksToLeft: Bool) {
+                solid.move(to: point(barX, topY))
+                solid.addLine(to: point(barX, bottomY))
+                let endX: CGFloat = ticksToLeft ? barX - tick : barX + tick
+                solid.move(to: point(barX, topY))
+                solid.addLine(to: point(endX, topY))
+                solid.move(to: point(barX, bottomY))
+                solid.addLine(to: point(endX, bottomY))
+            }
+
+            switch style {
+            case .split:
+                bracket(barX: 8.5, ticksToLeft: true)
+                bracket(barX: 13.5, ticksToLeft: false)
+            case .keepLeft:
+                bracket(barX: 8.5, ticksToLeft: true)
+            case .keepRight:
+                bracket(barX: 13.5, ticksToLeft: false)
+            }
+
+            context.stroke(
+                solid,
+                with: .color(tint),
+                style: StrokeStyle(lineWidth: stroke, lineCap: .round, lineJoin: .round)
+            )
+
+            guard style != .split else { return }
+            var dashed = Path()
+            let dashX: CGFloat = style == .keepLeft ? 15 : 7
+            dashed.move(to: point(dashX, topY))
+            dashed.addLine(to: point(dashX, bottomY))
+            context.stroke(
+                dashed,
+                with: .color(tint),
+                style: StrokeStyle(lineWidth: stroke, lineCap: .butt, dash: [2.2 * scale, 2.4 * scale])
+            )
+        }
+        .frame(width: designSize, height: designSize)
+    }
+}
+
+/// 自绘图标按钮，尺寸与其它工具按钮完全一致
+private struct MacGlyphToolButton: View {
+    let title: String
+    let glyph: MacSplitGlyph.Style
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            MacSplitGlyph(style: glyph, tint: .white.opacity(hovering ? 1 : 0.82))
+                .frame(width: 34, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.white.opacity(hovering ? 0.12 : 0))
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(title)
     }
