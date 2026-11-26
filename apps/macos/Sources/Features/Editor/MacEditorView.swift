@@ -46,6 +46,11 @@ final class MacEditorModel: ObservableObject {
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
     private var filmstripTask: Task<Void, Never>?
+    /// 正在生成的槽位（滚动时复用，避免同一批帧被反复请求）
+    private var pendingSlots: Set<Int> = []
+    /// 到货的帧先入缓冲，批量提交给视图，避免一帧一次重绘
+    private var frameBuffer: [Int: CGImage] = [:]
+    private var flushTask: Task<Void, Never>?
     private var filmstripGenerator: AVAssetImageGenerator?
     private var filmstripGenerationID = 0
     private var timelineScrollOffset: CGFloat = 0
@@ -205,8 +210,9 @@ final class MacEditorModel: ObservableObject {
         // 间隔变了（缩放档位或整段时长变化），旧槽位全部失效
         let interval = thumbnailInterval
         if abs(interval - filmstripInterval) > 1e-9 {
-            filmstrip = [:]
             filmstripInterval = interval
+            requestFilmstrip(resetCache: true)
+            return
         }
         let ins = timelineInset(pps: pps)
         // 时间轴可视窗口 -> 素材时间窗口（片段的素材入点是 clip.start，在时间轴上却从累加时长处开始）
@@ -233,14 +239,22 @@ final class MacEditorModel: ObservableObject {
     /// 与 MacTimelineView 相同的内容落点规则：两端固定 100pt 余量，片段起点始终在同一处
     private func timelineInset(pps: Double) -> CGFloat { MacTimelineView.sideInset }
 
-    /// 缩略图间隔变化时清缓存，然后防抖 200ms 补齐可视窗口内缺失的帧
-    private func requestFilmstrip() {
-        filmstripGenerationID += 1
+    /// 补帧入口：`resetCache` 只用于间隔变化（作废旧槽位、掐掉在飞的取帧）；
+    /// 滚动只做防抖补帧，不打断已经在跑的批，避免来回滚动时反复取消重来
+    private func requestFilmstrip(resetCache: Bool = false) {
+        if resetCache {
+            filmstripGenerationID += 1
+            filmstripGenerator?.cancelAllCGImageGeneration()
+            pendingSlots.removeAll()
+            frameBuffer.removeAll()
+            flushTask?.cancel()
+            flushTask = nil
+            filmstrip = [:]
+        }
         let id = filmstripGenerationID
         filmstripTask?.cancel()
-        filmstripGenerator?.cancelAllCGImageGeneration()
         filmstripTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 200_000_000)
+            try? await Task.sleep(nanoseconds: 120_000_000)
             guard !Task.isCancelled else { return }
             await self?.generateFilmstrip(generationID: id)
         }
@@ -258,8 +272,10 @@ final class MacEditorModel: ObservableObject {
         let first = Int(floor(startT / interval))
         let last = Int(ceil(endT / interval))
         guard last > first, last - first <= 900 else { return }
-        let slots = (first..<last).filter { filmstrip[$0] == nil }
+        // 只补「没有缓存、也不在飞行中」的槽位：滚动时同一批帧不会重复取
+        let slots = (first..<last).filter { filmstrip[$0] == nil && !pendingSlots.contains($0) }
         guard !slots.isEmpty else { return }
+        pendingSlots.formUnion(slots)
 
         let asset = self.asset ?? AVURLAsset(url: source.url)
         var times: [NSValue] = []
@@ -285,15 +301,20 @@ final class MacEditorModel: ObservableObject {
         generator.requestedTimeToleranceAfter = tolerance
         filmstripGenerator = generator
 
+        defer { flushFrames() }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             let lock = NSLock()
             var remaining = times.count
             generator.generateCGImagesAsynchronously(forTimes: times) { requested, image, _, _, _ in
                 let key = "\(requested.value)-\(requested.timescale)"
-                if let slot = indexByKey[key], let image {
+                if let slot = indexByKey[key] {
                     Task { @MainActor [weak self] in
-                        guard let self, self.filmstripGenerationID == generationID else { return }
-                        self.filmstrip[slot] = image
+                        guard let self else { return }
+                        self.pendingSlots.remove(slot)
+                        guard self.filmstripGenerationID == generationID, let image else { return }
+                        // 先入缓冲，40ms 批量提交，一次滚动只重绘几次而不是几十次
+                        self.frameBuffer[slot] = image
+                        self.scheduleFrameFlush()
                     }
                 }
                 lock.lock()
@@ -305,6 +326,25 @@ final class MacEditorModel: ObservableObject {
         }
     }
 
+
+    /// 每 40ms 把缓冲里的帧一次性并进 filmstrip（一次发布 = 一次重绘）
+    private func scheduleFrameFlush() {
+        guard flushTask == nil else { return }
+        flushTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 40_000_000)
+            guard let self else { return }
+            self.flushTask = nil
+            self.flushFrames()
+        }
+    }
+
+    private func flushFrames() {
+        guard !frameBuffer.isEmpty else { return }
+        var merged = filmstrip
+        for (slot, image) in frameBuffer { merged[slot] = image }
+        frameBuffer.removeAll()
+        filmstrip = merged
+    }
 
     /// 草稿里的片段按当前视频时长校验，边界不对的一律丢掉
     private func restoredClips(from draft: MacEditorDraft?) -> [MacClip] {
@@ -704,18 +744,55 @@ struct MacEditorView: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 14)
 
-            ScrollView {
-                LazyVGrid(columns: mediaColumns, alignment: .leading, spacing: 12) {
-                    ForEach(library.videos) { item in
-                        mediaCard(item)
+            if library.videos.isEmpty {
+                emptyLibraryCard
+                    .padding(.horizontal, 14)
+                    .padding(.top, 6)
+                Spacer(minLength: 0)
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: mediaColumns, alignment: .leading, spacing: 12) {
+                        ForEach(library.videos) { item in
+                            mediaCard(item)
+                        }
+                        addVideoCard
                     }
-                    addVideoCard
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 14)
                 }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 14)
             }
         }
         .background(MacTheme.surface)
+    }
+
+    /// 素材列表为空时的空态（V2.7.9）：整块大圆角灰底，点哪儿都能导入
+    private var emptyLibraryCard: some View {
+        Button {
+            addVideo()
+        } label: {
+            VStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 21, weight: .semibold))
+                        .foregroundStyle(MacTheme.accent)
+                    Text("导入")
+                        .font(.system(size: 21, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                Text("视频，支持拖入或点击导入")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.40))
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 250)
+            .background(
+                Color.white.opacity(0.055),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("导入一条视频")
     }
 
     private func mediaCard(_ item: VideoItem) -> some View {
@@ -819,9 +896,7 @@ struct MacEditorView: View {
                     model.updateVisibleWindow(offset: newOffset)
                 }
             } else {
-                dropHint
-                    .padding(12)
-                Spacer(minLength: 0)
+                emptyTimelineState
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -837,6 +912,87 @@ struct MacEditorView: View {
         )
         .onDrop(of: [UTType.plainText], isTargeted: $isDropTarget) { providers in
             handleDrop(providers)
+        }
+    }
+
+    /// 还没拖进视频时的编辑区（V2.7.9）：置灰的工具条 + 空刻度尺 + 虚线拖入区
+    private var emptyTimelineState: some View {
+        VStack(spacing: 0) {
+            toolRow
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .disabled(true)
+                .opacity(0.40)
+
+            emptyRuler
+                .frame(height: 26)
+                .padding(.top, 6)
+                .padding(.horizontal, 12)
+                .overlay(alignment: .bottomLeading) {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.55))
+                        .frame(width: 1)
+                        .padding(.leading, 12 + 26)
+                }
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 12) {
+                Image(systemName: "film")
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.55))
+                Text("素材拖拽到这里，开始你的大作吧～")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.white.opacity(0.62))
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 26)
+            .frame(maxWidth: .infinity)
+            .frame(height: 118)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.white.opacity(isDropTarget ? 0.05 : 0.015))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(
+                        Color.white.opacity(isDropTarget ? 0.30 : 0.10),
+                        style: StrokeStyle(lineWidth: 1, dash: [4, 3])
+                    )
+            )
+            .padding(.horizontal, 12)
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// 空状态下的一条静态刻度尺（没有素材时没有 pps，按 1 秒 = 160pt 画）
+    private var emptyRuler: some View {
+        Canvas { ctx, size in
+            let pps: CGFloat = 260
+            let inset: CGFloat = 26
+            var t = 0.0
+            while inset + CGFloat(t) * pps <= size.width {
+                let x = inset + CGFloat(t) * pps
+                for i in 1..<5 {
+                    let mx = x + CGFloat(Double(i) * 0.2) * pps
+                    guard mx <= size.width else { continue }
+                    var minor = Path()
+                    minor.move(to: CGPoint(x: mx, y: size.height))
+                    minor.addLine(to: CGPoint(x: mx, y: size.height - 5))
+                    ctx.stroke(minor, with: .color(.white.opacity(0.22)), lineWidth: 1)
+                }
+                var major = Path()
+                major.move(to: CGPoint(x: x, y: size.height))
+                major.addLine(to: CGPoint(x: x, y: size.height - 10))
+                ctx.stroke(major, with: .color(.white.opacity(0.45)), lineWidth: 1)
+
+                let label = Text(t.timecode)
+                    .font(.system(size: 9, weight: .medium).monospacedDigit())
+                    .foregroundColor(.white.opacity(0.55))
+                ctx.draw(label, at: CGPoint(x: x + 3, y: 3), anchor: .topLeading)
+                t += 1
+            }
         }
     }
 
