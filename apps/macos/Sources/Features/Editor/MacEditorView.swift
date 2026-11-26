@@ -363,14 +363,18 @@ struct MacEditorView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            HStack(spacing: 0) {
-                leftColumn
-                    .frame(width: 340)
+        GeometryReader { geo in
+            // V2.3：左右按 64 : 36 分（左侧素材 + 时间轴、右侧播放器），和剪映专业版一致
+            let leftWidth = min(max(560, geo.size.width * 0.64), geo.size.width - 420)
+            VStack(spacing: 0) {
+                header
                 Divider()
-                playerColumn
+                HStack(spacing: 0) {
+                    leftColumn
+                        .frame(width: leftWidth)
+                    Divider()
+                    playerColumn
+                }
             }
         }
         .background(MacTheme.canvas)
@@ -405,7 +409,7 @@ struct MacEditorView: View {
                 model.saveDraft()
                 onClose()
             } label: {
-                Label("剪辑台", systemImage: "chevron.left")
+                Label("关闭", systemImage: "xmark")
             }
             .buttonStyle(.plain)
             .foregroundStyle(MacTheme.accent)
@@ -436,68 +440,97 @@ struct MacEditorView: View {
     // MARK: - 左栏
 
     private var leftColumn: some View {
-        VStack(spacing: 0) {
-            mediaPanel
-                .frame(height: 240)
-            Divider()
-            editingPanel
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                mediaPanel
+                    .frame(height: max(270, geo.size.height * 0.44))
+                Divider()
+                editingPanel
+            }
         }
     }
 
+    private let mediaColumns = [
+        GridItem(.adaptive(minimum: 150, maximum: 240), spacing: 14, alignment: .top)
+    ]
+
+    /// 素材区（V2.3）：参考剪映的素材面板 —— 顶部「导入」+「全部」，下面是两列以上的卡片墙
     private var mediaPanel: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("视频")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
-                Spacer()
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Button {
+                    addVideo()
+                } label: {
+                    Label(isImporting ? "正在读取…" : "导入", systemImage: "square.and.arrow.down")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(MacTheme.accent)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            MacTheme.accent.opacity(0.10),
+                            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(isImporting)
+
+                Spacer(minLength: 0)
+
                 Text("\(library.videos.count)")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 14)
             .padding(.top, 12)
-            .padding(.bottom, 6)
+
+            Text("全部")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
 
             ScrollView {
-                LazyVStack(spacing: 4) {
+                LazyVGrid(columns: mediaColumns, alignment: .leading, spacing: 16) {
                     ForEach(library.videos) { item in
-                        mediaRow(item)
+                        mediaCard(item)
                     }
-                    addVideoRow
+                    addVideoCard
                 }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 10)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
             }
         }
         .background(MacTheme.surface)
     }
 
-    private func mediaRow(_ item: VideoItem) -> some View {
+    private func mediaCard(_ item: VideoItem) -> some View {
         let selected = model.source?.libraryVideoID == item.id
-        return HStack(spacing: 10) {
-            MacThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 6)
-                .frame(width: 56, height: 32)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.title)
-                    .font(.caption)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
+        return VStack(alignment: .leading, spacing: 7) {
+            ZStack(alignment: .topTrailing) {
+                MacThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 8)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 105)
+                    .clipped()
+
                 Text(item.duration.timecode)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.65), radius: 2, y: 1)
+                    .padding(6)
             }
-            Spacer(minLength: 0)
-            Image(systemName: "line.3.horizontal")
-                .font(.caption2)
-                .foregroundStyle(Color.white.opacity(0.25))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(
+                        selected ? MacTheme.accent : Color.white.opacity(0.06),
+                        lineWidth: selected ? 2 : 1
+                    )
+            )
+
+            Text(item.title)
+                .font(.caption)
+                .foregroundStyle(selected ? Color.white : Color.white.opacity(0.62))
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(selected ? MacTheme.accent.opacity(0.20) : Color.clear)
-        )
         .contentShape(Rectangle())
         .onDrag {
             NSItemProvider(object: item.id.uuidString as NSString)
@@ -505,33 +538,31 @@ struct MacEditorView: View {
         .help("拖到下方编辑区载入这条视频")
     }
 
-    private var addVideoRow: some View {
+    private var addVideoCard: some View {
         Button {
             addVideo()
         } label: {
-            HStack(spacing: 8) {
+            VStack(spacing: 6) {
                 Image(systemName: "plus")
-                    .font(.caption.weight(.bold))
-                Text(isImporting ? "正在读取…" : "添加视频")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("添加视频")
                     .font(.caption)
-                Spacer(minLength: 0)
             }
             .foregroundStyle(MacTheme.accent)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .frame(height: 105)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(MacTheme.accent.opacity(0.10))
+                MacTheme.accent.opacity(0.06),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(MacTheme.accent.opacity(0.22), lineWidth: 1)
+                    .stroke(MacTheme.accent.opacity(0.30), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(isImporting)
-        .padding(.top, 4)
     }
 
     // MARK: - 编辑区

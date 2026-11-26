@@ -11,7 +11,6 @@ struct MacLibraryView: View {
     @State private var searchText = ""
 
     @State private var playingVideo: VideoItem?
-    @State private var editingSource: MacEditorSource?
     @State private var renameVideoTarget: VideoItem?
     @State private var renameFolderTarget: VideoFolder?
     @State private var moveVideoTarget: VideoItem?
@@ -34,10 +33,6 @@ struct MacLibraryView: View {
         decorated
             .sheet(item: $playingVideo) { item in
                 MacPlayerView(item: item)
-            }
-            .sheet(item: $editingSource) { source in
-                MacEditorView(initialSource: source) { editingSource = nil }
-                    .environmentObject(library)
             }
             .sheet(item: $renameVideoTarget) { item in
                 MacRenameSheet(title: "重命名视频", currentName: item.title) { newName in
@@ -239,7 +234,12 @@ struct MacLibraryView: View {
                         MacVideoCard(
                             item: item,
                             onPlay: { playingVideo = item },
-                            onEdit: { editingSource = MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id) }
+                            onEdit: {
+                                MacEditorWindowManager.shared.open(
+                                    source: MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id),
+                                    library: library
+                                )
+                            }
                         ) {
                             Button(item.isFavorite ? "取消收藏" : "收藏") {
                                 library.toggleFavorite(item.id)

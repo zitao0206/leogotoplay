@@ -2,17 +2,10 @@ import AppKit
 import SwiftUI
 import LeogotoPlayCore
 
-/// Cut 页的两个去处：首页，或剪辑页（可带一条已选素材）。
-private enum MacCutRoute {
-    case home
-    case editor(MacEditorSource?)
-}
-
 /// macOS 剪辑台（V2.0）：深色淡红底，首页三段式 —— 热门工具 / 添加并开始编辑 / 最近编辑。
 struct MacCutView: View {
     @EnvironmentObject private var library: LibraryStore
 
-    @State private var route: MacCutRoute = .home
     @State private var playingVideo: VideoItem?
     @State private var toast: String?
     /// 删掉草稿后让「最近编辑」重新读一遍草稿状态
@@ -27,19 +20,11 @@ struct MacCutView: View {
     ]
 
     var body: some View {
-        Group {
-            switch route {
-            case .home:
-                home
-            case .editor(let source):
-                // V2.1：剪辑改成整页（不再弹 sheet），返回时把草稿状态刷新回「最近编辑」
-                MacEditorView(initialSource: source) {
-                    draftRevision += 1
-                    route = .home
-                }
-                .environmentObject(library)
+        // V2.3：进剪辑一律新开一个独立窗口，本页始终停在首页
+        home
+            .onReceive(NotificationCenter.default.publisher(for: .macEditorWindowClosed)) { _ in
+                draftRevision += 1
             }
-        }
     }
 
     private var home: some View {
@@ -79,8 +64,11 @@ struct MacCutView: View {
         #if DEBUG
         guard UserDefaults.standard.bool(forKey: "autoOpenFirstVideo") else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            guard case .home = route, let item = library.recentVideos.first else { return }
-            route = .editor(MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id))
+            guard let item = library.recentVideos.first else { return }
+            MacEditorWindowManager.shared.open(
+                source: MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id),
+                library: library
+            )
         }
         #endif
     }
@@ -137,8 +125,8 @@ struct MacCutView: View {
 
     private var startEditCard: some View {
         Button {
-            // 进入剪辑页（先空着，视频从页面内的列表拖进去载入）
-            route = .editor(nil)
+            // 新开一个剪辑窗口（先空着，视频从窗口里的素材墙拖进编辑区载入）
+            MacEditorWindowManager.shared.open(source: nil, library: library)
         } label: {
             HStack(spacing: 12) {
                 Spacer(minLength: 0)
@@ -218,7 +206,10 @@ struct MacCutView: View {
                                 item: item,
                                 draft: MacEditorDraftStore.draft(for: item.id),
                                 onOpen: {
-                                    route = .editor(MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id))
+                                    MacEditorWindowManager.shared.open(
+                                        source: MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id),
+                                        library: library
+                                    )
                                 },
                                 onDelete: { delete(item) }
                             )
