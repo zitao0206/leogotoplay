@@ -688,6 +688,10 @@ struct MacEditorView: View {
     @State private var timelineOffset: CGFloat = 0
     /// 时间轴可视宽度（时间轴上报，缩放时用于夹取偏移）
     @State private var timelineWidth: CGFloat = 0
+    /// 导出进度弹框
+    @State private var isExportSheetPresented = false
+    /// 导出失败文案（弹框内展示，不走全局 alert）
+    @State private var exportErrorText: String?
 
     init(initialSource: MacEditorSource?) {
         _model = StateObject(wrappedValue: MacEditorModel(source: initialSource))
@@ -724,6 +728,11 @@ struct MacEditorView: View {
             Button("好") { model.errorMessage = nil }
         } message: {
             Text(model.errorMessage ?? "")
+        }
+        .sheet(isPresented: $isExportSheetPresented) {
+            MacExportSheet(model: model, errorText: exportErrorText) {
+                isExportSheetPresented = false
+            }
         }
         .overlay(alignment: .bottom) {
             if let toast {
@@ -1300,7 +1309,7 @@ struct MacEditorView: View {
     private var exportButton: some View {
         VStack(alignment: .trailing, spacing: 6) {
             Button {
-                Task { await exportToFile() }
+                startExport()
             } label: {
                 HStack(spacing: 7) {
                     Image(systemName: "square.and.arrow.up")
@@ -1382,15 +1391,35 @@ struct MacEditorView: View {
         }
     }
 
-    private func exportToFile() async {
-        guard let exported = await model.export() else { return }
-        let suggested = "\(model.source?.title ?? "clip")-\(Int(Date().timeIntervalSince1970)).mp4"
-        guard let destination = MacAlerts.chooseSaveURL(suggestedName: suggested) else { return }
+    // MARK: - 导出（V2.8.0 起带进度弹框，默认落到「下载」文件夹）
+
+    /// 点导出：先把弹框顶上来，再在后台渲染时间轴，进度实时写进 model.exportProgress
+    private func startExport() {
+        guard model.hasSource, !model.clips.isEmpty, !model.isExporting else { return }
+        model.pause()
+        model.exportedURL = nil
+        exportErrorText = nil
+        isExportSheetPresented = true
+        Task { await runExport() }
+    }
+
+    private func runExport() async {
+        guard let exported = await model.export() else {
+            // 失败信息放进弹框里，同时清掉全局 alert 的文案，避免两层弹窗叠一起
+            exportErrorText = model.errorMessage ?? "导出失败，请稍后再试"
+            model.errorMessage = nil
+            return
+        }
+
+        let stamp = Int(Date().timeIntervalSince1970)
+        let base = (model.source?.title ?? "clip").replacingOccurrences(of: "/", with: "-")
+        let destination = MacExportPaths.downloads
+            .appendingPathComponent("\(base)-\(stamp).mp4")
         do {
             try VideoExporter.moveExport(exported, to: destination)
-            show("已保存到 \(destination.lastPathComponent)")
+            model.exportedURL = destination
         } catch {
-            model.errorMessage = error.localizedDescription
+            exportErrorText = error.localizedDescription
         }
     }
 
@@ -1400,6 +1429,126 @@ struct MacEditorView: View {
             try? await Task.sleep(nanoseconds: 2_200_000_000)
             if toast == text { toast = nil }
         }
+    }
+}
+
+// MARK: - 导出进度弹框（V2.8.0）
+
+private enum MacExportPaths {
+    /// 默认导出目录：用户「下载」文件夹
+    static var downloads: URL {
+        FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
+    }
+}
+
+private struct MacExportSheet: View {
+    @ObservedObject var model: MacEditorModel
+    let errorText: String?
+    let onClose: () -> Void
+
+    private var progress: Double { min(max(model.exportProgress, 0), 1) }
+    private var isDone: Bool { model.exportedURL != nil && !model.isExporting }
+
+    private var title: String {
+        if isDone { return "导出完成" }
+        if errorText != nil { return "导出失败" }
+        return "正在导出"
+    }
+
+    private var titleIcon: String {
+        if isDone { return "checkmark.circle.fill" }
+        if errorText != nil { return "exclamationmark.triangle.fill" }
+        return "arrow.up.circle.fill"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 9) {
+                Image(systemName: titleIcon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(MacTheme.accent)
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+
+            Text("默认导出到「下载」文件夹：\(MacExportPaths.downloads.path)")
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.55))
+                .textSelection(.enabled)
+
+            if model.isExporting {
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .tint(MacTheme.accent)
+                HStack {
+                    Text("正在渲染时间轴…")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.55))
+                    Spacer()
+                    Text("\(Int(progress * 100))%")
+                        .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(.white)
+                }
+            }
+
+            if let url = model.exportedURL, !model.isExporting {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(url.lastPathComponent)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text(url.path)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+            }
+
+            if let errorText {
+                Text(errorText)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(hex: 0xFF7A63))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 10) {
+                if isDone, let url = model.exportedURL {
+                    Button {
+                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                    } label: {
+                        Text("在访达中显示")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(Color.white.opacity(0.12), in: Capsule())
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+
+                Button {
+                    onClose()
+                } label: {
+                    Text(isDone ? "完成" : "关闭")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 7)
+                        .background(MacTheme.accentGradient, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(22)
+        .frame(width: 440)
+        .background(MacTheme.surface)
     }
 }
 
