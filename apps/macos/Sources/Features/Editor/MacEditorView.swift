@@ -429,7 +429,8 @@ final class MacEditorModel: ObservableObject {
         // 播放头正好压在片段端点（比如刚在这一刀切过）什么都不做，不弹提示
         guard anchor.sourceTime - clip.start > 0.05, clip.end - anchor.sourceTime > 0.05 else { return }
         pushUndo()
-        clips[anchor.index] = MacClip(start: clip.start, end: anchor.sourceTime)
+        // V2.7.13：左段沿用原 id，右段新建，切割只重画右段，不整条闪
+        clips[anchor.index] = MacClip(id: clip.id, start: clip.start, end: anchor.sourceTime)
         clips.insert(MacClip(start: anchor.sourceTime, end: clip.end), at: anchor.index + 1)
         rebuildComposition(preserveTime: currentTime)
         saveDraft()
@@ -455,7 +456,7 @@ final class MacEditorModel: ObservableObject {
         let clip = clips[anchor.index]
         guard anchor.sourceTime - clip.start > 0.05 else { return }
         pushUndo()
-        clips[anchor.index] = MacClip(start: clip.start, end: anchor.sourceTime)
+        clips[anchor.index] = MacClip(id: clip.id, start: clip.start, end: anchor.sourceTime)
         rebuildComposition(preserveTime: currentTime)
         saveDraft()
     }
@@ -466,7 +467,7 @@ final class MacEditorModel: ObservableObject {
         let clip = clips[anchor.index]
         guard clip.end - anchor.sourceTime > 0.05 else { return }
         pushUndo()
-        clips[anchor.index] = MacClip(start: anchor.sourceTime, end: clip.end)
+        clips[anchor.index] = MacClip(id: clip.id, start: anchor.sourceTime, end: clip.end)
         rebuildComposition(preserveTime: currentTime)
         saveDraft()
     }

@@ -31,7 +31,9 @@ struct MacTimelineView: View {
     private let trackHeight: CGFloat = CGFloat(MacEditorModel.thumbnailSide)
     /// 缩放空间余量：内容放得下时两端各留的滑动距离（放不下时用满）
     static let sideInset: CGFloat = 100
-    private let clipGap: CGFloat = 2
+    /// V2.7.13：片段之间不再留 2pt 缝。缝隙会把每个片段的实际落点往后推 gap，
+    /// 播放指针按「时间 × 每秒像素」绝对定位，段一多就会和片段边界错开。
+    private let clipGap: CGFloat = 0
     private let rulerHeight: CGFloat = 26
     /// 底部拖动条区域总高（6 间距 + 10 条 + 2 底边距）
     private let bottomBarSpace: CGFloat = 18
@@ -128,7 +130,7 @@ struct MacTimelineView: View {
                         let delta = Double(value / base)
                         magnifyBaseline = value
                         guard delta != 1 else { return }
-                        applyZoom(multiplying: delta, width: width)
+                        applyZoom(multiplying: delta)
                     }
                     .onEnded { _ in magnifyBaseline = nil }
             )
@@ -140,37 +142,46 @@ struct MacTimelineView: View {
             )
             .onAppear {
                 onViewportChange(width)
-                // 默认让片段起点贴着可视区左边，空白距离留出来给用户自己拖
-                if scrollOffset == 0 {
-                    scrollOffset = min(Self.sideInset, maxOffset)
+                // 默认让片段起点贴着可视区左边，空白距离留出来给用户自己拖（只做一次）
+                if !didInitialScroll {
+                    didInitialScroll = true
+                    if scrollOffset == 0 {
+                        scrollOffset = min(Self.sideInset, maxOffset)
+                    }
                 }
             }
             .onChange(of: geo.size.width) { newWidth in
                 onViewportChange(newWidth)
+                scrollOffset = min(max(0, scrollOffset), maxOffset)
             }
             .onChange(of: outputDuration) { _ in
-                scrollOffset = min(Self.sideInset, maxOffset)
+                // V2.7.13：切割 / 删除 / 撤销后只把偏移夹回新范围，不再强行拉回 100
+                // （之前每次时长变化都会把时间轴「顶」到最左边，正在看的位置全丢）
+                scrollOffset = min(max(0, scrollOffset), maxOffset)
+            }
+            .onChange(of: pixelsPerSecond) { _ in
+                // 按钮缩放和捏合缩放都会改每像素时长，把偏移夹进新内容宽度，避免停在空白区
+                scrollOffset = min(max(0, scrollOffset), maxOffset)
+            }
+            .onChange(of: maxOffset) { _ in
+                // 时长 / 档位 / 窗口宽度任何一个变了都会重算可滚范围，状态里的旧偏移跟着夹一遍
+                scrollOffset = min(max(0, scrollOffset), maxOffset)
             }
         }
     }
 
     @State private var magnifyBaseline: CGFloat?
     @State private var panBaseline: CGFloat?
+    @State private var didInitialScroll = false
 
     // MARK: - 缩放
 
-    /// 以播放指针为锚点缩放：指针在屏上的位置保持不动
-    private func applyZoom(multiplying factor: Double, width: CGFloat) {
+    /// 以时间轴 00:00 为锚点缩放：左边保持不动，偏移由 `.onChange(of: pixelsPerSecond)` 统一夹回新范围
+    private func applyZoom(multiplying factor: Double) {
         guard factor > 0, factor.isFinite else { return }
         // 放大 = 间隔变小（分母 ×1.5）；缩小 = 间隔变大（×2）；下限 1/30s，上限由模型按 t/4 夹住
         let newInterval = max(thumbnailInterval / factor, MacEditorModel.minThumbnailInterval)
         guard abs(newInterval - thumbnailInterval) > 1e-9 else { return }
-
-        // 以时间轴 00:00 为锚：左边保持不动，只把滚动偏移夹回新范围
-        let newPPS = MacEditorModel.thumbnailSide / newInterval
-        let newTrack = CGFloat(duration) * CGFloat(newPPS)
-        let newMaxOffset = max(0, newTrack + Self.sideInset * 2 - width)
-        scrollOffset = min(max(0, scrollOffset), newMaxOffset)
         onSetThumbnailInterval(newInterval)
     }
 
@@ -179,8 +190,16 @@ struct MacTimelineView: View {
     /// 主刻度间隔：按「间距 ≈ 80pt」自动挑一档（0.1s ~ 1h）
     private func majorTickInterval(pps: CGFloat) -> Double {
         let candidates: [Double] = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600]
-        let target = 80 / Double(pps)
+        let target = 80 / Double(max(pps, 1))
         return candidates.first { $0 >= target } ?? 3600
+    }
+
+    /// 高倍放大时主刻度不到 1s，标签补一位小数，避免一串 00:00 挤在一起
+    private func tickLabel(_ t: Double, interval: Double) -> String {
+        guard interval < 1 else { return t.timecode }
+        let minutes = Int(t) / 60
+        let seconds = Int(t.truncatingRemainder(dividingBy: 60))
+        return String(format: "%02d:%02d.%d", minutes, seconds, Int((t - Double(Int(t))) * 10 + 0.0001))
     }
 
     /// 拖拽平移：按下时记住起点 offset，拖动时按位移反向推内容
@@ -237,7 +256,7 @@ struct MacTimelineView: View {
                     major.addLine(to: CGPoint(x: x, y: size.height - 10))
                     ctx.stroke(major, with: .color(.white.opacity(0.45)), lineWidth: 1)
 
-                    let label = Text(time.timecode)
+                    let label = Text(tickLabel(time, interval: interval))
                         .font(.system(size: 9, weight: .medium).monospacedDigit())
                         .foregroundColor(.white.opacity(0.55))
                     ctx.draw(label, at: CGPoint(x: x + 3, y: 3), anchor: .topLeading)
@@ -251,13 +270,19 @@ struct MacTimelineView: View {
     // MARK: - 轨道
 
     private func track(width: CGFloat, offset: CGFloat, inset ins: CGFloat, visibleRange: ClosedRange<Double>) -> some View {
-        clipRow(visibleRange: visibleRange)
-            .padding(.top, 8)
-            .offset(x: ins - offset)
-            .frame(width: width, height: trackHeight + 8, alignment: .topLeading)
-            .clipped()
-            .contentShape(Rectangle())
-            .gesture(seekGesture(offset: offset, inset: ins))
+        // V2.7.13：手势装在没有 offset 的透明层上，坐标空间永远是 0…width，
+        // 直接叠在位移过的片段行上算「x + 偏移 - 余量」，滚动后也不会点哪跳哪
+        ZStack(alignment: .topLeading) {
+            clipRow(visibleRange: visibleRange)
+                .padding(.top, 8)
+                .offset(x: ins - offset)
+
+            Color.clear
+                .contentShape(Rectangle())
+                .gesture(seekGesture(offset: offset, inset: ins))
+        }
+        .frame(width: width, height: trackHeight + 8, alignment: .topLeading)
+        .clipped()
     }
 
     private func clipRow(visibleRange: ClosedRange<Double>) -> some View {
@@ -284,7 +309,7 @@ struct MacTimelineView: View {
     private func clipBlock(_ clip: MacClip, index: Int, timelineStart: Double, visibleRange: ClosedRange<Double>) -> some View {
         let width = max(CGFloat(clip.duration) * pps, 6)
         let selected = index == selectedIndex
-        let drawWidth = max(width - (index == 0 ? 0 : clipGap / 2), 4)
+        let drawWidth = max(width, 4)
 
         return ZStack(alignment: .topLeading) {
             filmstrip(for: clip, timelineStart: timelineStart, visibleRange: visibleRange)
@@ -373,6 +398,12 @@ struct MacTimelineView: View {
                 .fill(Color.white.opacity(0.42))
                 .frame(width: thumbWidth, height: 8)
                 .offset(x: travel * ratio)
+                .allowsHitTesting(false)
+
+            // V2.7.13：拖拽落点按整条滑杆算。之前手势挂在偏移过的滑块上，
+            // 拿到的 location 是滑块内部坐标（0…44），一按就跳到最左且几乎拖不动。
+            Color.clear
+                .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
