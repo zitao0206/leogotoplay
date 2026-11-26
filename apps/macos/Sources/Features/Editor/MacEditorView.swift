@@ -449,12 +449,9 @@ final class MacEditorModel: ObservableObject {
     @Published var scrollToStartToken = 0
     var currentClipIndex: Int? { isClipSelected ? clipAt(currentTime)?.index : nil }
     var clipCount: Int { clips.count }
-    /// 左边还有片段才能「向左裁剪」，右边还有片段才能「向右裁剪」
-    var canTrimBefore: Bool { (clipAt(currentTime)?.index ?? 0) > 0 }
-    var canTrimAfter: Bool {
-        guard let index = clipAt(currentTime)?.index else { return false }
-        return index + 1 < clips.count
-    }
+    /// 播放头左侧 / 右侧还有内容就能裁（单段里播放头在中间时两个按钮都能用）
+    var canTrimBefore: Bool { currentTime > 0.05 }
+    var canTrimAfter: Bool { currentTime < outputDuration - 0.05 }
 
     /// 删除播放头所在的片段；删到一段不剩就回到「素材拖进来」的空状态
     func deleteClipAtPlayhead() {
@@ -467,30 +464,33 @@ final class MacEditorModel: ObservableObject {
         saveDraft()
     }
 
-    /// 当前要裁剪的片段：选中态就是播放头所在那段；没选中时也按播放头所在那段算，
-    /// 免得「点了没反应」看起来像坏掉。
-    private var trimTargetIndex: Int? { clipAt(currentTime)?.index }
-
-    /// 向左裁剪（V2.7.16）：删掉选中片段「左边」的全部时间轴——选中片段前面的片段整段没，
-    /// 选中片段本身保持完整；剩下的时间轴顶到 00:00，播放指针回到开头。
-    func trimBeforeSelection() {
-        guard let index = trimTargetIndex, index > 0 else { return }
+    /// 向左裁剪（V2.7.16）：删掉播放头左侧的全部时间轴——当前片段左半 + 前面所有片段一起没，
+    /// 当前片段从播放头处起保留；剩下的时间轴顶到 00:00，播放指针回到开头。
+    func trimBeforePlayhead() {
+        guard let anchor = clipAt(currentTime) else { return }
+        let clip = clips[anchor.index]
+        guard anchor.sourceTime - clip.start > 0.02 || anchor.index > 0 else { return }
         let oldInterval = thumbnailInterval
         pushUndo()
-        clips = Array(clips[index...])
+        var rest = anchor.index + 1 < clips.count ? Array(clips[(anchor.index + 1)...]) : []
+        rest.insert(MacClip(id: clip.id, start: anchor.sourceTime, end: clip.end), at: 0)
+        clips = rest
         rebuildComposition(preserveTime: 0)
         keepScale(oldInterval)
         scrollToStartToken += 1
         saveDraft()
     }
 
-    /// 向右裁剪（V2.7.16）：删掉选中片段「右边」的全部时间轴，选中片段本身保持完整；
-    /// 剩下的时间轴原点不动，播放指针在原位（若落在被删掉的区域则夹回末尾）。
-    func trimAfterSelection() {
-        guard let index = trimTargetIndex, index + 1 < clips.count else { return }
+    /// 向右裁剪（V2.7.16）：删掉播放头右侧的全部时间轴——当前片段右半 + 后面所有片段一起没，
+    /// 剩下的时间轴原点不动，播放指针停在原处（也就是新的末尾）。
+    func trimAfterPlayhead() {
+        guard let anchor = clipAt(currentTime) else { return }
+        let clip = clips[anchor.index]
+        guard clip.end - anchor.sourceTime > 0.02 || anchor.index + 1 < clips.count else { return }
         let oldInterval = thumbnailInterval
         pushUndo()
-        clips = Array(clips[...index])
+        clips = Array(clips[..<anchor.index])
+            + [MacClip(id: clip.id, start: clip.start, end: anchor.sourceTime)]
         rebuildComposition(preserveTime: currentTime)
         keepScale(oldInterval)
         saveDraft()
@@ -1186,10 +1186,10 @@ struct MacEditorView: View {
             // V2.7.16：两个裁剪按钮按位置对齐语义——左边这个删左、右边这个删右；
             // 图标也跟着动作走：虚线那一侧就是要被删掉的那一侧
             MacGlyphButton(title: "向左裁剪", kind: .keepRight, enabled: model.canTrimBefore) {
-                model.trimBeforeSelection()
+                model.trimBeforePlayhead()
             }
             MacGlyphButton(title: "向右裁剪", kind: .keepLeft, enabled: model.canTrimAfter) {
-                model.trimAfterSelection()
+                model.trimAfterPlayhead()
             }
             MacGlyphButton(
                 title: "删除",
