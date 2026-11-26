@@ -5,10 +5,25 @@ import LeogotoPlayCore
 
 /// 编辑器数据源（macOS）：素材库视频，或从文件导入的视频。
 struct MacEditorSource: Identifiable {
-    let id = UUID()
+    let id: UUID
     let url: URL
     let title: String
     let libraryVideoID: UUID?
+
+    init(id: UUID = UUID(), url: URL, title: String, libraryVideoID: UUID?) {
+        self.id = id
+        self.url = url
+        self.title = title
+        self.libraryVideoID = libraryVideoID
+    }
+}
+
+/// 编辑页里的项目素材（V2.8.5）：只属于当前项目，独立于素材库
+struct MacProjectMaterial: Identifiable, Equatable {
+    let id: UUID
+    let url: URL
+    var title: String
+    var duration: Double
 }
 
 @MainActor
@@ -432,6 +447,30 @@ final class MacEditorModel: ObservableObject {
         saveDraft()
     }
 
+    /// 退回空项目（V2.8.5）：项目里正在编辑的那条素材被删掉时，时间轴、播放器一起清空
+    func clearProject() {
+        pause()
+        source = nil
+        clips = []
+        outputDuration = 0
+        currentTime = 0
+        undoStack.removeAll()
+        canUndo = false
+        isClipSelected = false
+        asset = nil
+        assetDuration = 0
+        videoTrack = nil
+        audioTrack = nil
+        audioTimeRange = .zero
+        transform = .identity
+        filmstrip = [:]
+        filmstripInterval = 0
+        pendingSlots.removeAll()
+        frameBuffer.removeAll()
+        filmstripTask?.cancel()
+        player.replaceCurrentItem(with: nil)
+    }
+
     /// 在播放头处把当前片段切成两段
     func splitAtPlayhead() {
         guard let anchor = clipAt(currentTime) else { return }
@@ -691,6 +730,12 @@ struct MacEditorView: View {
     @State private var timelineOffset: CGFloat = 0
     /// 时间轴可视宽度（时间轴上报，缩放时用于夹取偏移）
     @State private var timelineWidth: CGFloat = 0
+    /// 项目素材（V2.8.5）：编辑页导入过的视频列表，独立于素材库
+    @State private var projectMaterials: [MacProjectMaterial] = []
+    /// 每条素材的首帧缩略图缓存
+    @State private var materialThumbnails: [UUID: CGImage] = [:]
+    /// 素材区里选中的素材（V2.8.5：支持 ⌘ 多选后删除）
+    @State private var selectedMaterialIDs: Set<UUID> = []
     /// 导出进度弹框
     @State private var isExportSheetPresented = false
     /// 导出失败文案（弹框内展示，不走全局 alert）
@@ -722,8 +767,10 @@ struct MacEditorView: View {
             // 向左分割后剩下一段从 00:00 开始，把时间轴滚回最左跟着走
             timelineOffset = timelineInset
         }
-        .task { await model.load() }
-        .onDisappear { model.saveDraft() }
+        .task {
+            await model.load()
+            seedInitialMaterialIfNeeded()
+        }        .onDisappear { model.saveDraft() }
         .alert("提示", isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }
@@ -797,17 +844,36 @@ struct MacEditorView: View {
         }
     }
 
-    // MARK: - 素材区
+    // MARK: - 素材区（V2.8.5：正方形 cell + 首帧缩略图 + 添加 / 单选多选删除）
 
-    /// 素材区（V2.8.4）：编辑页不再提供任何素材库导入入口 ——
-    /// 只显示当前项目的素材，外加一个「添加视频 / 更换素材」按钮，选了本地文件直接载进时间轴。
+    /// 素材区：本项目导入过的视频按正方形 cell 排列，默认窄列宽 128pt，最后一格是「添加视频」
     private var mediaPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Text("素材")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.white)
+
+                if !selectedMaterialIDs.isEmpty {
+                    Button {
+                        confirmDeleteSelectedMaterials()
+                    } label: {
+                        Label("删除 \(selectedMaterialIDs.count)", systemImage: "trash")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                Color.red.opacity(0.55),
+                                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help("删除选中的素材（也可以按 Delete 键）")
+                }
+
                 Spacer(minLength: 0)
+
                 if isImporting {
                     Text("正在读取…")
                         .font(.caption)
@@ -817,100 +883,171 @@ struct MacEditorView: View {
             .padding(.horizontal, 14)
             .padding(.top, 12)
 
-            if let source = model.source {
-                currentMaterialCard(source)
-                    .padding(.horizontal, 14)
-            } else {
-                emptyMaterialCard
-                    .padding(.horizontal, 14)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .background(MacTheme.surface)
-    }
-
-    private func currentMaterialCard(_ source: MacEditorSource) -> some View {
-        HStack(spacing: 12) {
-            MacThumbnailView(thumbnailName: thumbnailName(for: source), cornerRadius: 8)
-                .frame(width: 88, height: 88)
-                .clipped()
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(source.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text(model.outputDuration.timecode)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                Button {
-                    addVideo()
-                } label: {
-                    Label("更换素材", systemImage: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color.white.opacity(0.08), in: Capsule())
+            ScrollView {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: materialSide, maximum: materialSide), spacing: 12, alignment: .top)],
+                    alignment: .leading,
+                    spacing: 12
+                ) {
+                    ForEach(projectMaterials) { material in
+                        materialCell(material)
+                    }
+                    addMaterialCell
                 }
-                .buttonStyle(.plain)
-                .disabled(isImporting)
-                .padding(.top, 2)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(10)
         .background(
-            Color.white.opacity(0.045),
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            MacTheme.surface
+                .contentShape(Rectangle())
+                .onTapGesture { selectedMaterialIDs.removeAll() }
         )
     }
 
-    private var emptyMaterialCard: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "film.stack")
-                .font(.system(size: 26))
-                .foregroundStyle(.white.opacity(0.28))
-            Text("这个项目还没有素材")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.white)
-            Text("点「添加视频」选一条本地视频，直接载进时间轴开始剪。")
-                .font(.caption)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.white.opacity(0.45))
+    private var materialSide: CGFloat { 128 }
 
-            Button {
-                addVideo()
-            } label: {
-                Label("添加视频", systemImage: "plus")
-                    .font(.system(size: 13, weight: .semibold))
+    private func materialCell(_ material: MacProjectMaterial) -> some View {
+        let loaded = model.source?.id == material.id
+        let picked = selectedMaterialIDs.contains(material.id)
+        return Button {
+            handleMaterialTap(material)
+        } label: {
+        VStack(alignment: .leading, spacing: 7) {
+            ZStack(alignment: .topTrailing) {
+                materialThumbnail(material)
+                    .frame(width: materialSide, height: materialSide)
+                    .clipped()
+
+                Text(material.duration.timecode)
+                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(MacTheme.accentGradient, in: Capsule())
+                    .shadow(color: .black.opacity(0.65), radius: 2, y: 1)
+                    .padding(6)
             }
-            .buttonStyle(.plain)
-            .disabled(isImporting)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(
+                        picked ? Color.white : (loaded ? MacTheme.accent : Color.white.opacity(0.06)),
+                        lineWidth: picked ? 2.5 : (loaded ? 2 : 1)
+                    )
+            )
+
+            Text(material.title)
+                .font(.caption)
+                .foregroundStyle(picked || loaded ? Color.white : Color.white.opacity(0.62))
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 26)
+        .contentShape(Rectangle())
+        .padding(2)
         .background(
-            Color.white.opacity(0.04),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            picked ? Color.white.opacity(0.06) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.white.opacity(0.10), style: StrokeStyle(lineWidth: 1, dash: [6, 5]))
-        )
+        }
+        .buttonStyle(.plain)
+        .help("点一下载进时间轴，⌘ 点选可多选，Delete 键删除")
     }
 
-    /// 素材库里的那条视频有缩略图；本地选的文件没有，走占位图
-    private func thumbnailName(for source: MacEditorSource) -> String? {
-        guard let id = source.libraryVideoID else { return nil }
-        return library.videos.first(where: { $0.id == id })?.thumbnailName
+    /// 正方形首帧缩略图（取不到就显示占位图标）
+    @ViewBuilder
+    private func materialThumbnail(_ material: MacProjectMaterial) -> some View {
+        ZStack {
+            Color.white.opacity(0.06)
+            if let image = materialThumbnails[material.id] {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: "film")
+                    .font(.system(size: 22))
+                    .foregroundStyle(.white.opacity(0.30))
+            }
+        }
+        .task(id: material.id) {
+            loadThumbnail(for: material)
+        }
+    }
+
+    private var addMaterialCell: some View {
+        Button {
+            addVideo()
+        } label: {
+            VStack(spacing: 6) {
+                Image(systemName: "plus")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("添加视频")
+                    .font(.caption)
+            }
+            .foregroundStyle(MacTheme.accent)
+            .frame(width: materialSide, height: materialSide)
+            .background(
+                MacTheme.accent.opacity(0.06),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(MacTheme.accent.opacity(0.30), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isImporting)
+        .help("导入一条本地视频")
+    }
+
+    /// 点 cell：⌘ 点击切换多选；普通点击选中并载进时间轴
+    private func handleMaterialTap(_ material: MacProjectMaterial) {
+        if NSEvent.modifierFlags.contains(.command) {
+            if selectedMaterialIDs.contains(material.id) {
+                selectedMaterialIDs.remove(material.id)
+            } else {
+                selectedMaterialIDs.insert(material.id)
+            }
+            return
+        }
+        selectedMaterialIDs = [material.id]
+        guard model.source?.id != material.id else { return }
+        Task { await model.open(MacEditorSource(id: material.id, url: material.url, title: material.title, libraryVideoID: nil)) }
+    }
+
+    private func confirmDeleteSelectedMaterials() {
+        guard !selectedMaterialIDs.isEmpty else { return }
+        deleteSelectedMaterials()
+    }
+
+    /// 删素材：只从项目里移除，不动磁盘文件；删到正在编辑的那条就把时间轴清空
+    private func deleteSelectedMaterials() {
+        let ids = selectedMaterialIDs
+        guard !ids.isEmpty else { return }
+        let removesLoaded = model.source.map { ids.contains($0.id) } ?? false
+        projectMaterials.removeAll { ids.contains($0.id) }
+        for id in ids {
+            materialThumbnails[id] = nil
+        }
+        selectedMaterialIDs.removeAll()
+        if removesLoaded {
+            model.clearProject()
+        }
+    }
+
+    /// 首帧缩略图：异步取 0 秒那一帧，生成后回主线程塞进缓存
+    private func loadThumbnail(for material: MacProjectMaterial) {
+        guard materialThumbnails[material.id] == nil else { return }
+        let id = material.id
+        let url = material.url
+        Task {
+            let asset = AVURLAsset(url: url)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 400, height: 400)
+            generator.requestedTimeToleranceBefore = .zero
+            generator.requestedTimeToleranceAfter = .zero
+            if let frame = try? await generator.image(at: .zero) {
+                materialThumbnails[id] = frame.image
+            }
+        }
     }
 
     // MARK: - 编辑区
@@ -1228,8 +1365,12 @@ struct MacEditorView: View {
     /// 内容落点：左端不留余量，片段起点（0.00）永远贴住面板左边，不随缩放漂移
     private var timelineInset: CGFloat { MacTimelineView.leadingInset }
 
-    /// Delete 键（V2.8.4）：编辑页只删时间轴上选中的片段
+    /// Delete 键（V2.8.5）：素材区有选中就先删素材，否则删时间轴上选中的片段
     private func handleDeleteKey() {
+        if !selectedMaterialIDs.isEmpty {
+            deleteSelectedMaterials()
+            return
+        }
         guard model.isClipSelected, model.currentClipIndex != nil else { return }
         model.deleteClipAtPlayhead()
     }
@@ -1240,7 +1381,7 @@ struct MacEditorView: View {
         loadLocalVideo(from: url)
     }
 
-    /// 把选中的本地文件拷成临时文件后直接载进时间轴（不写素材库）
+    /// 把选中的本地文件拷成临时文件，加进项目素材列表并载进时间轴（不写素材库）
     private func loadLocalVideo(from url: URL) {
         let title = url.deletingPathExtension().lastPathComponent
         Task {
@@ -1248,11 +1389,32 @@ struct MacEditorView: View {
             defer { isImporting = false }
             do {
                 let temp = try VideoImporter.prepare(from: url)
-                await model.open(MacEditorSource(url: temp, title: title, libraryVideoID: nil))
+                let duration = await VideoImporter.duration(of: temp)
+                let material = MacProjectMaterial(id: UUID(), url: temp, title: title, duration: duration)
+                projectMaterials.append(material)
+                selectedMaterialIDs = [material.id]
+                loadThumbnail(for: material)
+                await model.open(
+                    MacEditorSource(id: material.id, url: temp, title: title, libraryVideoID: nil)
+                )
             } catch {
                 show(error.localizedDescription)
             }
         }
+    }
+
+    /// 从「最近编辑」等入口带素材进来的窗口，把这条素材放进列表（首帧缩略图照旧现取）
+    private func seedInitialMaterialIfNeeded() {
+        guard let source = model.source else { return }
+        guard !projectMaterials.contains(where: { $0.id == source.id }) else { return }
+        let material = MacProjectMaterial(
+            id: source.id,
+            url: source.url,
+            title: source.title,
+            duration: model.outputDuration
+        )
+        projectMaterials = [material] + projectMaterials
+        loadThumbnail(for: material)
     }
 
     // MARK: - 导出（V2.8.0 起带进度弹框，默认落到「下载」文件夹）
