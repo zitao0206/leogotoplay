@@ -710,6 +710,7 @@ struct MacEditorView: View {
         }
         .background(MacTheme.canvas)
         .modifier(DeleteKeyMonitor { handleDeleteKey() })
+        .modifier(SpaceKeyMonitor { model.togglePlay() })
         .onChange(of: model.scrollToStartToken) { _ in
             // 向左分割后剩下一段从 00:00 开始，把时间轴滚回最左跟着走
             timelineOffset = timelineInset
@@ -1229,7 +1230,8 @@ struct MacEditorView: View {
             }
 
             exportButton
-                .padding(16)
+                .padding(.top, 8)
+                .padding(.trailing, 12)
         }
     }
 
@@ -1253,26 +1255,45 @@ struct MacEditorView: View {
     }
 
     private var playerBar: some View {
-        HStack(spacing: 12) {
-            Text(model.currentTime.timecode)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+        // V2.8.0：播放 / 暂停键居中放大（52pt 圆钮 + 品牌色渐变），时间码靠左、回到开头靠右
+        ZStack {
+            HStack(spacing: 10) {
+                Text(model.currentTime.timecode)
+                    .font(.system(size: 12, weight: .medium).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.55))
+                Text("/")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.3))
+                Text(model.outputDuration.timecode)
+                    .font(.system(size: 12, weight: .medium).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.55))
+
+                Spacer(minLength: 0)
+
+                Button("回到开头") { model.seek(to: 0) }
+                    .buttonStyle(.link)
+                    .font(.system(size: 12, weight: .medium))
+            }
+
             Button {
                 model.togglePlay()
             } label: {
-                Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                ZStack {
+                    Circle()
+                        .fill(MacTheme.accentGradient)
+                        .frame(width: 52, height: 52)
+                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 21, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                .contentShape(Circle())
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            Text(model.outputDuration.timecode)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-            Spacer()
-            Button("回到开头") { model.seek(to: 0) }
-                .buttonStyle(.link)
+            .buttonStyle(.plain)
+            .help("播放 / 暂停（空格键）")
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
+        .frame(height: 68)
         .background(Color.black)
     }
 
@@ -1281,9 +1302,20 @@ struct MacEditorView: View {
             Button {
                 Task { await exportToFile() }
             } label: {
-                Label("导出", systemImage: "square.and.arrow.up")
+                HStack(spacing: 7) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("导出")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(MacTheme.accentGradient, in: Capsule())
+                .contentShape(Capsule())
+                .opacity(model.hasSource && !model.isExporting ? 1 : 0.45)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.plain)
             .disabled(!model.hasSource || model.isExporting)
 
             if model.isExporting {
@@ -1589,6 +1621,35 @@ private struct MacGlyphButton: View {
         .disabled(!enabled)
         .onHover { hovering = $0 }
         .help(title)
+    }
+}
+
+// MARK: - 播放器的空格键监听
+
+/// V2.8.0：剪辑窗口里按空格切换播放 / 暂停。文字输入框聚焦时原样放行，
+/// ⌘ / ⌥ 组合键（系统快捷键，如 ⌘Space）不拦；其余情况吞掉空格，避免顺带触发聚焦按钮。
+private struct SpaceKeyMonitor: ViewModifier {
+    let onSpace: () -> Void
+    @State private var monitor: Any?
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                guard monitor == nil else { return }
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                    guard let window = event.window, window.title.contains("剪辑") else { return event }
+                    guard event.keyCode == 49 else { return event }
+                    let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                    if flags.contains(.command) || flags.contains(.option) || flags.contains(.control) { return event }
+                    if window.firstResponder is NSTextView { return event }
+                    onSpace()
+                    return nil
+                }
+            }
+            .onDisappear {
+                if let monitor { NSEvent.removeMonitor(monitor) }
+                monitor = nil
+            }
     }
 }
 
