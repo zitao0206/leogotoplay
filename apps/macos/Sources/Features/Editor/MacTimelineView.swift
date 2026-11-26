@@ -45,11 +45,8 @@ struct MacTimelineView: View {
         max(CGFloat(duration) * pps, 1)
     }
 
-    /// 内容 x=0 的落点：放不下时留 sideInset 滑动余量；放得下时居中（两端不出大片空白）
-    private func inset(for width: CGFloat, pps: CGFloat) -> CGFloat {
-        let track = trackWidth(pps: pps)
-        return track + Self.sideInset * 2 > width ? Self.sideInset : max((width - track) / 2, 8)
-    }
+    /// 内容 x=0 的落点：两端固定 100pt 滑动余量，缩放时 00:00 不漂移
+    private func inset(for width: CGFloat, pps: CGFloat) -> CGFloat { Self.sideInset }
 
     private func contentWidth(for width: CGFloat, pps: CGFloat) -> CGFloat {
         trackWidth(pps: pps) + inset(for: width, pps: pps) * 2
@@ -166,17 +163,11 @@ struct MacTimelineView: View {
         let newInterval = max(thumbnailInterval / factor, MacEditorModel.minThumbnailInterval)
         guard abs(newInterval - thumbnailInterval) > 1e-9 else { return }
 
-        let anchorTime = currentTime
-        let ins = inset(for: width, pps: pps)
-        let anchorX = ins + CGFloat(anchorTime) * pps
-            - min(max(0, scrollOffset), max(0, contentWidth(for: width, pps: pps) - width))
-
+        // 以时间轴 00:00 为锚：左边保持不动，只把滚动偏移夹回新范围
         let newPPS = MacEditorModel.thumbnailSide / newInterval
         let newTrack = CGFloat(duration) * CGFloat(newPPS)
-        let newIns = newTrack + Self.sideInset * 2 > width ? Self.sideInset : max((width - newTrack) / 2, 8)
-        let newMaxOffset = max(0, newTrack + newIns * 2 - width)
-
-        scrollOffset = min(max(0, newIns + CGFloat(anchorTime) * CGFloat(newPPS) - anchorX), newMaxOffset)
+        let newMaxOffset = max(0, newTrack + Self.sideInset * 2 - width)
+        scrollOffset = min(max(0, scrollOffset), newMaxOffset)
         onSetThumbnailInterval(newInterval)
     }
 
@@ -288,6 +279,8 @@ struct MacTimelineView: View {
     }
 
     private func clipBlock(_ clip: MacClip, index: Int, timelineStart: Double, visibleRange: ClosedRange<Double>) -> some View {
+        let isFirstClip = timelineStart <= 0.001
+        let isLastClip = timelineStart + clip.duration >= duration - 0.001
         let width = max(CGFloat(clip.duration) * pps, 6)
         let selected = index == selectedIndex
         let drawWidth = max(width - (index == 0 ? 0 : clipGap / 2), 4)
@@ -305,10 +298,12 @@ struct MacTimelineView: View {
                 )
 
             if selected {
+                // V2.7.8：时间轴首尾那两端的把手挂在片段外侧（内侧边缘压在 0.00 / 片段边界上，不压画面）；
+                // 中间的片段相邻处仍收在片段内，避免两段把手叠成一坨白块
                 handle(roundedOnLeft: true)
-                    .offset(x: 0, y: 0)
+                    .offset(x: isFirstClip ? -handleWidth : 0, y: 0)
                 handle(roundedOnLeft: false)
-                    .offset(x: drawWidth - handleWidth, y: 0)
+                    .offset(x: isLastClip ? drawWidth : drawWidth - handleWidth, y: 0)
             }
 
             if drawWidth > 64 {
@@ -318,7 +313,7 @@ struct MacTimelineView: View {
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
                     .background(Color.black.opacity(0.45), in: Capsule())
-                    .padding(.leading, selected ? handleWidth + 6 : 7)
+                    .padding(.leading, 7)
                     .padding(.top, 5)
             }
         }

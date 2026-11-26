@@ -230,13 +230,8 @@ final class MacEditorModel: ObservableObject {
         requestFilmstrip()
     }
 
-    /// 与 MacTimelineView 相同的内容落点规则：放不下留滑动余量，放得下居中
-    private func timelineInset(pps: Double) -> CGFloat {
-        let track = CGFloat(outputDuration) * CGFloat(pps)
-        let w = timelineViewportWidth
-        guard w > 1 else { return MacTimelineView.sideInset }
-        return track + MacTimelineView.sideInset * 2 > w ? MacTimelineView.sideInset : max((w - track) / 2, 8)
-    }
+    /// 与 MacTimelineView 相同的内容落点规则：两端固定 100pt 余量，片段起点始终在同一处
+    private func timelineInset(pps: Double) -> CGFloat { MacTimelineView.sideInset }
 
     /// 缩略图间隔变化时清缓存，然后防抖 200ms 补齐可视窗口内缺失的帧
     private func requestFilmstrip() {
@@ -392,7 +387,9 @@ final class MacEditorModel: ObservableObject {
     }
 
     /// 播放头当前落在哪个片段（时间轴的选中框跟着它走）
-    var currentClipIndex: Int? { clipAt(currentTime)?.index }
+    /// 是否选中了时间轴上的片段：点编辑区空白会取消，点时间轴/用工具按钮会重新选中
+    @Published var isClipSelected = true
+    var currentClipIndex: Int? { isClipSelected ? clipAt(currentTime)?.index : nil }
 
     /// 删除播放头所在的片段（最后一段不给删，否则时间轴就空了）
     func deleteClipAtPlayhead() {
@@ -667,9 +664,11 @@ struct MacEditorView: View {
         }
     }
 
-    private let mediaColumns = [
-        GridItem(.adaptive(minimum: 150, maximum: 240), spacing: 14, alignment: .top)
-    ]
+    /// 素材卡片固定正方形（V2.7.8）：列宽即单元边长
+    private let mediaCardSide: CGFloat = 132
+    private var mediaColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: mediaCardSide, maximum: mediaCardSide), spacing: 12, alignment: .top)]
+    }
 
     /// 素材区（V2.3）：参考剪映的素材面板 —— 顶部「导入」+「全部」，下面是两列以上的卡片墙
     private var mediaPanel: some View {
@@ -706,7 +705,7 @@ struct MacEditorView: View {
                 .padding(.horizontal, 14)
 
             ScrollView {
-                LazyVGrid(columns: mediaColumns, alignment: .leading, spacing: 16) {
+                LazyVGrid(columns: mediaColumns, alignment: .leading, spacing: 12) {
                     ForEach(library.videos) { item in
                         mediaCard(item)
                     }
@@ -724,8 +723,7 @@ struct MacEditorView: View {
         return VStack(alignment: .leading, spacing: 7) {
             ZStack(alignment: .topTrailing) {
                 MacThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 8)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 105)
+                    .frame(width: mediaCardSide, height: mediaCardSide)
                     .clipped()
 
                 Text(item.duration.timecode)
@@ -766,8 +764,7 @@ struct MacEditorView: View {
                     .font(.caption)
             }
             .foregroundStyle(MacTheme.accent)
-            .frame(maxWidth: .infinity)
-            .frame(height: 105)
+            .frame(width: mediaCardSide, height: mediaCardSide)
             .background(
                 MacTheme.accent.opacity(0.06),
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -802,7 +799,10 @@ struct MacEditorView: View {
                     currentTime: model.currentTime,
                     pixelsPerSecond: Double(model.pixelsPerSecond),
                     scrollOffset: $timelineOffset,
-                    onSeek: { model.seek(to: $0) },
+                    onSeek: { time in
+                        model.isClipSelected = true
+                        model.seek(to: time)
+                    },
                     onSetThumbnailInterval: { interval in
                         model.setThumbnailInterval(interval)
                     },
@@ -825,7 +825,12 @@ struct MacEditorView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(MacTheme.canvas)
+        // V2.7.8：点时间轴以外的空白处取消选中
+        .background(
+            MacTheme.canvas
+                .contentShape(Rectangle())
+                .onTapGesture { model.isClipSelected = false }
+        )
         .overlay(
             Rectangle()
                 .stroke(isDropTarget ? MacTheme.accent.opacity(0.7) : Color.clear, lineWidth: 2)
@@ -978,32 +983,22 @@ struct MacEditorView: View {
     /// V2.7.6：按钮档位式缩放（放大一档分母 ×1.5、缩小一档间隔 ×2，由模型执行），以播放指针为锚点——
     /// 缩放前后指针在屏上的位置不动，同时把偏移夹进新内容范围。
     private func zoomTimeline(zoomIn: Bool) {
-        let t = model.currentTime
-        let oldPPS = model.pixelsPerSecond
-        let oldInset = timelineInset(pps: oldPPS)
-        let anchorX = oldInset + CGFloat(t) * oldPPS - timelineOffset
-
         if zoomIn {
             model.zoomIn()
         } else {
             model.zoomOut()
         }
 
+        // V2.7.8：缩放以时间轴 00:00 为锚，左边固定不动，只把滚动偏移夹回新范围
         let newPPS = model.pixelsPerSecond
-        let newInset = timelineInset(pps: newPPS)
-        let maxOffset = max(0, CGFloat(model.outputDuration) * newPPS + newInset * 2 - timelineWidth)
-        timelineOffset = min(max(0, newInset + CGFloat(t) * newPPS - anchorX), maxOffset)
+        let maxOffset = max(0, CGFloat(model.outputDuration) * newPPS + timelineInset * 2 - timelineWidth)
+        timelineOffset = min(max(0, timelineOffset), maxOffset)
         // 偏移可能没变（onChange 不触发），显式上报一次让缩略图按新档位重建
         model.updateVisibleWindow(offset: timelineOffset)
     }
 
-    /// 与 MacTimelineView 一致的内容落点：放不下留 100pt 滑动余量，放得下则居中
-    private func timelineInset(pps: CGFloat) -> CGFloat {
-        let track = CGFloat(model.outputDuration) * pps
-        return track + MacTimelineView.sideInset * 2 > timelineWidth
-            ? MacTimelineView.sideInset
-            : max((timelineWidth - track) / 2, 8)
-    }
+    /// 内容落点：两端一律留 100pt 滑动余量，片段起点（0.00）永远贴在这一侧，不随缩放漂移
+    private var timelineInset: CGFloat { MacTimelineView.sideInset }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         guard let provider = providers.first else { return false }
