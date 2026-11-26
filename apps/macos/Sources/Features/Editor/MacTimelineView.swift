@@ -1,23 +1,28 @@
 import CoreGraphics
 import SwiftUI
 
-/// 剪映 / App 风格的时间轴（V2.7.2）：
-/// - 顶部一条时间刻度尺（主刻度带 mm:ss 标签，次刻度细分），跟随内容横向滚动；
-/// - 播放指针从刻度尺顶一直贯到下方拖动条；
-/// - 缩放：按钮档位式步进（×1.3），捏合手势连续缩放，共用同一区间——
-///   下限 = 整条内容刚好铺满可视宽度（两端不出大片空白），上限 ≈ 25pt/帧（按 30fps）。
+/// 剪映 / App 风格的时间轴（V2.7.4）：
+/// - 刻度尺 + 轨道整体在编辑区上下居中，拖动条贴底；
+/// - 播放指针从刻度尺顶贯穿到拖动条上沿；
+/// - 缩略图密度随缩放档位变化（默认每分钟 16 张，放大每档分母 ×1.5，缩小每档间隔 ×2，
+///   极限 1/30s 即每秒 30 帧），只渲染可视窗口内的槽位，帧数据由模型按窗口补齐；
+/// - 缩放：按钮档位 ×1.3 锚定播放头，捏合手势连续缩放，共用同一区间——
+///   下限 = 整条内容刚好铺满可视宽度，上限 = 第 12 档（缩略图到达 30fps 极限）。
 struct MacTimelineView: View {
     let clips: [MacClip]
-    let frames: [CGImage?]
+    /// 缩略图缓存：key = 槽位序号，覆盖时间 = 序号 × thumbnailInterval
+    let frames: [Int: CGImage]
+    /// 当前缩略图间隔（秒），由缩放档位决定
+    let thumbnailInterval: Double
     let selectedIndex: Int?
     let outputDuration: Double
     let currentTime: Double
     let pixelsPerSecond: Double
     @Binding var scrollOffset: CGFloat
     let onSeek: (Double) -> Void
-    /// V2.7.2：连续缩放（捏合手势），参数为新的每秒像素值（视图已按区间夹好）
+    /// 连续缩放（捏合手势），参数为新的每秒像素值（视图已按区间夹好）
     let onZoom: (Double) -> Void
-    /// V2.7.2：上报可视宽度，供模型计算缩放下限
+    /// 上报可视宽度，供模型计算缩放下限
     let onViewportChange: (CGFloat) -> Void
 
     private let trackHeight: CGFloat = 87
@@ -32,9 +37,6 @@ struct MacTimelineView: View {
     private var pps: CGFloat { CGFloat(pixelsPerSecond) }
     private var ppsD: Double { pixelsPerSecond }
     private var duration: Double { max(outputDuration, 0) }
-
-    /// 缩放上限：约 25pt/帧（按 30fps ≈ 750pt/秒），正好能逐帧点选、看清帧边界
-    static let maxPixelsPerSecond: Double = 750
 
     /// 内容轨道的净宽（不含两侧余量）
     private func trackWidth(pps: CGFloat) -> CGFloat {
@@ -58,15 +60,26 @@ struct MacTimelineView: View {
             let offset = min(max(0, scrollOffset), maxOffset)
             let ins = inset(for: width, pps: pps)
 
+            // V2.7.4：刻度尺 + 轨道整体上下居中（两侧 Spacer 平分剩余空间），拖动条贴底
+            let blockHeight = rulerHeight + trackHeight + 8
+            let freeSpace = max(geo.size.height - blockHeight - bottomBarSpace, 0)
+            let blockTop = max(6, freeSpace / 2)
+
+            // 可视窗口对应的时间范围，缩略图只渲染这段内的槽位
+            let visibleStart = (Double(offset - ins) / ppsD)
+            let visibleEnd = (Double(offset + width - ins) / ppsD)
+
             ZStack(alignment: .topLeading) {
                 VStack(spacing: 0) {
-                    // V2.7.2：时间刻度尺
+                    Spacer(minLength: 6)
+
                     ruler(width: width, offset: offset, inset: ins)
                         .frame(height: rulerHeight)
                         .contentShape(Rectangle())
                         .gesture(seekGesture(offset: offset, inset: ins))
 
-                    track(width: width, offset: offset, inset: ins)
+                    track(width: width, offset: offset, inset: ins,
+                          visibleRange: visibleStart...visibleEnd)
                         .frame(height: trackHeight + 8)
 
                     Spacer(minLength: 6)
@@ -75,15 +88,15 @@ struct MacTimelineView: View {
                         .padding(.bottom, 2)
                 }
 
-                // V2.7.2：播放指针加长——上顶刻度尺、下触拖动条
+                // 播放指针：顶部小圆帽 + 通长指针，从刻度尺顶贯穿到拖动条上沿
                 playhead
-                    .frame(height: max(geo.size.height - bottomBarSpace, 20), alignment: .top)
-                    .offset(x: ins + CGFloat(currentTime) * pps - 5 - offset, y: 0)
+                    .frame(height: max(geo.size.height - bottomBarSpace - blockTop, 20), alignment: .top)
+                    .offset(x: ins + CGFloat(currentTime) * pps - 5 - offset, y: blockTop)
             }
             .frame(width: width, height: geo.size.height, alignment: .topLeading)
             .clipped()
             .gesture(
-                // V2.7.2：捏合（触控板双指开合）连续缩放，锚点固定在播放指针
+                // 捏合（触控板双指开合）连续缩放，锚点固定在播放指针
                 MagnificationGesture()
                     .onChanged { value in
                         let base = magnifyBaseline ?? 1
@@ -126,7 +139,7 @@ struct MacTimelineView: View {
         let anchorX = ins + CGFloat(anchorTime) * pps - min(max(0, scrollOffset), max(0, contentWidth(for: width, pps: pps) - width))
 
         let minPPS = Double(width) / max(duration, 0.1)
-        let newPPS = min(max(ppsD * factor, minPPS), Self.maxPixelsPerSecond)
+        let newPPS = min(max(ppsD * factor, minPPS), MacEditorModel.maxPixelsPerSecond)
         let newTrack = CGFloat(duration) * CGFloat(newPPS)
         let newIns = newTrack + Self.sideInset * 2 > width ? Self.sideInset : max((width - newTrack) / 2, 8)
         let newMaxOffset = max(0, newTrack + newIns * 2 - width)
@@ -155,7 +168,6 @@ struct MacTimelineView: View {
         Canvas { ctx, size in
             let interval = majorTickInterval(pps: pps)
             let minorStep = interval / 5
-            let ppsD = ppsD
 
             // 只画可视窗口内的刻度（时间轴可能宽达几十万 pt）
             let startT = max(0, ((Double(offset - ins) / ppsD) / interval).rounded(.down) * interval)
@@ -199,36 +211,32 @@ struct MacTimelineView: View {
 
     // MARK: - 轨道
 
-    private func track(width: CGFloat, offset: CGFloat, inset ins: CGFloat) -> some View {
-        ZStack(alignment: .topLeading) {
-            clipRow
-                .padding(.top, 8)
-                .offset(x: ins - offset)
-
-            // 旧版短指针已由整条播放指针取代，这里只保留选中框等内容
-        }
-        .frame(width: width, height: trackHeight + 8, alignment: .topLeading)
-        .clipped()
-        .contentShape(Rectangle())
-        .gesture(seekGesture(offset: offset, inset: ins))
+    private func track(width: CGFloat, offset: CGFloat, inset ins: CGFloat, visibleRange: ClosedRange<Double>) -> some View {
+        clipRow(visibleRange: visibleRange)
+            .padding(.top, 8)
+            .offset(x: ins - offset)
+            .frame(width: width, height: trackHeight + 8, alignment: .topLeading)
+            .clipped()
+            .contentShape(Rectangle())
+            .gesture(seekGesture(offset: offset, inset: ins))
     }
 
-    private var clipRow: some View {
+    private func clipRow(visibleRange: ClosedRange<Double>) -> some View {
         HStack(spacing: clipGap) {
             ForEach(Array(clips.enumerated()), id: \.element.id) { index, clip in
-                clipBlock(clip, index: index)
+                clipBlock(clip, index: index, visibleRange: visibleRange)
             }
         }
         .frame(height: trackHeight, alignment: .topLeading)
     }
 
-    private func clipBlock(_ clip: MacClip, index: Int) -> some View {
+    private func clipBlock(_ clip: MacClip, index: Int, visibleRange: ClosedRange<Double>) -> some View {
         let width = max(CGFloat(clip.duration) * pps, 6)
         let selected = index == selectedIndex
         let drawWidth = max(width - (index == 0 ? 0 : clipGap / 2), 4)
 
         return ZStack(alignment: .topLeading) {
-            filmstrip(for: clip)
+            filmstrip(for: clip, visibleRange: visibleRange)
                 .frame(width: drawWidth, height: trackHeight)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
@@ -279,34 +287,41 @@ struct MacTimelineView: View {
         )
     }
 
-    // MARK: - 逐帧胶片
+    // MARK: - 逐帧胶片（V2.7.4：密度随缩放档位，只渲染可视窗口）
 
-    /// 胶片按「源视频每秒一帧」铺，起点是 floor(clip.start)，用负偏移把半秒误差对齐
-    private func filmstrip(for clip: MacClip) -> some View {
-        let startIndex = Int(floor(clip.start))
-        let endIndex = max(Int(ceil(clip.end)), startIndex + 1)
-        let offset = CGFloat(clip.start - Double(startIndex)) * pps
+    /// 缩略图按「每 thumbnailInterval 秒一张」铺，槽位 k 覆盖 [k·interval, (k+1)·interval)。
+    /// 高倍缩放时全片可达数千槽位，这里只建可视窗口交集中的那几十个视图。
+    private func filmstrip(for clip: MacClip, visibleRange: ClosedRange<Double>) -> some View {
+        let interval = max(thumbnailInterval, 1.0 / 30)
+        let firstSlot = Int(floor(clip.start / interval))
+        let lastSlot = max(Int(ceil(clip.end / interval)), firstSlot + 1)
+        let slotWidth = CGFloat(interval) * pps
+
+        let renderFirst = max(firstSlot, Int(floor(visibleRange.lowerBound / interval)))
+        let renderLast = min(lastSlot, max(Int(ceil(visibleRange.upperBound / interval)), renderFirst + 1))
 
         return ZStack(alignment: .topLeading) {
             Rectangle()
                 .fill(Color.white.opacity(0.08))
 
-            HStack(spacing: 0) {
-                ForEach(startIndex..<endIndex, id: \.self) { second in
-                    ZStack {
-                        Rectangle()
-                            .fill(Color.white.opacity(0.10))
-                        if second >= 0, second < frames.count, let image = frames[second] {
-                            Image(decorative: image, scale: 1)
-                                .resizable()
-                                .scaledToFill()
+            if renderLast > renderFirst {
+                HStack(spacing: 0) {
+                    ForEach(renderFirst..<renderLast, id: \.self) { slot in
+                        ZStack {
+                            Rectangle()
+                                .fill(Color.white.opacity(0.10))
+                            if let image = frames[slot] {
+                                Image(decorative: image, scale: 1)
+                                    .resizable()
+                                    .scaledToFill()
+                            }
                         }
+                        .frame(width: slotWidth, height: trackHeight)
+                        .clipped()
                     }
-                    .frame(width: pps, height: trackHeight)
-                    .clipped()
                 }
+                .offset(x: CGFloat(Double(renderFirst) * interval - clip.start) * pps)
             }
-            .offset(x: -offset)
         }
         .clipped()
     }
@@ -346,7 +361,7 @@ struct MacTimelineView: View {
 
     // MARK: - 播放指针
 
-    /// V2.7.2：顶部小圆帽 + 通长指针，从刻度尺顶贯穿到拖动条上沿
+    /// 顶部小圆帽 + 通长指针，从刻度尺顶贯穿到拖动条上沿
     private var playhead: some View {
         VStack(spacing: 0) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)

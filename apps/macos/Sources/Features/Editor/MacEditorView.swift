@@ -28,8 +28,11 @@ final class MacEditorModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var exportedURL: URL?
     @Published var canUndo = false
-    /// 时间轴胶片：按「源视频第几秒」存一帧，nil 表示还没解出来
-    @Published private(set) var filmstrip: [CGImage?] = []
+    /// 时间轴胶片（V2.7.4）：缩略图缓存，key = 槽位序号，覆盖时间 = 序号 × thumbnailInterval。
+    /// 只生成/保留可视窗口附近的槽位，缩放档位变化时清空重建。
+    @Published private(set) var filmstrip: [Int: CGImage] = [:]
+    /// 当前缩略图间隔（秒）：默认 3.75s（每分钟 16 张），随缩放档位变化
+    @Published private(set) var thumbnailInterval: Double = 3.75
     /// 时间轴缩放：每秒占多少 pt（V2.7.2 直接存值，不再用倍率）
     @Published private(set) var zoomPPS: Double = 50
 
@@ -43,6 +46,11 @@ final class MacEditorModel: ObservableObject {
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
     private var filmstripTask: Task<Void, Never>?
+    private var filmstripGenerator: AVAssetImageGenerator?
+    private var filmstripGenerationID = 0
+    private var timelineScrollOffset: CGFloat = 0
+    private var visibleStartTime: Double = 0
+    private var visibleEndTime: Double = 0
 
     init(source: MacEditorSource?) {
         self.source = source
@@ -56,6 +64,8 @@ final class MacEditorModel: ObservableObject {
         if let endObserver {
             NotificationCenter.default.removeObserver(endObserver)
         }
+        filmstripTask?.cancel()
+        filmstripGenerator?.cancelAllCGImageGeneration()
     }
 
     var hasSource: Bool { source != nil }
@@ -67,8 +77,9 @@ final class MacEditorModel: ObservableObject {
     /// 时间轴可视宽度（由 MacTimelineView 上报，用于计算缩放下限）
     var timelineViewportWidth: CGFloat = 0
 
-    /// 缩放上限：约 25pt/帧（按 30fps ≈ 750pt/秒），正好能逐帧点选、看清帧边界
-    static let maxPixelsPerSecond: Double = 750
+    /// 缩放上限（V2.7.4）：第 12 档（×1.3¹² ≈ 1165pt/s），与缩略图 30fps 极限对齐——
+    /// 该档位的缩略图间隔恰好收敛到 1/30s，一帧约 39pt，正好逐帧点选、看清帧边界
+    static let maxPixelsPerSecond: Double = 50 * pow(1.3, 12)
 
     /// 缩放下限：整条内容刚好铺满可视宽度就停（不会缩成窄条，也不会两端大片空白）
     var minPixelsPerSecond: Double {
@@ -87,6 +98,20 @@ final class MacEditorModel: ObservableObject {
     /// 档位式步进（每次 ×1.3，对齐剪映的按钮手感）
     func zoomIn() { setZoom(zoomPPS * 1.3) }
     func zoomOut() { setZoom(zoomPPS / 1.3) }
+
+    // MARK: - 缩略图密度（V2.7.4）
+
+    /// 由缩放档位推算缩略图间隔：
+    /// - 档位 0（默认）= 3.75s，即 1 分钟视频取 16 张（60/16）；
+    /// - 放大一档分母 ×1.5（60/24、60/36、60/54…），极限 1/30s（每秒 30 帧）；
+    /// - 缩小一档间隔 ×2（60/8、60/4），60/4（15s）即最稀疏、缩略图最宽的一档。
+    var desiredThumbnailInterval: Double {
+        let level = zoomPPS > 0 ? Int((log(zoomPPS / 50) / log(1.3)).rounded()) : 0
+        if level >= 0 {
+            return max(3.75 / pow(1.5, Double(level)), 1.0 / 30)
+        }
+        return min(3.75 * pow(2, Double(-level)), 15)
+    }
 
     // MARK: - 载入
 
@@ -135,58 +160,104 @@ final class MacEditorModel: ObservableObject {
         }
         rebuildComposition(preserveTime: 0)
         player.isMuted = isMuted
-        loadFilmstrip(url: newSource.url, duration: assetDuration)
+        // V2.7.4：换素材后按新档位重建缩略图（可视窗口由视图上报，这里先用当前值触发一次）
+        filmstrip = [:]
+        thumbnailInterval = desiredThumbnailInterval
+        updateVisibleWindow(offset: timelineScrollOffset)
     }
 
-    /// 时间轴胶片：源视频每秒取一帧，边解边填（缩放/拖动时都用这套帧）。
-    /// 这里自己开关容差（0.05s），不能用 core 那张「无限容差取最近关键帧」的流式接口，
-    /// 否则长 GOP 的视频会整条胶片都变成同一帧。
-    private func loadFilmstrip(url: URL, duration: Double) {
-        filmstripTask?.cancel()
-        guard duration > 0 else {
-            filmstrip = []
-            return
+    // MARK: - 时间轴缩略图（V2.7.4：密度随缩放档位，只生成可视窗口）
+
+    /// 视图上报可视窗口变化（滚动 / 缩放 / 窗口尺寸变化后调用），防抖后补帧
+    func updateVisibleWindow(offset: CGFloat) {
+        timelineScrollOffset = offset
+        let width = timelineViewportWidth
+        guard width > 1, zoomPPS > 0, outputDuration > 0.1 else { return }
+        let ins = timelineInset(pps: zoomPPS)
+        visibleStartTime = max(0, Double(offset - ins) / zoomPPS)
+        visibleEndTime = Double(offset + width - ins) / zoomPPS
+        requestFilmstrip()
+    }
+
+    /// 与 MacTimelineView 相同的内容落点规则：放不下留滑动余量，放得下居中
+    private func timelineInset(pps: Double) -> CGFloat {
+        let track = CGFloat(outputDuration) * CGFloat(pps)
+        let w = timelineViewportWidth
+        guard w > 1 else { return MacTimelineView.sideInset }
+        return track + MacTimelineView.sideInset * 2 > w ? MacTimelineView.sideInset : max((w - track) / 2, 8)
+    }
+
+    /// 缩略图间隔变化时清缓存，然后防抖 200ms 补齐可视窗口内缺失的帧
+    private func requestFilmstrip() {
+        let desired = desiredThumbnailInterval
+        if desired != thumbnailInterval {
+            thumbnailInterval = desired
+            filmstrip = [:]
         }
+        filmstripGenerationID += 1
+        let id = filmstripGenerationID
+        filmstripTask?.cancel()
+        filmstripGenerator?.cancelAllCGImageGeneration()
+        filmstripTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.generateFilmstrip(generationID: id)
+        }
+    }
 
-        let count = max(2, min(Int(ceil(duration)) + 1, 900))
-        filmstrip = Array(repeating: nil, count: count)
+    /// 只解可视窗口 ± 一屏余量内的槽位；同档位下滚动复用缓存，不重复解码。
+    /// 这里自己开关容差，不能用 core 那张「无限容差取最近关键帧」的流式接口，
+    /// 否则长 GOP 的视频会整条胶片都变成同一帧。
+    private func generateFilmstrip(generationID: Int) async {
+        guard let source, assetDuration > 0.1, timelineViewportWidth > 1, zoomPPS > 0 else { return }
+        let interval = thumbnailInterval
+        let margin = max(2 * Double(timelineViewportWidth) / zoomPPS, 5)
+        let startT = max(0, visibleStartTime - margin)
+        let endT = min(assetDuration, visibleEndTime + margin)
+        let first = Int(floor(startT / interval))
+        let last = Int(ceil(endT / interval))
+        guard last > first, last - first <= 900 else { return }
+        let slots = (first..<last).filter { filmstrip[$0] == nil }
+        guard !slots.isEmpty else { return }
 
-        let asset = AVURLAsset(url: url)
+        let asset = self.asset ?? AVURLAsset(url: source.url)
         var times: [NSValue] = []
         var indexByKey: [String: Int] = [:]
-        for index in 0..<count {
-            let time = CMTime(seconds: Double(index), preferredTimescale: 600)
-            indexByKey["\(time.value)-\(time.timescale)"] = index
+        for slot in slots {
+            let time = CMTime(seconds: Double(slot) * interval, preferredTimescale: 1800)
+            indexByKey["\(time.value)-\(time.timescale)"] = slot
             times.append(NSValue(time: time))
         }
 
-        filmstripTask = Task { [weak self] in
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 200, height: 200)
-            generator.requestedTimeToleranceBefore = CMTime(seconds: 0.05, preferredTimescale: 600)
-            generator.requestedTimeToleranceAfter = CMTime(seconds: 0.05, preferredTimescale: 600)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 200, height: 200)
+        // 间隔可以细到 1/30s，容差跟着缩，避免相邻帧取重
+        let tolerance = CMTime(seconds: min(0.05, interval / 3), preferredTimescale: 1800)
+        generator.requestedTimeToleranceBefore = tolerance
+        generator.requestedTimeToleranceAfter = tolerance
+        filmstripGenerator = generator
 
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                let lock = NSLock()
-                var remaining = count
-                generator.generateCGImagesAsynchronously(forTimes: times) { requested, image, _, _, _ in
-                    let key = "\(requested.value)-\(requested.timescale)"
-                    if let index = indexByKey[key], let image {
-                        Task { @MainActor [weak self] in
-                            guard let self, index < self.filmstrip.count, self.filmstrip[index] == nil else { return }
-                            self.filmstrip[index] = image
-                        }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let lock = NSLock()
+            var remaining = times.count
+            generator.generateCGImagesAsynchronously(forTimes: times) { requested, image, _, _, _ in
+                let key = "\(requested.value)-\(requested.timescale)"
+                if let slot = indexByKey[key], let image {
+                    Task { @MainActor [weak self] in
+                        guard let self, self.filmstripGenerationID == generationID else { return }
+                        self.filmstrip[slot] = image
                     }
-                    lock.lock()
-                    remaining -= 1
-                    let finished = remaining <= 0
-                    lock.unlock()
-                    if finished { continuation.resume() }
                 }
+                lock.lock()
+                remaining -= 1
+                let finished = remaining <= 0
+                lock.unlock()
+                if finished { continuation.resume() }
             }
         }
     }
+
 
     /// 草稿里的片段按当前视频时长校验，边界不对的一律丢掉
     private func restoredClips(from draft: MacEditorDraft?) -> [MacClip] {
@@ -673,20 +744,29 @@ struct MacEditorView: View {
                 MacTimelineView(
                     clips: model.clips,
                     frames: model.filmstrip,
+                    thumbnailInterval: model.thumbnailInterval,
                     selectedIndex: model.currentClipIndex,
                     outputDuration: model.outputDuration,
                     currentTime: model.currentTime,
                     pixelsPerSecond: Double(model.pixelsPerSecond),
                     scrollOffset: $timelineOffset,
                     onSeek: { model.seek(to: $0) },
-                    onZoom: { model.setZoom($0) },
+                    onZoom: {
+                        model.setZoom($0)
+                        model.updateVisibleWindow(offset: timelineOffset)
+                    },
                     onViewportChange: { width in
                         timelineWidth = width
                         model.timelineViewportWidth = width
+                        model.updateVisibleWindow(offset: timelineOffset)
                     }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 12)
+                .onChange(of: timelineOffset) { newOffset in
+                    // 拖动查看时间轴时按需补可视窗口内的缩略图
+                    model.updateVisibleWindow(offset: newOffset)
+                }
             } else {
                 dropHint
                     .padding(12)
@@ -858,6 +938,8 @@ struct MacEditorView: View {
         let newInset = timelineInset(pps: newPPS)
         let maxOffset = max(0, CGFloat(model.outputDuration) * newPPS + newInset * 2 - timelineWidth)
         timelineOffset = min(max(0, newInset + CGFloat(t) * newPPS - anchorX), maxOffset)
+        // 偏移可能没变（onChange 不触发），显式上报一次让缩略图按新档位重建
+        model.updateVisibleWindow(offset: timelineOffset)
     }
 
     /// 与 MacTimelineView 一致的内容落点：放不下留 100pt 滑动余量，放得下则居中
