@@ -313,7 +313,6 @@ struct MacTimelineView: View {
 
         return ZStack(alignment: .topLeading) {
             filmstrip(for: clip, timelineStart: timelineStart, visibleRange: visibleRange)
-                .frame(width: drawWidth, height: trackHeight)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
             // 未选中：细白框；选中：白色粗框（和 App 的选中框一致）
@@ -338,45 +337,48 @@ struct MacTimelineView: View {
         .allowsHitTesting(false)
     }
 
-    // MARK: - 逐帧胶片（V2.7.4：密度随缩放档位，只渲染可视窗口；V2.7.5：缩略图为正方形）
+    // MARK: - 逐帧胶片（V2.7.16：整条胶片按「素材时间 → 像素」绝对定位，切割只是换个裁剪窗口）
 
-    /// 缩略图按「每 thumbnailInterval 秒一张」取帧，槽位 k 覆盖 [k·interval, (k+1)·interval)。
-    /// V2.7.5：每张缩略图固定为 trackHeight × trackHeight 的正方形，从左到右连续铺满轨道；
-    /// 高倍缩放时全片可达数千槽位，这里只建可视窗口交集中的那几十个视图。
+    /// 缩略图按「每 thumbnailInterval 秒一张」取帧，槽位 k 覆盖素材时间 [k·interval, (k+1)·interval)。
+    /// 一段胶片就是同一条「素材尺」的一段裁剪：槽位 x = (k·interval − clip.start) · pps，
+    /// 槽宽恰好 interval·pps（= 一张正方形边长），所以两个片段共用同一套槽位、边界像素严丝合缝，
+    /// 切割后右侧片段只是从更靠后的裁剪窗口开始，不会重复也不会跳帧。
+    /// 只建可视窗口内（±1 个槽位）的那几十个视图。
     private func filmstrip(for clip: MacClip, timelineStart: Double, visibleRange: ClosedRange<Double>) -> some View {
         let interval = max(thumbnailInterval, 1.0 / 30)
-        // 槽位 key 用素材时间（slot × interval），可视窗口是时间轴时间，两者差 clip.start - timelineStart
         let firstSlot = Int(floor(clip.start / interval))
         let lastSlot = max(Int(ceil(clip.end / interval)), firstSlot + 1)
 
         let assetVisibleStart = clip.start + max(0, visibleRange.lowerBound - timelineStart)
         let assetVisibleEnd = min(clip.end, clip.start + max(0, visibleRange.upperBound - timelineStart))
-        let renderFirst = max(firstSlot, Int(floor(assetVisibleStart / interval)))
-        let renderLast = min(lastSlot, max(Int(ceil(assetVisibleEnd / interval)), renderFirst + 1))
+        // 两端各多留一格，避免「只露半张」的槽位被裁掉
+        let renderFirst = max(firstSlot, Int(floor(assetVisibleStart / interval)) - 1)
+        let renderLast = min(lastSlot, max(Int(ceil(assetVisibleEnd / interval)) + 1, renderFirst + 1))
+
+        let width = max(CGFloat(clip.duration) * pps, 4)
+        let slotWidth = CGFloat(interval) * pps
 
         return ZStack(alignment: .topLeading) {
             Rectangle()
                 .fill(Color.white.opacity(0.08))
 
-            if renderLast > renderFirst {
-                HStack(spacing: 0) {
-                    ForEach(renderFirst..<renderLast, id: \.self) { slot in
-                        ZStack {
-                            Rectangle()
-                                .fill(Color.white.opacity(0.10))
-                            if let image = frames[slot] {
-                                Image(decorative: image, scale: 1)
-                                    .resizable()
-                                    .scaledToFill()
-                            }
-                        }
-                        .frame(width: trackHeight, height: trackHeight)
-                        .clipped()
+            ForEach(renderFirst..<renderLast, id: \.self) { slot in
+                ZStack {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.10))
+                    if let image = frames[slot] {
+                        Image(decorative: image, scale: 1)
+                            .resizable()
+                            .scaledToFill()
                     }
                 }
-                .offset(x: CGFloat(Double(renderFirst) * interval - clip.start) * pps)
+                .frame(width: slotWidth, height: trackHeight)
+                .clipped()
+                .offset(x: CGFloat(Double(slot) * interval - clip.start) * pps)
             }
         }
+        // 必须 topLeading：默认居中对齐会在「只渲染了一部分槽位」时把胶片整体挪位
+        .frame(width: width, height: trackHeight, alignment: .topLeading)
         .clipped()
     }
 
