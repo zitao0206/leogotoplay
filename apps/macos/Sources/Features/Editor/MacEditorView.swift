@@ -602,9 +602,9 @@ final class MacEditorModel: ObservableObject {
         guard anchor.sourceTime - clip.start > 0.05, clip.end - anchor.sourceTime > 0.05 else { return }
         pushUndo()
         // V2.7.13：左段沿用原 id，右段新建，切割只重画右段，不整条闪
-        clips[anchor.index] = MacClip(id: clip.id, sourceID: clip.sourceID, start: clip.start, end: anchor.sourceTime)
+        clips[anchor.index] = MacClip(id: clip.id, sourceID: clip.sourceID, start: clip.start, end: anchor.sourceTime, groupID: clip.groupID)
         clips.insert(
-            MacClip(sourceID: clip.sourceID, start: anchor.sourceTime, end: clip.end),
+            MacClip(sourceID: clip.sourceID, start: anchor.sourceTime, end: clip.end, groupID: clip.groupID),
             at: anchor.index + 1
         )
         rebuildComposition(preserveTime: currentTime)
@@ -647,7 +647,7 @@ final class MacEditorModel: ObservableObject {
         guard anchor.sourceTime - clip.start > 0.02 else { return }
         let oldInterval = thumbnailInterval
         pushUndo()
-        clips[anchor.index] = MacClip(id: clip.id, sourceID: clip.sourceID, start: anchor.sourceTime, end: clip.end)
+        clips[anchor.index] = MacClip(id: clip.id, sourceID: clip.sourceID, start: anchor.sourceTime, end: clip.end, groupID: clip.groupID)
         // 播放头对准这一段的起点：它前面所有片段的时长之和
         let head = clips[..<anchor.index].reduce(0) { $0 + $1.duration }
         rebuildComposition(preserveTime: head)
@@ -663,7 +663,7 @@ final class MacEditorModel: ObservableObject {
         guard clip.end - anchor.sourceTime > 0.02 else { return }
         let oldInterval = thumbnailInterval
         pushUndo()
-        clips[anchor.index] = MacClip(id: clip.id, sourceID: clip.sourceID, start: clip.start, end: anchor.sourceTime)
+        clips[anchor.index] = MacClip(id: clip.id, sourceID: clip.sourceID, start: clip.start, end: anchor.sourceTime, groupID: clip.groupID)
         rebuildComposition(preserveTime: currentTime)
         keepScale(oldInterval)
         persist()
@@ -1568,14 +1568,10 @@ struct MacEditorView: View {
                 }
                 model.errorMessage = nil
             }
-            if imported.count > 1 {
-                // 一次选了多个：按顺序整组放到时间轴末尾，组内无缝连成一条、内部仍是多段
-                model.appendMaterials(imported, groupID: UUID())
-                selectedMaterialIDs.removeAll()
-                show("已添加 \(imported.count) 个视频，已按顺序排到时间轴上")
-            } else if let only = imported.first {
-                selectedMaterialIDs = [only]
-                show("已添加 1 个视频")
+            // V2.8.10：导入只进素材列表，不上时间轴；要上轨一律靠手动拖（多选后整组一次拖）
+            selectedMaterialIDs = Set(imported)
+            if !imported.isEmpty {
+                show(imported.count == 1 ? "已添加 1 个视频" : "已添加 \(imported.count) 个视频，拖到时间轴即可")
             }
             if let failure {
                 let failed = urls.count - imported.count
@@ -1600,33 +1596,43 @@ struct MacEditorView: View {
                 guard let payload = object as? NSString else { return }
                 let ids = self.materialIDs(from: payload as String)
                 guard !ids.isEmpty else { return }
-                Task { @MainActor in
+                let groupID: UUID? = ids.count > 1 ? UUID() : nil
+                DispatchQueue.main.async {
                     self.selectedMaterialIDs = Set(ids)
-                    self.model.appendMaterials(ids, groupID: ids.count > 1 ? UUID() : nil)
+                    self.model.appendMaterials(ids, groupID: groupID)
                 }
             }
         }
         return true
     }
 
-    /// 时间轴里的落点：素材按顺序追加；片段按 x 算插入位置
+    /// 时间轴里的落点：素材按顺序追加；片段按 x 算插入位置。
+    /// V2.8.10：改片段表统一放到下一个 runloop 再动 —— drop 回调里直接改 @Published 的 clips /
+    /// 换 AVPlayerItem，会在 SwiftUI 更新视图的过程中重入（多片段时最容易崩），这里先算好落点再异步执行。
     private func handleTimelineDrop(payload: String, x: CGFloat) {
         if payload.hasPrefix("clip:") {
             guard let id = UUID(uuidString: String(payload.dropFirst(5))) else { return }
-            let time = Double(max(0, x + timelineOffset - timelineInset)) / Double(model.pixelsPerSecond)
+            let pps = Double(model.pixelsPerSecond)
+            guard pps > 0 else { return }
+            let time = Double(max(0, x + timelineOffset - timelineInset)) / pps
             var insertion = 0
             var cursor = 0.0
             for clip in model.clips {
                 if time > cursor + clip.duration / 2 { insertion += 1 }
                 cursor += clip.duration
             }
-            model.moveClip(id: id, toInsertionIndex: insertion)
+            Task { @MainActor in
+                self.model.moveClip(id: id, toInsertionIndex: insertion)
+            }
             return
         }
         let ids = materialIDs(from: payload)
         guard !ids.isEmpty else { return }
-        selectedMaterialIDs = Set(ids)
-        model.appendMaterials(ids, groupID: ids.count > 1 ? UUID() : nil)
+        let groupID: UUID? = ids.count > 1 ? UUID() : nil
+        Task { @MainActor in
+            self.selectedMaterialIDs = Set(ids)
+            self.model.appendMaterials(ids, groupID: groupID)
+        }
     }
 
     private func materialIDs(from payload: String) -> [UUID] {
