@@ -660,38 +660,35 @@ struct MacEditorView: View {
     }
 
     private var toolRow: some View {
-        HStack(spacing: 6) {
-            toolButton("撤销", "arrow.uturn.backward", enabled: model.canUndo) { model.undo() }
-            toolButton("重置", "arrow.counterclockwise", enabled: true) { model.resetTimeline() }
-            toolButton("分割", "scissors", enabled: true) { model.splitAtPlayhead() }
-            toolButton("删除", "trash", enabled: model.currentClipIndex != nil) { model.deleteClipAtPlayhead() }
-            toolButton("向左分割", "arrow.left.to.line", enabled: true) { model.keepLeftOfPlayhead() }
-            toolButton("向右分割", "arrow.right.to.line", enabled: true) { model.keepRightOfPlayhead() }
-            Spacer(minLength: 0)
-            toolButton("缩小", "minus.magnifyingglass", enabled: true) { model.zoomOut() }
-            toolButton("放大", "plus.magnifyingglass", enabled: true) { model.zoomIn() }
-        }
-    }
-
-    private func toolButton(_ title: String, _ icon: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 3) {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .medium))
-                Text(title)
-                    .font(.system(size: 9))
+        HStack(spacing: 10) {
+            MacToolIconButton(title: "撤销", icon: "arrow.uturn.backward", enabled: model.canUndo) {
+                model.undo()
             }
-            .foregroundStyle(enabled ? Color.white.opacity(0.85) : Color.white.opacity(0.28))
-            .frame(width: 40, height: 36)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-            )
-            .contentShape(Rectangle())
+            MacToolIconButton(title: "重置", icon: "arrow.counterclockwise", enabled: true) {
+                model.resetTimeline()
+            }
+            MacToolIconButton(title: "分割", icon: "scissors", enabled: true) {
+                model.splitAtPlayhead()
+            }
+            MacToolIconButton(title: "删除", icon: "trash", enabled: model.currentClipIndex != nil) {
+                model.deleteClipAtPlayhead()
+            }
+            MacToolIconButton(title: "向左分割", icon: "arrow.left.to.line", enabled: true) {
+                model.keepLeftOfPlayhead()
+            }
+            MacToolIconButton(title: "向右分割", icon: "arrow.right.to.line", enabled: true) {
+                model.keepRightOfPlayhead()
+            }
+
+            Spacer(minLength: 0)
+
+            MacToolIconButton(title: "时间轴缩小", icon: "minus.magnifyingglass", enabled: model.zoomScale > 0.4) {
+                model.zoomOut()
+            }
+            MacToolIconButton(title: "时间轴放大", icon: "plus.magnifyingglass", enabled: model.zoomScale < 6) {
+                model.zoomIn()
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .help(title)
     }
 
     private var transportRow: some View {
@@ -891,5 +888,35 @@ struct MacEditorView: View {
             try? await Task.sleep(nanoseconds: 2_200_000_000)
             if toast == text { toast = nil }
         }
+    }
+}
+
+// MARK: - 编辑工具图标按钮
+
+/// V2.5：工具栏图标按剪映的样子来 —— 只有图标、没有文字，悬停时淡淡一层底
+private struct MacToolIconButton: View {
+    let title: String
+    let icon: String
+    let enabled: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .regular))
+                .foregroundStyle(enabled ? Color.white.opacity(hovering ? 1 : 0.82) : Color.white.opacity(0.22))
+                .frame(width: 34, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.white.opacity(hovering && enabled ? 0.10 : 0))
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .onHover { hovering = $0 }
+        .help(title)
     }
 }
