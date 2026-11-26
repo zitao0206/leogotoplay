@@ -697,24 +697,24 @@ struct MacEditorView: View {
 
     private var toolRow: some View {
         HStack(spacing: 10) {
-            MacToolIconButton(title: "撤销", icon: "arrow.uturn.backward", enabled: model.canUndo) {
+            MacGlyphButton(title: "撤销", kind: .undo, enabled: model.canUndo) {
                 model.undo()
             }
-            MacToolIconButton(title: "重置", icon: "arrow.counterclockwise", enabled: true) {
+            MacGlyphButton(title: "重置", kind: .reset, enabled: true) {
                 model.resetTimeline()
             }
-            MacGlyphToolButton(title: "分割", glyph: .split) {
+            MacGlyphButton(title: "分割", kind: .split, enabled: true) {
                 model.splitAtPlayhead()
             }
-            MacGlyphToolButton(title: "向左分割", glyph: .keepLeft) {
+            MacGlyphButton(title: "向左分割", kind: .keepLeft, enabled: true) {
                 model.keepLeftOfPlayhead()
             }
-            MacGlyphToolButton(title: "向右分割", glyph: .keepRight) {
+            MacGlyphButton(title: "向右分割", kind: .keepRight, enabled: true) {
                 model.keepRightOfPlayhead()
             }
-            MacToolIconButton(
+            MacGlyphButton(
                 title: "删除",
-                icon: "trash",
+                kind: .trash,
                 enabled: model.currentClipIndex != nil,
                 emphasized: model.currentClipIndex != nil
             ) {
@@ -907,95 +907,183 @@ private struct MacToolIconButton: View {
     }
 }
 
-// MARK: - 分割类自绘图标
+// MARK: - 自绘工具图标
 
-/// V2.7.1：分割 / 向左分割 / 向右分割 用参考图里的「花括号 + 虚线」图标，
-/// 实线括号表示保留的边，虚线表示被裁掉的一侧。
-private struct MacSplitGlyph: View {
-    enum Style {
+/// V2.7.2：撤销 / 重置 / 分割 / 向左分割 / 向右分割 / 删除 六个图标全部按参考图自绘。
+/// 26pt 设计栅格、方头粗线（主线条 3.0、垃圾桶 2.4），尺寸与形体对齐剪映那套图标：
+/// - 撤销 / 重置 = 半圆回转箭头 + 顶端单根斜刺（不是双撇 chevron）
+/// - 分割 = 两个短脚括号 `][`
+/// - 向左 / 向右分割 = 一个括号 + 一列方块虚线（虚线侧为被裁掉的部分）
+/// - 删除 = 满宽桶盖 + 顶部小提手 + 近满宽方形桶身
+private struct MacEditorGlyph: View {
+    enum Kind {
+        case undo
+        case reset
         case split
         case keepLeft
         case keepRight
+        case trash
     }
 
-    let style: Style
+    let kind: Kind
     var tint: Color = .white
 
-    private let designSize: CGFloat = 22
+    private let design: CGFloat = 26
 
     var body: some View {
         Canvas { context, size in
-            let scale = min(size.width, size.height) / designSize
-            let stroke = 1.8 * scale
-            let topY: CGFloat = 2
-            let bottomY: CGFloat = 20
-            let tick: CGFloat = 5
+            let scale = min(size.width, size.height) / design
 
             func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
                 CGPoint(x: x * scale, y: y * scale)
             }
 
+            /// 用折线拼半圆，避开 Path.addArc 在不同坐标系下的方向歧义
+            func addArc(
+                _ path: inout Path,
+                center: CGPoint,
+                radius: CGFloat,
+                from startDeg: CGFloat,
+                to endDeg: CGFloat,
+                scale: CGFloat
+            ) {
+                let steps = 24
+                let r = radius * scale
+                for step in 1...steps {
+                    let t = startDeg + (endDeg - startDeg) * CGFloat(step) / CGFloat(steps)
+                    let rad = t * .pi / 180
+                    path.addLine(to: CGPoint(x: center.x + r * cos(rad), y: center.y + r * sin(rad)))
+                }
+            }
+
+            func stroke(_ path: Path, width: CGFloat, dash: [CGFloat]? = nil) {
+                context.stroke(
+                    path,
+                    with: .color(tint),
+                    style: StrokeStyle(
+                        lineWidth: width * scale,
+                        lineCap: dash == nil ? .square : .butt,
+                        lineJoin: .miter,
+                        dash: (dash ?? []).map { $0 * scale }
+                    )
+                )
+            }
+
             var solid = Path()
-            func bracket(barX: CGFloat, ticksToLeft: Bool) {
-                solid.move(to: point(barX, topY))
-                solid.addLine(to: point(barX, bottomY))
-                let endX: CGFloat = ticksToLeft ? barX - tick : barX + tick
-                solid.move(to: point(barX, topY))
-                solid.addLine(to: point(endX, topY))
-                solid.move(to: point(barX, bottomY))
-                solid.addLine(to: point(endX, bottomY))
-            }
-
-            switch style {
-            case .split:
-                bracket(barX: 8.5, ticksToLeft: true)
-                bracket(barX: 13.5, ticksToLeft: false)
-            case .keepLeft:
-                bracket(barX: 8.5, ticksToLeft: true)
-            case .keepRight:
-                bracket(barX: 13.5, ticksToLeft: false)
-            }
-
-            context.stroke(
-                solid,
-                with: .color(tint),
-                style: StrokeStyle(lineWidth: stroke, lineCap: .round, lineJoin: .round)
-            )
-
-            guard style != .split else { return }
             var dashed = Path()
-            let dashX: CGFloat = style == .keepLeft ? 15 : 7
-            dashed.move(to: point(dashX, topY))
-            dashed.addLine(to: point(dashX, bottomY))
-            context.stroke(
-                dashed,
-                with: .color(tint),
-                style: StrokeStyle(lineWidth: stroke, lineCap: .butt, dash: [2.2 * scale, 2.4 * scale])
-            )
+
+            switch kind {
+            case .undo:
+                solid.move(to: point(2, 22.5))
+                solid.addLine(to: point(17, 22.5))
+                addArc(&solid, center: point(17, 14.5), radius: 8.0, from: 90, to: -90, scale: scale)
+                solid.addLine(to: point(2, 6.5))
+                solid.move(to: point(2, 6.5))
+                solid.addLine(to: point(6, 1.5))
+                stroke(solid, width: 3.4)
+
+            case .reset:
+                solid.move(to: point(24, 22.5))
+                solid.addLine(to: point(9, 22.5))
+                addArc(&solid, center: point(9, 14.5), radius: 8.0, from: 90, to: 270, scale: scale)
+                solid.addLine(to: point(24, 6.5))
+                solid.move(to: point(24, 6.5))
+                solid.addLine(to: point(20, 1.5))
+                stroke(solid, width: 3.4)
+
+            case .split:
+                // 左「]」右「[」，短脚
+                solid.move(to: point(8, 0.6))
+                solid.addLine(to: point(8, 25.4))
+                solid.move(to: point(8, 1))
+                solid.addLine(to: point(3.5, 1))
+                solid.move(to: point(8, 25))
+                solid.addLine(to: point(3.5, 25))
+
+                solid.move(to: point(18, 0.6))
+                solid.addLine(to: point(18, 25.4))
+                solid.move(to: point(18, 1))
+                solid.addLine(to: point(22.5, 1))
+                solid.move(to: point(18, 25))
+                solid.addLine(to: point(22.5, 25))
+                stroke(solid, width: 3.4)
+
+            case .keepLeft:
+                // 保留左侧：左边括号「]」，右边虚线
+                solid.move(to: point(9, 0.6))
+                solid.addLine(to: point(9, 25.4))
+                solid.move(to: point(9, 1))
+                solid.addLine(to: point(4.5, 1))
+                solid.move(to: point(9, 25))
+                solid.addLine(to: point(4.5, 25))
+
+                dashed.move(to: point(18.5, 1))
+                dashed.addLine(to: point(18.5, 25))
+                stroke(solid, width: 3.4)
+                stroke(dashed, width: 3.4, dash: [3.0, 2.0])
+
+            case .keepRight:
+                // 保留右侧：左边虚线，右边括号「[」
+                solid.move(to: point(17, 0.6))
+                solid.addLine(to: point(17, 25.4))
+                solid.move(to: point(17, 1))
+                solid.addLine(to: point(21.5, 1))
+                solid.move(to: point(17, 25))
+                solid.addLine(to: point(21.5, 25))
+
+                dashed.move(to: point(7.5, 1))
+                dashed.addLine(to: point(7.5, 25))
+                stroke(solid, width: 3.4)
+                stroke(dashed, width: 3.4, dash: [3.0, 2.0])
+
+            case .trash:
+                // 满宽桶盖 + 中央小提手 + 近满宽方形桶身
+                solid.move(to: point(1, 3.4))
+                solid.addLine(to: point(25, 3.4))
+                solid.move(to: point(13, 3.4))
+                solid.addLine(to: point(13, 0.6))
+                solid.move(to: point(4.5, 3.4))
+                solid.addLine(to: point(4.5, 24.6))
+                solid.addLine(to: point(21.5, 24.6))
+                solid.addLine(to: point(21.5, 3.4))
+                stroke(solid, width: 2.7)
+            }
         }
-        .frame(width: designSize, height: designSize)
+        .frame(width: 22, height: 22)
     }
 }
-
-/// 自绘图标按钮，尺寸与其它工具按钮完全一致
-private struct MacGlyphToolButton: View {
+/// 自绘图标按钮：尺寸、悬停底色、禁用态与其它工具按钮完全一致
+private struct MacGlyphButton: View {
     let title: String
-    let glyph: MacSplitGlyph.Style
+    let kind: MacEditorGlyph.Kind
+    let enabled: Bool
+    var emphasized: Bool = false
     let action: () -> Void
 
     @State private var hovering = false
 
+    private var tint: Color {
+        guard enabled else { return Color.white.opacity(0.30) }
+        if hovering { return .white }
+        return Color.white.opacity(emphasized ? 0.95 : 0.82)
+    }
+
     var body: some View {
         Button(action: action) {
-            MacSplitGlyph(style: glyph, tint: .white.opacity(hovering ? 1 : 0.82))
+            MacEditorGlyph(kind: kind, tint: tint)
                 .frame(width: 34, height: 32)
                 .background(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Color.white.opacity(hovering ? 0.12 : 0))
+                        .fill(
+                            hovering && enabled
+                                ? Color.white.opacity(0.12)
+                                : Color.white.opacity(emphasized && enabled ? 0.07 : 0)
+                        )
                 )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!enabled)
         .onHover { hovering = $0 }
         .help(title)
     }
