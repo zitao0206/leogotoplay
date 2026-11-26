@@ -44,6 +44,9 @@ final class MacEditorModel: ObservableObject {
     private var transform: CGAffineTransform = .identity
     private var undoStack: [[MacClip]] = []
     private var timeObserver: Any?
+    /// 重建 composition 期间屏蔽播放器的周期回调：新 item 在 seek 完成前会把时间报成 0，
+    /// 不挡住的话切割完播放头会跳回第一帧，选中态也跟着跑到最左边那段
+    private var isRebuildingPlayer = false
     private var endObserver: NSObjectProtocol?
     private var filmstripTask: Task<Void, Never>?
     /// 正在生成的槽位（滚动时复用，避免同一批帧被反复请求）
@@ -529,10 +532,21 @@ final class MacEditorModel: ObservableObject {
 
         outputDuration = max(CMTimeGetSeconds(cursor), 0)
         let target = min(max(preserveTime ?? 0, 0), max(0, outputDuration - 0.02))
+        isRebuildingPlayer = true
         player.replaceCurrentItem(with: AVPlayerItem(asset: composition))
         player.isMuted = isMuted
-        player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
         currentTime = target
+        player.seek(
+            to: CMTime(seconds: target, preferredTimescale: 600),
+            toleranceBefore: .zero,
+            toleranceAfter: .zero
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.currentTime = target
+                self.isRebuildingPlayer = false
+            }
+        }
     }
 
     // MARK: - 草稿 / 导出
@@ -580,7 +594,7 @@ final class MacEditorModel: ObservableObject {
             guard let self else { return }
             let seconds = time.seconds
             Task { @MainActor in
-                guard seconds.isFinite else { return }
+                guard seconds.isFinite, !self.isRebuildingPlayer else { return }
                 self.currentTime = min(max(0, seconds), self.outputDuration)
             }
         }
@@ -707,6 +721,9 @@ struct MacEditorView: View {
         }
     }
 
+    /// 素材列表上被选中的视频（V2.7.11：支持多选 + 删除）
+    @State private var selectedVideoIDs: Set<UUID> = []
+
     /// 素材卡片固定正方形（V2.7.8）：列宽即单元边长
     private let mediaCardSide: CGFloat = 132
     private var mediaColumns: [GridItem] {
@@ -734,6 +751,24 @@ struct MacEditorView: View {
                 .disabled(isImporting)
 
                 Spacer(minLength: 0)
+
+                if !selectedVideoIDs.isEmpty {
+                    Button {
+                        deleteSelectedVideos()
+                    } label: {
+                        Label("删除 \(selectedVideoIDs.count)", systemImage: "trash")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                Color.red.opacity(0.55),
+                                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help("删除选中的视频（也可以按 Delete 键）")
+                }
 
                 Text("\(library.videos.count)")
                     .font(.caption2)
@@ -765,7 +800,50 @@ struct MacEditorView: View {
                 }
             }
         }
-        .background(MacTheme.surface)
+        .background(
+            MacTheme.surface
+                .contentShape(Rectangle())
+                .onTapGesture { selectedVideoIDs.removeAll() }
+        )
+        .modifier(MediaDeleteKeyMonitor { deleteSelectedVideos() })
+    }
+
+    /// 点卡片：默认单选，⌘ 点击切换选中
+    private func handleMediaTap(_ item: VideoItem) {
+        if NSEvent.modifierFlags.contains(.command) {
+            if selectedVideoIDs.contains(item.id) {
+                selectedVideoIDs.remove(item.id)
+            } else {
+                selectedVideoIDs.insert(item.id)
+            }
+        } else {
+            selectedVideoIDs = [item.id]
+        }
+    }
+
+    private func deleteSelectedVideos() {
+        deleteVideos(ids: selectedVideoIDs)
+    }
+
+    /// 删除选中的视频：连同文件、缩略图、草稿一起删，删前确认
+    private func deleteVideos(ids: Set<UUID>) {
+        let items = library.videos.filter { ids.contains($0.id) }
+        guard !items.isEmpty else {
+            selectedVideoIDs.removeAll()
+            return
+        }
+        let title = items.count == 1
+            ? "删除「\(items[0].title)」？"
+            : "删除选中的 \(items.count) 条视频？"
+        guard MacAlerts.confirmDelete(
+            title: title,
+            message: "会连同素材库里的文件、缩略图和草稿一起删掉，不能恢复。"
+        ) else { return }
+        for item in items {
+            MacEditorDraftStore.clear(for: item.id)
+            library.deleteVideo(item.id)
+        }
+        selectedVideoIDs.removeAll()
     }
 
     /// 素材列表为空时的空态（V2.7.9）：整块大圆角灰底，点哪儿都能导入
@@ -799,7 +877,8 @@ struct MacEditorView: View {
     }
 
     private func mediaCard(_ item: VideoItem) -> some View {
-        let selected = model.source?.libraryVideoID == item.id
+        let opened = model.source?.libraryVideoID == item.id
+        let picked = selectedVideoIDs.contains(item.id)
         return VStack(alignment: .leading, spacing: 7) {
             ZStack(alignment: .topTrailing) {
                 MacThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 8)
@@ -815,22 +894,38 @@ struct MacEditorView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(
-                        selected ? MacTheme.accent : Color.white.opacity(0.06),
-                        lineWidth: selected ? 2 : 1
+                        picked ? Color.white : (opened ? MacTheme.accent : Color.white.opacity(0.06)),
+                        lineWidth: picked ? 2.5 : (opened ? 2 : 1)
                     )
             )
 
             Text(item.title)
                 .font(.caption)
-                .foregroundStyle(selected ? Color.white : Color.white.opacity(0.62))
+                .foregroundStyle(picked || opened ? Color.white : Color.white.opacity(0.62))
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
         .contentShape(Rectangle())
+        .padding(2)
+        .background(
+            picked ? Color.white.opacity(0.06) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .onTapGesture {
+            handleMediaTap(item)
+        }
+        .contextMenu {
+            Button(picked && selectedVideoIDs.count > 1
+                   ? "删除选中的 \(selectedVideoIDs.count) 条视频"
+                   : "删除「\(item.title)」",
+                   role: .destructive) {
+                deleteVideos(ids: picked ? selectedVideoIDs : [item.id])
+            }
+        }
         .onDrag {
             NSItemProvider(object: item.id.uuidString as NSString)
         }
-        .help("拖到下方编辑区载入这条视频")
+        .help("拖到下方编辑区载入这条视频，⌘ 点选可多选，Delete 键删除")
     }
 
     private var addVideoCard: some View {
@@ -1433,5 +1528,31 @@ private struct MacGlyphButton: View {
         .disabled(!enabled)
         .onHover { hovering = $0 }
         .help(title)
+    }
+}
+
+// MARK: - 素材列表的 Delete 键监听
+
+/// 剪辑窗口里按 Delete / 前向 Delete 删掉选中的素材（不吞主窗口和其他文字输入的键）
+private struct MediaDeleteKeyMonitor: ViewModifier {
+    let onDelete: () -> Void
+    @State private var monitor: Any?
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                guard monitor == nil else { return }
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                    guard let window = event.window, window.title.contains("剪辑") else { return event }
+                    guard event.keyCode == 51 || event.keyCode == 117 else { return event }
+                    if window.firstResponder is NSTextView { return event }
+                    onDelete()
+                    return nil
+                }
+            }
+            .onDisappear {
+                if let monitor { NSEvent.removeMonitor(monitor) }
+                monitor = nil
+            }
     }
 }
