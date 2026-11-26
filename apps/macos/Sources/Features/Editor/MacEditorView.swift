@@ -28,6 +28,8 @@ final class MacEditorModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var exportedURL: URL?
     @Published var canUndo = false
+    /// 时间轴胶片：按「源视频第几秒」存一帧，nil 表示还没解出来
+    @Published private(set) var filmstrip: [CGImage?] = []
     /// 时间轴缩放（1 = 每秒 50pt）
     @Published var zoomScale: Double = 1
 
@@ -40,6 +42,7 @@ final class MacEditorModel: ObservableObject {
     private var undoStack: [[MacClip]] = []
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
+    private var filmstripTask: Task<Void, Never>?
 
     init(source: MacEditorSource?) {
         self.source = source
@@ -106,6 +109,27 @@ final class MacEditorModel: ObservableObject {
         }
         rebuildComposition(preserveTime: 0)
         player.isMuted = isMuted
+        loadFilmstrip(url: newSource.url, duration: assetDuration)
+    }
+
+    /// 时间轴胶片：源视频每秒取一帧，边解边填（缩放/拖动时都用这套帧）
+    private func loadFilmstrip(url: URL, duration: Double) {
+        filmstripTask?.cancel()
+        guard duration > 0 else {
+            filmstrip = []
+            return
+        }
+        let count = max(2, min(Int(ceil(duration)) + 1, 900))
+        filmstrip = Array(repeating: nil, count: count)
+        let times = (0..<count).map { Double($0) }
+        filmstripTask = Task { [weak self] in
+            _ = await ThumbnailService.generateFramesStreaming(forVideoAt: url, times: times) { index, image in
+                Task { @MainActor [weak self] in
+                    guard let self, index < self.filmstrip.count, self.filmstrip[index] == nil else { return }
+                    self.filmstrip[index] = image
+                }
+            }
+        }
     }
 
     /// 草稿里的片段按当前视频时长校验，边界不对的一律丢掉
@@ -185,6 +209,21 @@ final class MacEditorModel: ObservableObject {
         pushUndo()
         clips[anchor.index] = MacClip(start: clip.start, end: anchor.sourceTime)
         clips.insert(MacClip(start: anchor.sourceTime, end: clip.end), at: anchor.index + 1)
+        rebuildComposition(preserveTime: currentTime)
+    }
+
+    /// 播放头当前落在哪个片段（时间轴的选中框跟着它走）
+    var currentClipIndex: Int? { clipAt(currentTime)?.index }
+
+    /// 删除播放头所在的片段（最后一段不给删，否则时间轴就空了）
+    func deleteClipAtPlayhead() {
+        guard clips.count > 1 else {
+            errorMessage = "至少要保留一个片段"
+            return
+        }
+        guard let anchor = clipAt(currentTime) else { return }
+        pushUndo()
+        clips.remove(at: anchor.index)
         rebuildComposition(preserveTime: currentTime)
     }
 
@@ -573,6 +612,8 @@ struct MacEditorView: View {
                 toolRow
                 MacTimelineView(
                     clips: model.clips,
+                    frames: model.filmstrip,
+                    selectedIndex: model.currentClipIndex,
                     outputDuration: model.outputDuration,
                     currentTime: model.currentTime,
                     pixelsPerSecond: Double(model.pixelsPerSecond),
@@ -623,6 +664,7 @@ struct MacEditorView: View {
             toolButton("撤销", "arrow.uturn.backward", enabled: model.canUndo) { model.undo() }
             toolButton("重置", "arrow.counterclockwise", enabled: true) { model.resetTimeline() }
             toolButton("分割", "scissors", enabled: true) { model.splitAtPlayhead() }
+            toolButton("删除", "trash", enabled: model.currentClipIndex != nil) { model.deleteClipAtPlayhead() }
             toolButton("向左分割", "arrow.left.to.line", enabled: true) { model.keepLeftOfPlayhead() }
             toolButton("向右分割", "arrow.right.to.line", enabled: true) { model.keepRightOfPlayhead() }
             Spacer(minLength: 0)
