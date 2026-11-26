@@ -1168,7 +1168,8 @@ struct MacEditorView: View {
     }
 
     private var toolRow: some View {
-        HStack(spacing: 10) {
+        // V2.7.15：按钮间距 10pt → 15pt（1.5 倍）；左右分割两个按键互换位置
+        HStack(spacing: 15) {
             MacGlyphButton(title: "撤销", kind: .undo, enabled: model.canUndo) {
                 model.undo()
             }
@@ -1178,11 +1179,11 @@ struct MacEditorView: View {
             MacGlyphButton(title: "分割", kind: .split, enabled: true) {
                 model.splitAtPlayhead()
             }
-            MacGlyphButton(title: "向左分割", kind: .keepLeft, enabled: true) {
-                model.cutBeforePlayhead()
-            }
             MacGlyphButton(title: "向右分割", kind: .keepRight, enabled: true) {
                 model.cutAfterPlayhead()
+            }
+            MacGlyphButton(title: "向左分割", kind: .keepLeft, enabled: true) {
+                model.cutBeforePlayhead()
             }
             MacGlyphButton(
                 title: "删除",
