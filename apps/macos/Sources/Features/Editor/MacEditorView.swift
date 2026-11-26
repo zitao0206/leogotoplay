@@ -248,8 +248,8 @@ final class MacEditorModel: ObservableObject {
         requestFilmstrip()
     }
 
-    /// 与 MacTimelineView 相同的内容落点规则：两端固定 100pt 余量，片段起点始终在同一处
-    private func timelineInset(pps: Double) -> CGFloat { MacTimelineView.sideInset }
+    /// 与 MacTimelineView 相同的内容落点规则：左端 0，片段起点就贴在面板左边
+    private func timelineInset(pps: Double) -> CGFloat { MacTimelineView.leadingInset }
 
     /// 补帧入口：`resetCache` 只用于间隔变化（作废旧槽位、掐掉在飞的取帧）；
     /// 滚动只做防抖补帧，不打断已经在跑的批，避免来回滚动时反复取消重来
@@ -1315,8 +1315,8 @@ struct MacEditorView: View {
         model.updateVisibleWindow(offset: timelineOffset)
     }
 
-    /// 内容落点：两端一律留 100pt 滑动余量，片段起点（0.00）永远贴在这一侧，不随缩放漂移
-    private var timelineInset: CGFloat { MacTimelineView.sideInset }
+    /// 内容落点：左端不留余量，片段起点（0.00）永远贴住面板左边，不随缩放漂移
+    private var timelineInset: CGFloat { MacTimelineView.leadingInset }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         guard let provider = providers.first else { return false }

@@ -29,8 +29,10 @@ struct MacTimelineView: View {
     let onDeselect: () -> Void
 
     private let trackHeight: CGFloat = CGFloat(MacEditorModel.thumbnailSide)
-    /// 缩放空间余量：内容放得下时两端各留的滑动距离（放不下时用满）
-    static let sideInset: CGFloat = 100
+    /// 左侧不留余量：时间轴起点永远贴住面板左边（滑杆拖到最左、内容不足一屏都不出现空白）
+    static let leadingInset: CGFloat = 0
+    /// 右侧留 100pt 余量：滚到最右时末帧后面还有些空间，播放指针贴末尾也不会被裁
+    static let trailingInset: CGFloat = 100
     /// V2.7.17：片段之间留 2pt 缝。缝宽从每个片段自己的宽度里扣，而不是加到后面去，
     /// 所以第 i 段左边缘仍等于「前面所有时长 × pps」，播放指针、刻度尺不会随段数往后漂。
     private let clipGap: CGFloat = 2
@@ -48,11 +50,11 @@ struct MacTimelineView: View {
         max(CGFloat(duration) * pps, 1)
     }
 
-    /// 内容 x=0 的落点：两端固定 100pt 滑动余量，缩放时 00:00 不漂移
-    private func inset(for width: CGFloat, pps: CGFloat) -> CGFloat { Self.sideInset }
+    /// 内容 x=0 的落点：左端 0，时间轴 00:00 就贴在面板左边
+    private func inset(for width: CGFloat, pps: CGFloat) -> CGFloat { Self.leadingInset }
 
     private func contentWidth(for width: CGFloat, pps: CGFloat) -> CGFloat {
-        trackWidth(pps: pps) + inset(for: width, pps: pps) * 2
+        trackWidth(pps: pps) + Self.leadingInset + Self.trailingInset
     }
 
     var body: some View {
@@ -142,12 +144,10 @@ struct MacTimelineView: View {
             )
             .onAppear {
                 onViewportChange(width)
-                // 默认让片段起点贴着可视区左边，空白距离留出来给用户自己拖（只做一次）
+                // 默认停在最左：片段起点贴住面板左边（只夹一次范围）
                 if !didInitialScroll {
                     didInitialScroll = true
-                    if scrollOffset == 0 {
-                        scrollOffset = min(Self.sideInset, maxOffset)
-                    }
+                    scrollOffset = min(max(0, scrollOffset), maxOffset)
                 }
             }
             .onChange(of: geo.size.width) { newWidth in
