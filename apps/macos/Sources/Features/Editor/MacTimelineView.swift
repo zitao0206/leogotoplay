@@ -15,8 +15,6 @@ struct MacTimelineView: View {
     let frames: [MacFilmKey: CGImage]
     /// 当前缩略图间隔（秒），由缩放档位决定的「全局尺度」，只用于每秒像素与刻度
     let thumbnailInterval: Double
-    /// V2.8.13：每一段取几张缩略图（默认 8，缩小 4 / 2，放大按 1.5 倍加）
-    let thumbnailsPerClip: Double
     let selectedIndex: Int?
     let outputDuration: Double
     let currentTime: Double
@@ -418,8 +416,8 @@ struct MacTimelineView: View {
     /// 切割后右侧片段只是从更靠后的裁剪窗口开始，不会重复也不会跳帧。
     /// 只建可视窗口内（±1 个槽位）的那几十个视图。
     private func filmstrip(for clip: MacClip, timelineStart: Double, visibleRange: ClosedRange<Double>) -> some View {
-        // V2.8.13：每段的张数固定（默认 8），间隔 = 本段时长 / 张数，从本段第一帧开始
-        let step = max(clip.duration / max(thumbnailsPerClip, 1), 1.0 / 30)
+        // V2.8.14：所有段共用同一个间隔（第一次拖入的视频 t1 → t1/8，其它段按 t2/(t1/8) 出张数）
+        let step = max(thumbnailInterval, 1.0 / 30)
         let slotCount = max(1, Int(ceil(clip.duration / step - 1e-9)))
         let width = max(CGFloat(clip.duration) * pps, 4)
         let slotWidth = CGFloat(step) * pps

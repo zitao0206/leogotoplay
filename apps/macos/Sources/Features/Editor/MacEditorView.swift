@@ -89,6 +89,8 @@ final class MacEditorModel: ObservableObject {
     private let pendingClips: [MacClip]
     private let pendingTime: Double?
     private let pendingZoom: Double?
+    /// V2.8.14：缩略图基准（第一次拖进时间轴的视频时长）
+    private let pendingAnchor: Double?
     private let createdAt: Date
     private var didLoad = false
 
@@ -98,6 +100,7 @@ final class MacEditorModel: ObservableObject {
         pendingClips = project.clips
         pendingTime = project.currentTime
         pendingZoom = project.zoomLevel
+        pendingAnchor = project.filmAnchor
         createdAt = project.createdAt
         isMuted = project.isMuted
         materials = project.materials.map { file in
@@ -147,21 +150,13 @@ final class MacEditorModel: ObservableObject {
     var restoredScrollTime: Double?
 
     /// 默认间隔：整段时长除以 8（只用于「每秒像素」这条全局尺度）
+    /// V2.8.14：缩略图基准 —— 第一次拖进时间轴的那条视频的时长 t1，间隔固定为 t1/8；
+    /// 之后拖进来的段按同一个间隔算张数（t2/(t1/8)），不再按整条时间轴摊 8 张
+    @Published var filmAnchorDuration: Double?
+
     var baseThumbnailInterval: Double {
-        max(outputDuration / Self.thumbnailsAtDefault, Self.minThumbnailInterval)
-    }
-
-    /// V2.8.13：每一段取几张缩略图（默认 8，缩小一档 4、两档 2，放大按 1.5 倍加）
-    var thumbnailsPerClip: Double {
-        if zoomLevel >= 0 {
-            return Self.thumbnailsAtDefault * pow(Self.zoomInStep, zoomLevel)
-        }
-        return max(Self.thumbnailsAtDefault / pow(Self.zoomOutStep, -zoomLevel), 2)
-    }
-
-    /// 某一段的缩略图间隔：该段时长 / 张数，最短 1/30s
-    func filmStep(for clip: MacClip) -> Double {
-        max(clip.duration / max(thumbnailsPerClip, 1), Self.minThumbnailInterval)
+        let anchor = filmAnchorDuration ?? clips.first?.duration ?? outputDuration
+        return max(anchor / Self.thumbnailsAtDefault, Self.minThumbnailInterval)
     }
 
     /// 当前间隔（秒）：由档位和整段时长算出来，不单独存，避免裁完片段后还留着旧时长的间隔
@@ -235,6 +230,7 @@ final class MacEditorModel: ObservableObject {
         player.isMuted = isMuted
         filmstrip = [:]
         filmstripInterval = 0
+        filmAnchorDuration = pendingAnchor ?? clips.first?.duration
         setZoomLevel(pendingZoom ?? 0)
         restoredScrollTime = pendingTime
         updateVisibleWindow(offset: timelineScrollOffset)
@@ -327,6 +323,10 @@ final class MacEditorModel: ObservableObject {
         // 空时间轴没有「每秒像素」可言，拿来换算档位会算出天价放大，这里单独回默认档
         let wasEmpty = clips.isEmpty
         let oldInterval = thumbnailInterval
+        // 空时间轴：这一条视频就是缩略图基准（t1 → 间隔 t1/8）
+        if wasEmpty, let first = valid.first, let duration = materialTracks[first]?.duration, duration > 0.05 {
+            filmAnchorDuration = duration
+        }
         pushUndo()
         var appended = false
         for id in valid {
@@ -367,6 +367,7 @@ final class MacEditorModel: ObservableObject {
                 guard let sourceID = clip.sourceID else { return false }
                 return ids.contains(sourceID)
             }
+            if clips.isEmpty { filmAnchorDuration = nil }
             rebuildComposition(preserveTime: currentTime)
             keepScale(oldInterval)
         }
@@ -446,8 +447,8 @@ final class MacEditorModel: ObservableObject {
             let to = min(windowEnd, clipEnd)
             guard to > from, let sourceID = clip.sourceID,
                   let tracks = materialTracks[sourceID], tracks.videoTrack != nil else { continue }
-            // V2.8.13：槽位按「本段的 时长 / 张数」切，从本段第一帧开始
-            let step = filmStep(for: clip)
+            // V2.8.14：所有段共用同一个间隔（基准 t1/8，缩放档位在它上面乘倍数）
+            let step = max(thumbnailInterval, Self.minThumbnailInterval)
             let token = MacFilmKey.token(step)
             let slotCount = max(1, Int(ceil(clip.duration / step - 1e-9)))
             let localFrom = from - clipStart
@@ -593,6 +594,7 @@ final class MacEditorModel: ObservableObject {
         guard let previous = undoStack.popLast() else { return }
         let oldInterval = thumbnailInterval
         clips = previous
+        if clips.isEmpty { filmAnchorDuration = nil }
         canUndo = !undoStack.isEmpty
         rebuildComposition(preserveTime: currentTime)
         keepScale(oldInterval)
@@ -606,6 +608,7 @@ final class MacEditorModel: ObservableObject {
             guard let duration = materialTracks[material.id]?.duration, duration > 0.05 else { return nil }
             return MacClip(sourceID: material.id, start: 0, end: duration)
         }
+        filmAnchorDuration = clips.first?.duration
         rebuildComposition(preserveTime: 0)
         persist()
     }
@@ -650,6 +653,7 @@ final class MacEditorModel: ObservableObject {
         let oldInterval = thumbnailInterval
         pushUndo()
         clips.remove(at: anchor.index)
+        if clips.isEmpty { filmAnchorDuration = nil }
         rebuildComposition(preserveTime: currentTime)
         keepScale(oldInterval)
         persist()
@@ -838,7 +842,8 @@ final class MacEditorModel: ObservableObject {
             clips: clips,
             isMuted: isMuted,
             currentTime: currentTime,
-            zoomLevel: zoomLevel
+            zoomLevel: zoomLevel,
+            filmAnchor: filmAnchorDuration
         )
         MacProjectStore.save(record)
     }
@@ -1226,7 +1231,6 @@ struct MacEditorView: View {
                     clips: model.clips,
                     frames: model.filmstrip,
                     thumbnailInterval: model.thumbnailInterval,
-                    thumbnailsPerClip: model.thumbnailsPerClip,
                     selectedIndex: model.currentClipIndex,
                     outputDuration: model.outputDuration,
                     currentTime: model.currentTime,

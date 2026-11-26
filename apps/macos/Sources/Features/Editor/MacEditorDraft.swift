@@ -144,6 +144,8 @@ struct MacProjectRecord: Codable, Equatable, Identifiable {
     var isMuted: Bool
     var currentTime: Double?
     var zoomLevel: Double?
+    /// V2.8.14：缩略图间隔的基准时长（= 第一次拖进时间轴的那条视频的时长），旧存档没有就按首段时长算
+    var filmAnchor: Double? = nil
 
     var outputDuration: Double { clips.reduce(0) { $0 + $1.duration } }
 
