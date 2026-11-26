@@ -84,7 +84,7 @@ struct MacTimelineView: View {
                     // V2.7.6：轨道上方的空白带可以直接拖拽平移时间轴
                     Color.clear.frame(height: trackTopGap)
                         .contentShape(Rectangle())
-                        .simultaneousGesture(TapGesture().onEnded { onDeselect() })
+                        .simultaneousGesture(seekTap(offset: offset, inset: ins))
                         .gesture(panGesture(offset: offset, maxOffset: maxOffset))
                         .onHover { inside in
                             if inside {
@@ -103,7 +103,7 @@ struct MacTimelineView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .frame(minHeight: 6)
                         .contentShape(Rectangle())
-                        .simultaneousGesture(TapGesture().onEnded { onDeselect() })
+                        .simultaneousGesture(seekTap(offset: offset, inset: ins))
                         .gesture(panGesture(offset: offset, maxOffset: maxOffset))
                         .onHover { inside in
                             if inside {
@@ -213,6 +213,15 @@ struct MacTimelineView: View {
                 scrollOffset = min(max(0, base - value.translation.width), maxOffset)
             }
             .onEnded { _ in panBaseline = nil }
+    }
+
+    /// 单击定位：编辑区任何位置点一下，播放指针就跳到该 x 对应的时间（同样取消片段选中）
+    private func seekTap(offset: CGFloat, inset: CGFloat) -> some Gesture {
+        SpatialTapGesture()
+            .onEnded { value in
+                onDeselect()
+                onSeek(Double(max(0, value.location.x + offset - inset)) / pixelsPerSecond)
+            }
     }
 
     private func seekGesture(offset: CGFloat, inset: CGFloat) -> some Gesture {
