@@ -391,7 +391,6 @@ struct MacEditorView: View {
     @StateObject private var model: MacEditorModel
     private let onClose: () -> Void
 
-    @State private var quality: VideoExporter.Quality = ExportSettings.quality
     @State private var toast: String?
     @State private var isImporting = false
     @State private var isDropTarget = false
@@ -620,8 +619,6 @@ struct MacEditorView: View {
                     onSeek: { model.seek(to: $0) }
                 )
                 .frame(height: 92)
-                transportRow
-                actionRow
             } else {
                 dropHint
             }
@@ -689,60 +686,6 @@ struct MacEditorView: View {
                 model.zoomIn()
             }
         }
-    }
-
-    private var transportRow: some View {
-        HStack(spacing: 10) {
-            Button {
-                model.togglePlay()
-            } label: {
-                Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                    .frame(width: 18)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-
-            Text(model.currentTime.timecode)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-
-            Text("片段 \(model.clips.count)")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-
-            Spacer()
-
-            Toggle("静音", isOn: Binding(
-                get: { model.isMuted },
-                set: { _ in model.toggleMute() }
-            ))
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .font(.caption)
-        }
-    }
-
-    private var actionRow: some View {
-        HStack(spacing: 8) {
-            Picker("", selection: $quality) {
-                ForEach(VideoExporter.Quality.allCases) { q in
-                    Text(q.title).tag(q)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 180)
-            .onChange(of: quality) { newValue in
-                UserDefaults.standard.set(newValue.rawValue, forKey: ExportSettings.qualityKey)
-            }
-
-            Spacer()
-
-            Button("存入素材库") { Task { await exportAndImportToLibrary() } }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-        }
-        .disabled(model.isExporting)
     }
 
     // MARK: - 右栏
@@ -867,16 +810,6 @@ struct MacEditorView: View {
         do {
             try VideoExporter.moveExport(exported, to: destination)
             show("已保存到 \(destination.lastPathComponent)")
-        } catch {
-            model.errorMessage = error.localizedDescription
-        }
-    }
-
-    private func exportAndImportToLibrary() async {
-        guard let exported = await model.export() else { return }
-        do {
-            try await library.importExport(fileURL: exported, title: "\(model.source?.title ?? "剪辑") 剪辑")
-            show("已存入素材库")
         } catch {
             model.errorMessage = error.localizedDescription
         }
