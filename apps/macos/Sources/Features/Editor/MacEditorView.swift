@@ -31,10 +31,9 @@ final class MacEditorModel: ObservableObject {
     /// 时间轴胶片（V2.7.4）：缩略图缓存，key = 槽位序号，覆盖时间 = 序号 × thumbnailInterval。
     /// 只生成/保留可视窗口附近的槽位，缩放档位变化时清空重建。
     @Published private(set) var filmstrip: [Int: CGImage] = [:]
-    /// 当前缩略图间隔（秒）：默认 3.75s（每分钟 16 张），随缩放档位变化
-    @Published private(set) var thumbnailInterval: Double = 3.75
-    /// 时间轴缩放：每秒占多少 pt（V2.7.2 直接存值，不再用倍率）
-    @Published private(set) var zoomPPS: Double = 50
+    /// 当前缩略图间隔（秒）：V2.7.6 起它是时间轴缩放的唯一状态——
+    /// 默认 3.75s（60/16，1 分钟 16 张），放大每档分母 ×1.5，缩小每档间隔 ×2，范围 [1/30s, 15s]
+    @Published private(set) var thumbnailInterval: Double = MacEditorModel.defaultThumbnailInterval
 
     private var asset: AVURLAsset?
     private var assetDuration: Double = 0
@@ -70,48 +69,41 @@ final class MacEditorModel: ObservableObject {
 
     var hasSource: Bool { source != nil }
 
-    var pixelsPerSecond: CGFloat { CGFloat(zoomPPS) }
+    // MARK: - 时间轴缩放（V2.7.6：全部由缩略图间隔驱动）
 
-    // MARK: - 时间轴缩放（V2.7.2）
+    /// 正方形缩略图边长（= 轨道高度，MacTimelineView 的 trackHeight 用同一个常量）
+    static let thumbnailSide: Double = 87
+    /// 默认间隔：60/16 = 3.75s，即 1 分钟正好取 16 张
+    static let defaultThumbnailInterval: Double = 3.75
+    /// 最密：1/30s，即每秒 30 帧——到这一档就能逐帧点选
+    static let minThumbnailInterval: Double = 1.0 / 30
+    /// 最稀：15s，即 1 分钟 4 张，时间轴最窄的一档
+    static let maxThumbnailInterval: Double = 15
+    /// 放大一档：分母 ×1.5（16→24→36→54…）；缩小一档：间隔 ×2（16→8→4）
+    static let zoomInStep: Double = 1.5
+    static let zoomOutStep: Double = 2
 
-    /// 时间轴可视宽度（由 MacTimelineView 上报，用于计算缩放下限）
+    /// 时间轴可视宽度（由 MacTimelineView 上报，用于算可视窗口与内容落点）
     var timelineViewportWidth: CGFloat = 0
 
-    /// 缩放上限（V2.7.4）：第 12 档（×1.3¹² ≈ 1165pt/s），与缩略图 30fps 极限对齐——
-    /// 该档位的缩略图间隔恰好收敛到 1/30s，一帧约 39pt，正好逐帧点选、看清帧边界
-    static let maxPixelsPerSecond: Double = 50 * pow(1.3, 12)
+    /// 每秒像素由间隔反推：一张正方形缩略图正好占一个间隔的宽度，胶片才严丝合缝
+    var pixelsPerSecond: CGFloat { CGFloat(Self.thumbnailSide / thumbnailInterval) }
+    private var pps: Double { Self.thumbnailSide / thumbnailInterval }
 
-    /// 缩放下限：整条内容刚好铺满可视宽度就停（不会缩成窄条，也不会两端大片空白）
-    var minPixelsPerSecond: Double {
-        guard outputDuration > 0.1, timelineViewportWidth > 1 else { return 2 }
-        return max(0.5, Double(timelineViewportWidth) / outputDuration)
+    var canZoomIn: Bool { thumbnailInterval > Self.minThumbnailInterval + 1e-9 }
+    var canZoomOut: Bool { thumbnailInterval < Self.maxThumbnailInterval - 1e-9 }
+
+    /// 唯一缩放入口：档位与捏合都走这里，夹进 [1/30s, 15s]
+    func setThumbnailInterval(_ value: Double) {
+        let clamped = min(max(value, Self.minThumbnailInterval), Self.maxThumbnailInterval)
+        guard abs(clamped - thumbnailInterval) > 1e-9 else { return }
+        thumbnailInterval = clamped
+        filmstrip = [:]   // 间隔变了，旧槽位全部失效
+        updateVisibleWindow(offset: timelineScrollOffset)
     }
 
-    var canZoomIn: Bool { zoomPPS < Self.maxPixelsPerSecond - 0.5 }
-    var canZoomOut: Bool { zoomPPS > minPixelsPerSecond + 0.01 }
-
-    /// 连续缩放入口（捏合手势 / 未来滑杆），自动夹进 [下限, 上限]
-    func setZoom(_ pps: Double) {
-        zoomPPS = min(max(pps, minPixelsPerSecond), Self.maxPixelsPerSecond)
-    }
-
-    /// 档位式步进（每次 ×1.3，对齐剪映的按钮手感）
-    func zoomIn() { setZoom(zoomPPS * 1.3) }
-    func zoomOut() { setZoom(zoomPPS / 1.3) }
-
-    // MARK: - 缩略图密度（V2.7.4）
-
-    /// 由缩放档位推算缩略图间隔：
-    /// - 档位 0（默认）= 3.75s，即 1 分钟视频取 16 张（60/16）；
-    /// - 放大一档分母 ×1.5（60/24、60/36、60/54…），极限 1/30s（每秒 30 帧）；
-    /// - 缩小一档间隔 ×2（60/8、60/4），60/4（15s）即最稀疏、缩略图最宽的一档。
-    var desiredThumbnailInterval: Double {
-        let level = zoomPPS > 0 ? Int((log(zoomPPS / 50) / log(1.3)).rounded()) : 0
-        if level >= 0 {
-            return max(3.75 / pow(1.5, Double(level)), 1.0 / 30)
-        }
-        return min(3.75 * pow(2, Double(-level)), 15)
-    }
+    func zoomIn() { setThumbnailInterval(thumbnailInterval / Self.zoomInStep) }
+    func zoomOut() { setThumbnailInterval(thumbnailInterval * Self.zoomOutStep) }
 
     // MARK: - 载入
 
@@ -162,7 +154,7 @@ final class MacEditorModel: ObservableObject {
         player.isMuted = isMuted
         // V2.7.4：换素材后按新档位重建缩略图（可视窗口由视图上报，这里先用当前值触发一次）
         filmstrip = [:]
-        thumbnailInterval = desiredThumbnailInterval
+        thumbnailInterval = Self.defaultThumbnailInterval
         updateVisibleWindow(offset: timelineScrollOffset)
     }
 
@@ -172,10 +164,26 @@ final class MacEditorModel: ObservableObject {
     func updateVisibleWindow(offset: CGFloat) {
         timelineScrollOffset = offset
         let width = timelineViewportWidth
-        guard width > 1, zoomPPS > 0, outputDuration > 0.1 else { return }
-        let ins = timelineInset(pps: zoomPPS)
-        visibleStartTime = max(0, Double(offset - ins) / zoomPPS)
-        visibleEndTime = Double(offset + width - ins) / zoomPPS
+        guard width > 1, outputDuration > 0.1 else { return }
+        let ins = timelineInset(pps: pps)
+        // 时间轴可视窗口 -> 素材时间窗口（片段的素材入点是 clip.start，在时间轴上却从累加时长处开始）
+        let tlStart = max(0, Double(offset - ins) / pps)
+        let tlEnd = Double(offset + width - ins) / pps
+        var assetLow = Double.greatestFiniteMagnitude
+        var assetHigh = -Double.greatestFiniteMagnitude
+        var cursor = 0.0
+        for clip in clips {
+            let slotStart = cursor
+            let slotEnd = cursor + clip.duration
+            cursor = slotEnd
+            let from = max(tlStart, slotStart)
+            let to = min(tlEnd, slotEnd)
+            guard to > from else { continue }
+            assetLow = min(assetLow, clip.start + (from - slotStart))
+            assetHigh = max(assetHigh, clip.start + (to - slotStart))
+        }
+        visibleStartTime = assetHigh > assetLow ? assetLow : tlStart
+        visibleEndTime = assetHigh > assetLow ? assetHigh : tlEnd
         requestFilmstrip()
     }
 
@@ -189,11 +197,6 @@ final class MacEditorModel: ObservableObject {
 
     /// 缩略图间隔变化时清缓存，然后防抖 200ms 补齐可视窗口内缺失的帧
     private func requestFilmstrip() {
-        let desired = desiredThumbnailInterval
-        if desired != thumbnailInterval {
-            thumbnailInterval = desired
-            filmstrip = [:]
-        }
         filmstripGenerationID += 1
         let id = filmstripGenerationID
         filmstripTask?.cancel()
@@ -209,9 +212,9 @@ final class MacEditorModel: ObservableObject {
     /// 这里自己开关容差，不能用 core 那张「无限容差取最近关键帧」的流式接口，
     /// 否则长 GOP 的视频会整条胶片都变成同一帧。
     private func generateFilmstrip(generationID: Int) async {
-        guard let source, assetDuration > 0.1, timelineViewportWidth > 1, zoomPPS > 0 else { return }
+        guard let source, assetDuration > 0.1, timelineViewportWidth > 1 else { return }
         let interval = thumbnailInterval
-        let margin = max(2 * Double(timelineViewportWidth) / zoomPPS, 5)
+        let margin = max(2 * Double(timelineViewportWidth) / pps, 5)
         let startT = max(0, visibleStartTime - margin)
         let endT = min(assetDuration, visibleEndTime + margin)
         let first = Int(floor(startT / interval))
@@ -751,9 +754,8 @@ struct MacEditorView: View {
                     pixelsPerSecond: Double(model.pixelsPerSecond),
                     scrollOffset: $timelineOffset,
                     onSeek: { model.seek(to: $0) },
-                    onZoom: {
-                        model.setZoom($0)
-                        model.updateVisibleWindow(offset: timelineOffset)
+                    onSetThumbnailInterval: { interval in
+                        model.setThumbnailInterval(interval)
                     },
                     onViewportChange: { width in
                         timelineWidth = width
@@ -833,10 +835,10 @@ struct MacEditorView: View {
             Spacer(minLength: 0)
 
             MacToolIconButton(title: "时间轴缩小", icon: "minus.magnifyingglass", enabled: model.canZoomOut) {
-                zoomTimeline(multiplying: 1 / 1.3)
+                zoomTimeline(zoomIn: false)
             }
             MacToolIconButton(title: "时间轴放大", icon: "plus.magnifyingglass", enabled: model.canZoomIn) {
-                zoomTimeline(multiplying: 1.3)
+                zoomTimeline(zoomIn: true)
             }
         }
     }
@@ -924,15 +926,19 @@ struct MacEditorView: View {
 
     // MARK: - 动作
 
-    /// V2.7.2：按钮档位式缩放（每次 ×1.3 / ÷1.3），以播放指针为锚点——
+    /// V2.7.6：按钮档位式缩放（放大一档分母 ×1.5、缩小一档间隔 ×2，由模型执行），以播放指针为锚点——
     /// 缩放前后指针在屏上的位置不动，同时把偏移夹进新内容范围。
-    private func zoomTimeline(multiplying factor: Double) {
+    private func zoomTimeline(zoomIn: Bool) {
         let t = model.currentTime
         let oldPPS = model.pixelsPerSecond
         let oldInset = timelineInset(pps: oldPPS)
         let anchorX = oldInset + CGFloat(t) * oldPPS - timelineOffset
 
-        factor > 1 ? model.zoomIn() : model.zoomOut()
+        if zoomIn {
+            model.zoomIn()
+        } else {
+            model.zoomOut()
+        }
 
         let newPPS = model.pixelsPerSecond
         let newInset = timelineInset(pps: newPPS)
