@@ -162,11 +162,8 @@ struct MacTimelineView: View {
     /// 以播放指针为锚点缩放：指针在屏上的位置保持不动
     private func applyZoom(multiplying factor: Double, width: CGFloat) {
         guard factor > 0, factor.isFinite else { return }
-        // 放大 = 间隔变小（分母 ×1.5）；缩小 = 间隔变大（×2）；上下限落在 [1/30s, 15s]
-        let newInterval = min(
-            max(thumbnailInterval / factor, MacEditorModel.minThumbnailInterval),
-            MacEditorModel.maxThumbnailInterval
-        )
+        // 放大 = 间隔变小（分母 ×1.5）；缩小 = 间隔变大（×2）；下限 1/30s，上限由模型按 t/4 夹住
+        let newInterval = max(thumbnailInterval / factor, MacEditorModel.minThumbnailInterval)
         guard abs(newInterval - thumbnailInterval) > 1e-9 else { return }
 
         let anchorTime = currentTime

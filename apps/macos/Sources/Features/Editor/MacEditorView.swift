@@ -31,9 +31,10 @@ final class MacEditorModel: ObservableObject {
     /// 时间轴胶片（V2.7.4）：缩略图缓存，key = 槽位序号，覆盖时间 = 序号 × thumbnailInterval。
     /// 只生成/保留可视窗口附近的槽位，缩放档位变化时清空重建。
     @Published private(set) var filmstrip: [Int: CGImage] = [:]
-    /// 当前缩略图间隔（秒）：V2.7.6 起它是时间轴缩放的唯一状态——
-    /// 默认 3.75s（60/16，1 分钟 16 张），放大每档分母 ×1.5，缩小每档间隔 ×2，范围 [1/30s, 15s]
-    @Published private(set) var thumbnailInterval: Double = MacEditorModel.defaultThumbnailInterval
+    /// 缩放档位：0 = 默认（整段 t 秒取 16 张，间隔 t/16），＋1 档分母 ×1.5，－1 档间隔 ×2（t/8、t/4）
+    @Published private(set) var zoomLevel: Double = 0
+    /// 胶片缓存对应的间隔，间隔一变就整块作废
+    private var filmstripInterval = 0.0
 
     private var asset: AVURLAsset?
     private var assetDuration: Double = 0
@@ -73,37 +74,72 @@ final class MacEditorModel: ObservableObject {
 
     /// 正方形缩略图边长（= 轨道高度，MacTimelineView 的 trackHeight 用同一个常量）
     static let thumbnailSide: Double = 87
-    /// 默认间隔：60/16 = 3.75s，即 1 分钟正好取 16 张
-    static let defaultThumbnailInterval: Double = 3.75
-    /// 最密：1/30s，即每秒 30 帧——到这一档就能逐帧点选
-    static let minThumbnailInterval: Double = 1.0 / 30
-    /// 最稀：15s，即 1 分钟 4 张，时间轴最窄的一档
-    static let maxThumbnailInterval: Double = 15
-    /// 放大一档：分母 ×1.5（16→24→36→54…）；缩小一档：间隔 ×2（16→8→4）
-    static let zoomInStep: Double = 1.5
+    /// 默认档：整段 t 秒取 16 张，即每 t/16 秒一张（从第一帧起算）
+    static let thumbnailsAtDefault: Double = 16
+    /// 缩小一档间隔 ×2：t/8、t/4（t/4 已是最小宽度）
     static let zoomOutStep: Double = 2
+    static let maxZoomOutLevels: Double = 2
+    /// 放大一档按「当前档位 × 1.5」继续缩：t/(16·1.5)、t/(16·1.5²)…
+    static let zoomInStep: Double = 1.5
+    /// 最密：1/30s，即每秒 30 帧——到这一档就是极限
+    static let minThumbnailInterval: Double = 1.0 / 30
 
     /// 时间轴可视宽度（由 MacTimelineView 上报，用于算可视窗口与内容落点）
     var timelineViewportWidth: CGFloat = 0
+
+    /// 默认间隔：整段时长除以 16
+    var baseThumbnailInterval: Double {
+        max(outputDuration / Self.thumbnailsAtDefault, Self.minThumbnailInterval)
+    }
+
+    /// 当前间隔（秒）：由档位和整段时长算出来，不单独存，避免裁完片段后还留着旧时长的间隔
+    var thumbnailInterval: Double {
+        let base = baseThumbnailInterval
+        let raw: Double
+        if zoomLevel >= 0 {
+            raw = base / pow(Self.zoomInStep, zoomLevel)
+        } else {
+            raw = base * pow(Self.zoomOutStep, -zoomLevel)
+        }
+        return min(max(raw, Self.minThumbnailInterval), base * pow(Self.zoomOutStep, Self.maxZoomOutLevels))
+    }
 
     /// 每秒像素由间隔反推：一张正方形缩略图正好占一个间隔的宽度，胶片才严丝合缝
     var pixelsPerSecond: CGFloat { CGFloat(Self.thumbnailSide / thumbnailInterval) }
     private var pps: Double { Self.thumbnailSide / thumbnailInterval }
 
     var canZoomIn: Bool { thumbnailInterval > Self.minThumbnailInterval + 1e-9 }
-    var canZoomOut: Bool { thumbnailInterval < Self.maxThumbnailInterval - 1e-9 }
+    var canZoomOut: Bool { zoomLevel > -Self.maxZoomOutLevels + 1e-6 }
 
-    /// 唯一缩放入口：档位与捏合都走这里，夹进 [1/30s, 15s]
-    func setThumbnailInterval(_ value: Double) {
-        let clamped = min(max(value, Self.minThumbnailInterval), Self.maxThumbnailInterval)
-        guard abs(clamped - thumbnailInterval) > 1e-9 else { return }
-        thumbnailInterval = clamped
-        filmstrip = [:]   // 间隔变了，旧槽位全部失效
+    /// 唯一缩放入口：档位与捏合都走这里
+    func setZoomLevel(_ level: Double) {
+        let base = baseThumbnailInterval
+        var lv = min(max(level, -Self.maxZoomOutLevels), 0)
+        if level > 0 {
+            // 放大到 1/30s 就是极限，档位再高也夹住
+            let ceiling = base > Self.minThumbnailInterval
+                ? log(base / Self.minThumbnailInterval) / log(Self.zoomInStep)
+                : 0
+            lv = min(level, ceiling)
+        }
+        guard abs(lv - zoomLevel) > 1e-6 else { return }
+        zoomLevel = lv
         updateVisibleWindow(offset: timelineScrollOffset)
     }
 
-    func zoomIn() { setThumbnailInterval(thumbnailInterval / Self.zoomInStep) }
-    func zoomOut() { setThumbnailInterval(thumbnailInterval * Self.zoomOutStep) }
+    /// 捏合手势给的是间隔本身，换算回档位
+    func setThumbnailInterval(_ value: Double) {
+        let base = baseThumbnailInterval
+        guard value > 0, base > 0 else { return }
+        let level = value <= base
+            ? log(base / value) / log(Self.zoomInStep)
+            : -log(value / base) / log(Self.zoomOutStep)
+        setZoomLevel(level)
+    }
+
+    func zoomIn() { setZoomLevel(zoomLevel + 1) }
+    func zoomOut() { setZoomLevel(zoomLevel - 1) }
+    func resetZoom() { setZoomLevel(0) }
 
     // MARK: - 载入
 
@@ -152,9 +188,10 @@ final class MacEditorModel: ObservableObject {
         }
         rebuildComposition(preserveTime: 0)
         player.isMuted = isMuted
-        // V2.7.4：换素材后按新档位重建缩略图（可视窗口由视图上报，这里先用当前值触发一次）
+        // 换素材：缩放到默认档（整段 16 张），胶片整块作废后重建
         filmstrip = [:]
-        thumbnailInterval = Self.defaultThumbnailInterval
+        filmstripInterval = 0
+        zoomLevel = 0
         updateVisibleWindow(offset: timelineScrollOffset)
     }
 
@@ -165,6 +202,12 @@ final class MacEditorModel: ObservableObject {
         timelineScrollOffset = offset
         let width = timelineViewportWidth
         guard width > 1, outputDuration > 0.1 else { return }
+        // 间隔变了（缩放档位或整段时长变化），旧槽位全部失效
+        let interval = thumbnailInterval
+        if abs(interval - filmstripInterval) > 1e-9 {
+            filmstrip = [:]
+            filmstripInterval = interval
+        }
         let ins = timelineInset(pps: pps)
         // 时间轴可视窗口 -> 素材时间窗口（片段的素材入点是 clip.start，在时间轴上却从累加时长处开始）
         let tlStart = max(0, Double(offset - ins) / pps)
@@ -226,8 +269,14 @@ final class MacEditorModel: ObservableObject {
         let asset = self.asset ?? AVURLAsset(url: source.url)
         var times: [NSValue] = []
         var indexByKey: [String: Int] = [:]
+        let lastSlot = last - 1
         for slot in slots {
-            let time = CMTime(seconds: Double(slot) * interval, preferredTimescale: 1800)
+            // 最后一格：整段除不尽时按视频末帧补，避免尾部出现空格
+            var seconds = Double(slot) * interval
+            if slot == lastSlot, seconds > assetDuration - 0.05 {
+                seconds = max(assetDuration - 0.04, 0)
+            }
+            let time = CMTime(seconds: seconds, preferredTimescale: 1800)
             indexByKey["\(time.value)-\(time.timescale)"] = slot
             times.append(NSValue(time: time))
         }
