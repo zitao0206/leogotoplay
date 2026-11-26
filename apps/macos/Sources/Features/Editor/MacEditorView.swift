@@ -53,7 +53,7 @@ final class MacEditorModel: ObservableObject {
     @Published var canUndo = false
     /// 时间轴胶片（V2.7.4）：缩略图缓存，key 带片段 id（多素材时间轴同一秒可能来自不同素材）
     @Published private(set) var filmstrip: [MacFilmKey: CGImage] = [:]
-    /// 缩放档位：0 = 默认（整段 t 秒取 16 张，间隔 t/16），＋1 档分母 ×1.5，－1 档间隔 ×2（t/8、t/4）
+    /// 缩放档位：0 = 默认（整段 t 秒取 8 张，间隔 t/8），＋1 档分母 ×1.5，－1 档间隔 ×2（t/4、t/2）
     @Published private(set) var zoomLevel: Double = 0
     /// 胶片缓存对应的间隔，间隔一变就整块作废
     private var filmstripInterval = 0.0
@@ -129,9 +129,9 @@ final class MacEditorModel: ObservableObject {
 
     /// 正方形缩略图边长（= 轨道高度，MacTimelineView 的 trackHeight 用同一个常量）
     static let thumbnailSide: Double = 87
-    /// 默认档：整段 t 秒取 16 张，即每 t/16 秒一张（从第一帧起算）
-    static let thumbnailsAtDefault: Double = 16
-    /// 缩小一档间隔 ×2：t/8、t/4（t/4 已是最小宽度）
+    /// 默认档：整段 t 秒取 8 张，即每 t/8 秒一张（从第一帧起算）
+    static let thumbnailsAtDefault: Double = 8
+    /// 缩小一档间隔 ×2：t/4、t/2（t/2 已是最小密度；再放大仍按 1.5 递进，逻辑不变）
     static let zoomOutStep: Double = 2
     static let maxZoomOutLevels: Double = 2
     /// 剪辑后为了保持「每秒像素不变」允许停到更稀的档位（界面上的缩小按钮仍只到 2 档）

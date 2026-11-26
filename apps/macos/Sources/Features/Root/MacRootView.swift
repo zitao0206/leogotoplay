@@ -4,8 +4,9 @@ import LeogotoPlayCore
 /// 侧栏分区：对应 iOS 的三个 Tab（Cut / List / Mine），桌面端以侧栏 + 主区域呈现。
 /// V1.0：导航条目统一按 Cut / List / Mine 命名（与 iOS Tab 同名），侧栏底部不再显示登录状态。
 enum MacSection: String, CaseIterable, Identifiable {
-    case cut
+    // V2.8.12：首页分区顺序改为 List（素材库）→ Cut（剪辑台）→ Mine
     case library
+    case cut
     case mine
 
     var id: String { rawValue }
