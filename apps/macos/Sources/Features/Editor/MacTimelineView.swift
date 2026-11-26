@@ -25,11 +25,12 @@ struct MacTimelineView: View {
     let onSetThumbnailInterval: (Double) -> Void
     /// 上报可视宽度，供模型计算缩放下限
     let onViewportChange: (CGFloat) -> Void
+    /// 点轨道外的空白带（不是刻度尺、也不是片段）时取消选中
+    let onDeselect: () -> Void
 
     private let trackHeight: CGFloat = CGFloat(MacEditorModel.thumbnailSide)
     /// 缩放空间余量：内容放得下时两端各留的滑动距离（放不下时用满）
     static let sideInset: CGFloat = 100
-    private let handleWidth: CGFloat = 8
     private let clipGap: CGFloat = 2
     private let rulerHeight: CGFloat = 26
     /// 底部拖动条区域总高（6 间距 + 10 条 + 2 底边距）
@@ -79,6 +80,7 @@ struct MacTimelineView: View {
                     // V2.7.6：轨道上方的空白带可以直接拖拽平移时间轴
                     Color.clear.frame(height: trackTopGap)
                         .contentShape(Rectangle())
+                        .simultaneousGesture(TapGesture().onEnded { onDeselect() })
                         .gesture(panGesture(offset: offset, maxOffset: maxOffset))
                         .onHover { inside in
                             if inside {
@@ -97,6 +99,7 @@ struct MacTimelineView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .frame(minHeight: 6)
                         .contentShape(Rectangle())
+                        .simultaneousGesture(TapGesture().onEnded { onDeselect() })
                         .gesture(panGesture(offset: offset, maxOffset: maxOffset))
                         .onHover { inside in
                             if inside {
@@ -279,8 +282,6 @@ struct MacTimelineView: View {
     }
 
     private func clipBlock(_ clip: MacClip, index: Int, timelineStart: Double, visibleRange: ClosedRange<Double>) -> some View {
-        let isFirstClip = timelineStart <= 0.001
-        let isLastClip = timelineStart + clip.duration >= duration - 0.001
         let width = max(CGFloat(clip.duration) * pps, 6)
         let selected = index == selectedIndex
         let drawWidth = max(width - (index == 0 ? 0 : clipGap / 2), 4)
@@ -297,15 +298,6 @@ struct MacTimelineView: View {
                     lineWidth: selected ? 3 : 1
                 )
 
-            if selected {
-                // V2.7.8：时间轴首尾那两端的把手挂在片段外侧（内侧边缘压在 0.00 / 片段边界上，不压画面）；
-                // 中间的片段相邻处仍收在片段内，避免两段把手叠成一坨白块
-                handle(roundedOnLeft: true)
-                    .offset(x: isFirstClip ? -handleWidth : 0, y: 0)
-                handle(roundedOnLeft: false)
-                    .offset(x: isLastClip ? drawWidth : drawWidth - handleWidth, y: 0)
-            }
-
             if drawWidth > 64 {
                 Text("片段 \(index + 1) · \(clip.duration.timecode)")
                     .font(.system(size: 10, weight: .semibold).monospacedDigit())
@@ -319,24 +311,6 @@ struct MacTimelineView: View {
         }
         .frame(width: drawWidth, height: trackHeight, alignment: .topLeading)
         .allowsHitTesting(false)
-    }
-
-    /// 选中段的夹持把手：白色圆角块 + 中间一根深色竖条（与 iOS 端同款）
-    private func handle(roundedOnLeft: Bool) -> some View {
-        UnevenRoundedRectangle(
-            topLeadingRadius: roundedOnLeft ? 6 : 0,
-            bottomLeadingRadius: roundedOnLeft ? 6 : 0,
-            bottomTrailingRadius: roundedOnLeft ? 0 : 6,
-            topTrailingRadius: roundedOnLeft ? 0 : 6,
-            style: .continuous
-        )
-        .fill(Color.white)
-        .frame(width: handleWidth, height: trackHeight)
-        .overlay(
-            Capsule()
-                .fill(Color.black.opacity(0.55))
-                .frame(width: 4, height: 32)
-        )
     }
 
     // MARK: - 逐帧胶片（V2.7.4：密度随缩放档位，只渲染可视窗口；V2.7.5：缩略图为正方形）

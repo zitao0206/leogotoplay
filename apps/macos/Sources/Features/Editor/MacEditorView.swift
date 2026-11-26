@@ -474,11 +474,14 @@ final class MacEditorModel: ObservableObject {
         guard !clips.isEmpty else { return nil }
         var cursor = 0.0
         for (index, clip) in clips.enumerated() {
-            if outputTime < cursor + clip.duration || index == clips.count - 1 {
+            let end = cursor + clip.duration
+            // 播放头正好压在片段交界（例如刚切完）时归右侧片段：
+            // 切割后默认选中右边那一段，左侧自动变非选中
+            if outputTime < end - 1e-6 || index == clips.count - 1 {
                 let local = min(max(outputTime - cursor, 0), clip.duration)
                 return (index, clip.start + local)
             }
-            cursor += clip.duration
+            cursor = end
         }
         return nil
     }
@@ -887,6 +890,9 @@ struct MacEditorView: View {
                         timelineWidth = width
                         model.timelineViewportWidth = width
                         model.updateVisibleWindow(offset: timelineOffset)
+                    },
+                    onDeselect: {
+                        model.isClipSelected = false
                     }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
