@@ -143,7 +143,7 @@ struct MacCutView: View {
                     .foregroundStyle(.white)
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 17)
+            .padding(.vertical, 27)
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
@@ -156,7 +156,7 @@ struct MacCutView: View {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [MacTheme.accent.opacity(0.20), MacTheme.accent.opacity(0.05)],
+                            colors: [MacTheme.accent.opacity(0.13), MacTheme.accent.opacity(0.03)],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
@@ -165,7 +165,7 @@ struct MacCutView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(MacTheme.accent.opacity(0.30), lineWidth: 1)
+                .stroke(MacTheme.accent.opacity(0.22), lineWidth: 1)
         )
     }
 
