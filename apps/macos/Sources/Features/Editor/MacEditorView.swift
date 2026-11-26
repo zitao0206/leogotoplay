@@ -968,6 +968,16 @@ struct MacEditorView: View {
 
     // MARK: - 顶栏
 
+    /// 点空白处：素材选中态、时间轴片段选中态一起清掉
+    private func clearSelections() {
+        if !selectedMaterialIDs.isEmpty {
+            selectedMaterialIDs.removeAll()
+        }
+        if model.isClipSelected {
+            model.isClipSelected = false
+        }
+    }
+
     private var header: some View {
         HStack(spacing: 12) {
             Text(model.title)
@@ -998,6 +1008,8 @@ struct MacEditorView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .onTapGesture { clearSelections() }
     }
 
     // MARK: - 左栏
@@ -1070,7 +1082,7 @@ struct MacEditorView: View {
         .background(
             MacTheme.surface
                 .contentShape(Rectangle())
-                .onTapGesture { selectedMaterialIDs.removeAll() }
+                .onTapGesture { clearSelections() }
         )
     }
 
@@ -1212,6 +1224,7 @@ struct MacEditorView: View {
                     pixelsPerSecond: Double(model.pixelsPerSecond),
                     scrollOffset: $timelineOffset,
                     onSeek: { time in
+                        selectedMaterialIDs.removeAll()
                         model.isClipSelected = true
                         model.seek(to: time)
                     },
@@ -1250,7 +1263,7 @@ struct MacEditorView: View {
         .background(
             MacTheme.canvas
                 .contentShape(Rectangle())
-                .onTapGesture { model.isClipSelected = false }
+                .onTapGesture { clearSelections() }
         )
     }
 
@@ -1408,6 +1421,8 @@ struct MacEditorView: View {
     private var canvas: some View {
         ZStack {
             Color.black
+                .contentShape(Rectangle())
+                .onTapGesture { clearSelections() }
             if model.hasClips {
                 MacPlayerSurface(player: model.player)
             } else {
@@ -1419,6 +1434,7 @@ struct MacEditorView: View {
                         .font(.callout)
                         .foregroundStyle(Color.white.opacity(0.4))
                 }
+                .onTapGesture { clearSelections() }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
