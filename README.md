@@ -106,6 +106,16 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - 整段除不尽时，最后一格的取帧时间夹到视频末帧（`assetDuration - 0.04`），尾部不会再留空槽位。
 - 缩放状态从「绝对间隔」改成「档位 `zoomLevel`」，间隔由档位和当前整段时长实时算出来：裁完片段后密度自动按新时长重算，不会留着旧时长的间隔；间隔一变胶片缓存整块作废重建。
 
+### Mac-V2.8.6 · 项目化编辑（最近编辑保留现场 + 素材拖入时间轴 + 换序 + 统一导出）
+
+- 编辑页从「一条素材 + 若干片段」升级成「一个项目 + 多条素材」：新增项目存档层 `MacProjectStore`，落盘在 `~/Library/Application Support/LeogotoPlay/` —— `projects.json` 存项目索引（标题 / 素材表 / 片段表 / 静音 / 播放头 / 缩放档，按更新时间倒序），`Projects/<项目 id>/` 存拷进来的素材文件，`ProjectThumbs/<素材 id>.jpg` 存首帧封面。`MacClip` 多一个 `sourceID` 指回所属素材。
+- 「最近编辑」改成项目卡片 `MacRecentProjectCard`：封面取第一条素材的首帧，左上角角标「N 段」，右下角总时长，底部标题 + 「现场 · X 前」，右键「继续编辑 / 删除」，区块右上角计数「N 个项目」。点卡片按项目 id 打开（同一项目只开一个窗口），编辑页把素材表和片段表整份还原：素材墙、时间轴顺序、总时长、播放头全在。
+- 素材不再「导入就上轨」：`添加视频` / 拖本地文件只把文件进左侧素材列表（同时拷进项目目录，不再用临时目录，重启不丢），时间轴保持原样并提示「把左侧素材拖到这条时间轴上…」。
+- 拖拽上轨：素材 cell 改成手势 + `.onDrag`（以前是 Button，按下就吃掉拖拽起不来），载荷 `mat:<id>|<id>...`，⌘ 多选后一次把整组按列表顺序拖进去；时间轴接 `MacTimelineDropDelegate` 读落点 x 换算插入下标，空时间轴也能直接接住。拖多条就依次排开，总时长累加。
+- 换序：时间轴上的片段块自己也能拖（载荷 `clip:<id>`），松手按落点算插入下标走 `moveClip(id:toInsertionIndex:)`，片段块保持点击功能不动（`SpatialTapGesture` 管定位，拖动手势管换序）。
+- 导出按时间轴统一导出：`makeComposition(includeAudio:)` 依片段顺序跨素材拼一条 composition，播放和导出共用同一条；静音导出干脆不挂音轨（`VideoExporter` 补一个不带 audioMix 的 `export(composition:quality:progressHandler:)` 重载）。实测两条素材（158.333s + 1s）导出成片 159.333s。
+- 空时间轴不再被放大到极限：`appendMaterials` 记 `wasEmpty`，空轨用默认档，非空才 `keepScale`。
+
 ### Mac-V2.8.5 · 编辑页素材列表（正方形 cell + 首帧缩略图 + 添加 / 删除）
 
 - 编辑页素材区回到卡片墙的样式：每个素材是 128pt 正方形 cell（整格是按钮），右上角记时长，下面一行标题，末尾跟一个虚线「添加视频」格。

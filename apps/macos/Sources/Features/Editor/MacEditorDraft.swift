@@ -1,16 +1,29 @@
+import AppKit
+import AVFoundation
 import Foundation
+import LeogotoPlayCore
 
-/// 时间轴上的一个片段：源视频里的 [start, end] 区间。
+/// 时间轴上的一个片段：某条素材里的 [start, end] 区间。
+/// V2.8.6 起时间轴上可以有多条素材，片段用 sourceID 指回项目素材。
 struct MacClip: Codable, Equatable, Identifiable {
     var id: UUID = UUID()
+    /// 素材（MacProjectMaterial / MacProjectMaterialFile 的 id）
+    var sourceID: UUID?
     var start: Double
     var end: Double
 
     var duration: Double { max(0, end - start) }
 }
 
-/// macOS 剪辑草稿：离开剪辑页时把片段表（时间轴现场）和静音状态留在本机。
-/// 只有素材库里的视频才有草稿（从文件临时导入的片子没有稳定 id，存不住）。
+/// 缩略图槽位键（V2.8.6）：多素材时间轴里同一秒可能来自不同素材，
+/// 所以缓存键必须带上片段 id，不能只按素材时间算槽位。
+struct MacFilmKey: Hashable {
+    var clipID: UUID
+    var slot: Int
+}
+
+/// macOS 剪辑草稿：V2.0~V2.8.5 的单素材现场（按素材库视频 id 存）。
+/// V2.8.6 起现场改成整项目的 MacProjectRecord，这份只留着读旧数据做迁移。
 struct MacEditorDraft: Codable, Equatable {
     var clips: [MacClip]
     var isMuted: Bool
@@ -99,5 +112,216 @@ enum MacEditorDraftStore {
         var drafts = all()
         drafts.removeValue(forKey: key(for: videoID))
         write(drafts)
+    }
+}
+
+// MARK: - 项目存档（V2.8.6：多素材时间轴 + 最近编辑保留现场）
+
+/// 项目里的一条素材。`fileName` 相对 `Projects/<项目 id>/`；以 `/` 开头的表示直接引用原路径
+/// （从素材库视频进来的素材不复制文件）。
+struct MacProjectMaterialFile: Codable, Equatable, Identifiable {
+    var id: UUID
+    var fileName: String
+    var title: String
+    var duration: Double
+}
+
+/// 一个剪辑项目的完整现场：素材清单 + 时间轴片段 + 播放状态。
+struct MacProjectRecord: Codable, Equatable, Identifiable {
+    var id: UUID
+    var title: String
+    var createdAt: Date
+    var updatedAt: Date
+    var materials: [MacProjectMaterialFile]
+    var clips: [MacClip]
+    var isMuted: Bool
+    var currentTime: Double?
+    var zoomLevel: Double?
+
+    var outputDuration: Double { clips.reduce(0) { $0 + $1.duration } }
+
+    /// 首条素材的 id（最近编辑卡片用它找缩略图）
+    var coverMaterialID: UUID? { materials.first?.id }
+}
+
+enum MacProjectStore {
+    private static var dataRoot: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
+        return base.appendingPathComponent("LeogotoPlay", isDirectory: true)
+    }
+
+    static var projectsRoot: URL { dataRoot.appendingPathComponent("Projects", isDirectory: true) }
+    static var thumbsRoot: URL { dataRoot.appendingPathComponent("ProjectThumbs", isDirectory: true) }
+    private static var indexURL: URL { dataRoot.appendingPathComponent("projects.json") }
+
+    private static func ensureDirectories() {
+        let fm = FileManager.default
+        for dir in [dataRoot, projectsRoot, thumbsRoot] where !fm.fileExists(atPath: dir.path) {
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+    }
+
+    static func directory(for projectID: UUID) -> URL {
+        projectsRoot.appendingPathComponent(projectID.uuidString, isDirectory: true)
+    }
+
+    static func materialURL(for file: MacProjectMaterialFile, projectID: UUID) -> URL {
+        if file.fileName.hasPrefix("/") {
+            return URL(fileURLWithPath: file.fileName)
+        }
+        return directory(for: projectID).appendingPathComponent(file.fileName)
+    }
+
+    static func thumbnailURL(for materialID: UUID) -> URL {
+        thumbsRoot.appendingPathComponent("\(materialID.uuidString).jpg")
+    }
+
+    // MARK: 索引
+
+    static func projects() -> [MacProjectRecord] {
+        guard let data = try? Data(contentsOf: indexURL),
+              let list = try? JSONDecoder().decode([MacProjectRecord].self, from: data)
+        else { return [] }
+        return list.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// 最近编辑只展示真正动过时间轴的项目
+    static func recentProjects() -> [MacProjectRecord] {
+        projects().filter { !$0.clips.isEmpty }
+    }
+
+    static func project(id: UUID) -> MacProjectRecord? {
+        projects().first { $0.id == id }
+    }
+
+    /// 已经在剪的素材库视频（同一个文件只开一个项目）
+    static func project(referencingFileAt path: String) -> MacProjectRecord? {
+        projects().first { $0.materials.contains { $0.fileName == path } }
+    }
+
+    static func save(_ record: MacProjectRecord) {
+        ensureDirectories()
+        var list = projects()
+        var updated = record
+        updated.updatedAt = Date()
+        if let index = list.firstIndex(where: { $0.id == record.id }) {
+            list[index] = updated
+        } else {
+            list.append(updated)
+        }
+        guard let data = try? JSONEncoder().encode(list) else { return }
+        try? data.write(to: indexURL)
+    }
+
+    static func remove(_ projectID: UUID) {
+        var list = projects()
+        let materials = list.first { $0.id == projectID }?.materials ?? []
+        list.removeAll { $0.id == projectID }
+        if let data = try? JSONEncoder().encode(list) {
+            try? data.write(to: indexURL)
+        }
+        try? FileManager.default.removeItem(at: directory(for: projectID))
+        for material in materials {
+            try? FileManager.default.removeItem(at: thumbnailURL(for: material.id))
+        }
+    }
+
+    // MARK: 新建
+
+    static func newBlankProject() -> MacProjectRecord {
+        MacProjectRecord(
+            id: UUID(),
+            title: "未命名项目",
+            createdAt: Date(),
+            updatedAt: Date(),
+            materials: [],
+            clips: [],
+            isMuted: false,
+            currentTime: nil,
+            zoomLevel: nil
+        )
+    }
+
+    /// 素材库视频进剪辑：一条引用原文件的素材；旧单素材草稿迁移成片段表
+    static func newProject(libraryFile url: URL, title: String, videoID: UUID) -> MacProjectRecord {
+        let duration = MacEditorDraftStore.draft(for: videoID)?.clips.reduce(0) { $0 + $1.duration } ?? 0
+        let material = MacProjectMaterialFile(
+            id: videoID,
+            fileName: url.path,
+            title: title,
+            duration: duration
+        )
+        var clips: [MacClip] = []
+        if let draft = MacEditorDraftStore.draft(for: videoID), !draft.clips.isEmpty {
+            clips = draft.clips.map { MacClip(sourceID: videoID, start: $0.start, end: $0.end) }
+        } else {
+            clips = [MacClip(sourceID: videoID, start: 0, end: duration)]
+        }
+        return MacProjectRecord(
+            id: UUID(),
+            title: title,
+            createdAt: Date(),
+            updatedAt: Date(),
+            materials: [material],
+            clips: clips,
+            isMuted: MacEditorDraftStore.draft(for: videoID)?.isMuted ?? false,
+            currentTime: MacEditorDraftStore.draft(for: videoID)?.currentTime,
+            zoomLevel: MacEditorDraftStore.draft(for: videoID)?.zoomLevel
+        )
+    }
+
+    // MARK: 素材文件
+
+    /// 导入一条本地视频到项目目录（拷文件、取时长、顺手存一张首帧缩略图）
+    static func importMaterial(from url: URL, into projectID: UUID) async throws -> MacProjectMaterialFile {
+        ensureDirectories()
+        let dir = directory(for: projectID)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        let id = UUID()
+        let ext = url.pathExtension.isEmpty ? "mp4" : url.pathExtension
+        let fileName = "\(id.uuidString).\(ext)"
+        let destination = dir.appendingPathComponent(fileName)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try? FileManager.default.removeItem(at: destination)
+        }
+        try FileManager.default.copyItem(at: url, to: destination)
+
+        let title = url.deletingPathExtension().lastPathComponent
+        let duration = await VideoImporter.duration(of: destination)
+        ensureThumbnail(for: id, url: destination)
+        return MacProjectMaterialFile(id: id, fileName: fileName, title: title, duration: duration)
+    }
+
+    // MARK: 缩略图（首帧）
+
+    static func thumbnail(for materialID: UUID) -> NSImage? {
+        guard let image = NSImage(contentsOf: thumbnailURL(for: materialID)) else { return nil }
+        return image
+    }
+
+    static func writeThumbnail(_ image: CGImage, for materialID: UUID) {
+        ensureDirectories()
+        let rep = NSBitmapImageRep(cgImage: image)
+        guard let data = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.72]) else { return }
+        try? data.write(to: thumbnailURL(for: materialID))
+    }
+
+    /// 没有缩略图就补一张首帧（异步，失败就算了）
+    static func ensureThumbnail(for materialID: UUID, url: URL) {
+        guard !FileManager.default.fileExists(atPath: thumbnailURL(for: materialID).path) else { return }
+        Task.detached(priority: .utility) {
+            let asset = AVURLAsset(url: url)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 480, height: 480)
+            generator.requestedTimeToleranceBefore = .zero
+            generator.requestedTimeToleranceAfter = .zero
+            if let frame = try? await generator.image(at: .zero) {
+                writeThumbnail(frame.image, for: materialID)
+            }
+        }
     }
 }

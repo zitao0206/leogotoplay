@@ -1,6 +1,7 @@
 import AVFoundation
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import LeogotoPlayCore
 
 /// 编辑器数据源（macOS）：素材库视频，或从文件导入的视频。
@@ -27,8 +28,16 @@ struct MacProjectMaterial: Identifiable, Equatable {
 }
 
 @MainActor
+
 final class MacEditorModel: ObservableObject {
-    @Published private(set) var source: MacEditorSource?
+    /// 项目 id / 标题（V2.8.6：编辑页的代表从「一条素材」变成「一个项目」）
+    @Published private(set) var projectID: UUID
+    @Published private(set) var title: String
+    /// 项目素材（V2.8.5 起只属于本项目，独立于素材库）
+    @Published private(set) var materials: [MacProjectMaterial] = []
+    /// 素材首帧缩略图
+    @Published private(set) var materialThumbnails: [UUID: CGImage] = [:]
+
     let player = AVPlayer()
 
     @Published var clips: [MacClip] = []
@@ -42,20 +51,24 @@ final class MacEditorModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var exportedURL: URL?
     @Published var canUndo = false
-    /// 时间轴胶片（V2.7.4）：缩略图缓存，key = 槽位序号，覆盖时间 = 序号 × thumbnailInterval。
-    /// 只生成/保留可视窗口附近的槽位，缩放档位变化时清空重建。
-    @Published private(set) var filmstrip: [Int: CGImage] = [:]
+    /// 时间轴胶片（V2.7.4）：缩略图缓存，key 带片段 id（多素材时间轴同一秒可能来自不同素材）
+    @Published private(set) var filmstrip: [MacFilmKey: CGImage] = [:]
     /// 缩放档位：0 = 默认（整段 t 秒取 16 张，间隔 t/16），＋1 档分母 ×1.5，－1 档间隔 ×2（t/8、t/4）
     @Published private(set) var zoomLevel: Double = 0
     /// 胶片缓存对应的间隔，间隔一变就整块作废
     private var filmstripInterval = 0.0
 
-    private var asset: AVURLAsset?
-    private var assetDuration: Double = 0
-    private var videoTrack: AVAssetTrack?
-    private var audioTrack: AVAssetTrack?
-    private var audioTimeRange: CMTimeRange = .zero
-    private var transform: CGAffineTransform = .identity
+    /// 每条素材的轨道（按素材 id 缓存，第一次用到时才读）
+    private struct MaterialTracks {
+        let asset: AVURLAsset
+        let videoTrack: AVAssetTrack?
+        let audioTrack: AVAssetTrack?
+        let audioRange: CMTimeRange
+        let transform: CGAffineTransform
+        let duration: Double
+    }
+    private var materialTracks: [UUID: MaterialTracks] = [:]
+
     private var undoStack: [[MacClip]] = []
     private var timeObserver: Any?
     /// 重建 composition 期间屏蔽播放器的周期回调：新 item 在 seek 完成前会把时间报成 0，
@@ -64,23 +77,37 @@ final class MacEditorModel: ObservableObject {
     private var endObserver: NSObjectProtocol?
     private var filmstripTask: Task<Void, Never>?
     /// 正在生成的槽位（滚动时复用，避免同一批帧被反复请求）
-    private var pendingSlots: Set<Int> = []
+    private var pendingSlots: Set<MacFilmKey> = []
     /// 到货的帧先入缓冲，批量提交给视图，避免一帧一次重绘
-    private var frameBuffer: [Int: CGImage] = [:]
+    private var frameBuffer: [MacFilmKey: CGImage] = [:]
     private var flushTask: Task<Void, Never>?
     private var filmstripGenerator: AVAssetImageGenerator?
     private var filmstripGenerationID = 0
     private var timelineScrollOffset: CGFloat = 0
-    private var visibleStartTime: Double = 0
-    private var visibleEndTime: Double = 0
-    /// 新项目标记（V2.8.2）：从首页「开始编辑」进来的窗口 source 为 nil，
-    /// 之后往里拖素材也不还原这条素材上次的草稿（裁点 / 播放头 / 缩放 / 静音），保证是从头开始的干净项目。
-    /// 从「最近编辑」或素材库带着 source 打开的窗口仍然照常还原草稿。
-    private let restoresDraft: Bool
 
-    init(source: MacEditorSource?) {
-        self.source = source
-        self.restoresDraft = source != nil
+    /// 打开时的现场（load() 里消费）
+    private let pendingClips: [MacClip]
+    private let pendingTime: Double?
+    private let pendingZoom: Double?
+    private let createdAt: Date
+    private var didLoad = false
+
+    init(project: MacProjectRecord) {
+        projectID = project.id
+        title = project.title
+        pendingClips = project.clips
+        pendingTime = project.currentTime
+        pendingZoom = project.zoomLevel
+        createdAt = project.createdAt
+        isMuted = project.isMuted
+        materials = project.materials.map { file in
+            MacProjectMaterial(
+                id: file.id,
+                url: MacProjectStore.materialURL(for: file, projectID: project.id),
+                title: file.title,
+                duration: file.duration
+            )
+        }
         observePlayer()
     }
 
@@ -95,7 +122,8 @@ final class MacEditorModel: ObservableObject {
         filmstripGenerator?.cancelAllCGImageGeneration()
     }
 
-    var hasSource: Bool { source != nil }
+    var hasClips: Bool { !clips.isEmpty }
+    var hasMaterials: Bool { !materials.isEmpty }
 
     // MARK: - 时间轴缩放（V2.7.6：全部由缩略图间隔驱动）
 
@@ -115,7 +143,7 @@ final class MacEditorModel: ObservableObject {
 
     /// 时间轴可视宽度（由 MacTimelineView 上报，用于算可视窗口与内容落点）
     var timelineViewportWidth: CGFloat = 0
-    /// 还原草稿时希望时间轴滚到的播放头时间，视图拿到可视宽度后消费一次
+    /// 还原现场时希望时间轴滚到的播放头时间，视图拿到可视宽度后消费一次
     var restoredScrollTime: Double?
 
     /// 默认间隔：整段时长除以 16
@@ -176,59 +204,173 @@ final class MacEditorModel: ObservableObject {
 
     // MARK: - 载入
 
+    /// 读素材轨道 + 校验时间轴现场 + 还原播放头 / 缩放
     func load() async {
-        guard let source else { return }
-        await open(source)
-    }
-
-    /// 换一条素材：读轨道、还原草稿、重建 composition
-    func open(_ newSource: MacEditorSource) async {
-        pause()
-        source = newSource
+        guard !didLoad else { return }
+        didLoad = true
+        guard !materials.isEmpty || !pendingClips.isEmpty else { return }
         isLoading = true
-        undoStack.removeAll()
-        canUndo = false
-        clips = []
-        outputDuration = 0
-        currentTime = 0
-
-        let asset = AVURLAsset(url: newSource.url)
-        self.asset = asset
-        do {
-            let tracks = try await asset.loadTracks(withMediaType: .video)
-            videoTrack = tracks.first
-            audioTrack = try await asset.loadTracks(withMediaType: .audio).first
-            if let videoTrack {
-                transform = try await videoTrack.load(.preferredTransform)
-            }
-            if let audioTrack {
-                audioTimeRange = try await audioTrack.load(.timeRange)
-            }
-            let cmDuration = try await asset.load(.duration)
-            assetDuration = max(CMTimeGetSeconds(cmDuration), 0.1)
-        } catch {
-            errorMessage = "无法读取这条视频：\(error.localizedDescription)"
-            assetDuration = 0
+        for material in materials {
+            await loadTracks(for: material)
+            loadThumbnail(for: material)
         }
         isLoading = false
 
-        guard assetDuration > 0.1, videoTrack != nil else { return }
-
-        let draft = restoresDraft ? newSource.libraryVideoID.flatMap { MacEditorDraftStore.draft(for: $0) } : nil
-        clips = restoredClips(from: draft)
-        if let draft {
-            isMuted = draft.isMuted
-        }
-        let restoredTime = min(max(draft?.currentTime ?? 0, 0), max(0, clips.reduce(0) { $0 + $1.duration } - 0.02))
-        rebuildComposition(preserveTime: restoredTime)
+        clips = validated(pendingClips)
+        guard !clips.isEmpty else { return }
+        rebuildComposition(preserveTime: pendingTime ?? 0)
         player.isMuted = isMuted
-        // 换素材：胶片整块作废后重建；缩放档位按草稿还原（没有草稿就是默认档）
         filmstrip = [:]
         filmstripInterval = 0
-        setZoomLevel(draft?.zoomLevel ?? 0)
-        // 从「最近编辑」进来时让时间轴滚回上次的位置
-        restoredScrollTime = draft?.currentTime
+        setZoomLevel(pendingZoom ?? 0)
+        restoredScrollTime = pendingTime
         updateVisibleWindow(offset: timelineScrollOffset)
+    }
+
+    private func loadTracks(for material: MacProjectMaterial) async {
+        let asset = AVURLAsset(url: material.url)
+        var duration = max(material.duration, 0.1)
+        if let cmDuration = try? await asset.load(.duration) {
+            duration = max(CMTimeGetSeconds(cmDuration), 0.1)
+        }
+        let video = try? await asset.loadTracks(withMediaType: .video).first
+        let audio = try? await asset.loadTracks(withMediaType: .audio).first
+        var audioRange = CMTimeRange.zero
+        if let audio, let range = try? await audio.load(.timeRange) {
+            audioRange = range
+        }
+        let transform = (try? await video?.load(.preferredTransform)) ?? .identity
+        materialTracks[material.id] = MaterialTracks(
+            asset: asset,
+            videoTrack: video,
+            audioTrack: audio,
+            audioRange: audioRange,
+            transform: transform,
+            duration: duration
+        )
+        if let index = materials.firstIndex(where: { $0.id == material.id }) {
+            materials[index].duration = duration
+        }
+    }
+
+    /// 首帧缩略图：优先用项目目录里缓存的那张，没有就现取并写回
+    private func loadThumbnail(for material: MacProjectMaterial) {
+        if let image = MacProjectStore.thumbnail(for: material.id),
+           let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            materialThumbnails[material.id] = cg
+            return
+        }
+        let id = material.id
+        let url = material.url
+        Task { [weak self] in
+            let asset = AVURLAsset(url: url)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 400, height: 400)
+            generator.requestedTimeToleranceBefore = .zero
+            generator.requestedTimeToleranceAfter = .zero
+            if let frame = try? await generator.image(at: .zero) {
+                MacProjectStore.writeThumbnail(frame.image, for: id)
+                self?.materialThumbnails[id] = frame.image
+            }
+        }
+    }
+
+    // MARK: - 素材
+
+    /// 导入一条本地视频进项目（只进素材列表，不自动上时间轴，等用户拖）
+    @discardableResult
+    func importMaterial(from url: URL) async -> MacProjectMaterial? {
+        do {
+            let file = try await MacProjectStore.importMaterial(from: url, into: projectID)
+            let material = MacProjectMaterial(
+                id: file.id,
+                url: MacProjectStore.materialURL(for: file, projectID: projectID),
+                title: file.title,
+                duration: file.duration
+            )
+            materials.append(material)
+            if title == "未命名项目" { title = file.title }
+            await loadTracks(for: material)
+            loadThumbnail(for: material)
+            persist()
+            return material
+        } catch {
+            errorMessage = "导入失败：\(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    func material(id: UUID) -> MacProjectMaterial? {
+        materials.first { $0.id == id }
+    }
+
+    /// 把素材拖进时间轴：按拖入顺序整段追加（时间轴依次排开）
+    func appendMaterials(_ ids: [UUID]) {
+        let valid = ids.filter { id in
+            materials.contains { $0.id == id } && materialTracks[id]?.videoTrack != nil
+        }
+        guard !valid.isEmpty else { return }
+        // 空时间轴没有「每秒像素」可言，拿来换算档位会算出天价放大，这里单独回默认档
+        let wasEmpty = clips.isEmpty
+        let oldInterval = thumbnailInterval
+        pushUndo()
+        var appended = false
+        for id in valid {
+            guard let duration = materialTracks[id]?.duration, duration > 0.05 else { continue }
+            clips.append(MacClip(sourceID: id, start: 0, end: duration))
+            appended = true
+        }
+        guard appended else {
+            _ = undoStack.popLast()
+            canUndo = !undoStack.isEmpty
+            return
+        }
+        rebuildComposition(preserveTime: currentTime)
+        if wasEmpty {
+            setZoomLevel(0)
+        } else {
+            keepScale(oldInterval)
+        }
+        persist()
+    }
+
+    /// 删素材：连同引用它的片段一起删；素材文件留在项目目录里（只在删项目时清）
+    func removeMaterials(_ ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        materials.removeAll { ids.contains($0.id) }
+        for id in ids {
+            materialTracks[id] = nil
+            materialThumbnails[id] = nil
+        }
+        let touchesTimeline = clips.contains { clip in
+            guard let sourceID = clip.sourceID else { return false }
+            return ids.contains(sourceID)
+        }
+        if touchesTimeline {
+            let oldInterval = thumbnailInterval
+            pushUndo()
+            clips.removeAll { clip in
+                guard let sourceID = clip.sourceID else { return false }
+                return ids.contains(sourceID)
+            }
+            rebuildComposition(preserveTime: currentTime)
+            keepScale(oldInterval)
+        }
+        persist()
+    }
+
+    /// 拖到某个位置：把这一位移到 insertionIndex（插入前的下标）
+    func moveClip(id: UUID, toInsertionIndex insertionIndex: Int) {
+        guard let from = clips.firstIndex(where: { $0.id == id }) else { return }
+        var target = min(max(insertionIndex, 0), clips.count)
+        if from < target { target -= 1 }
+        guard target != from else { return }
+        pushUndo()
+        let clip = clips.remove(at: from)
+        clips.insert(clip, at: min(max(target, 0), clips.count))
+        rebuildComposition(preserveTime: currentTime)
+        persist()
     }
 
     // MARK: - 时间轴缩略图（V2.7.4：密度随缩放档位，只生成可视窗口）
@@ -236,34 +378,13 @@ final class MacEditorModel: ObservableObject {
     /// 视图上报可视窗口变化（滚动 / 缩放 / 窗口尺寸变化后调用），防抖后补帧
     func updateVisibleWindow(offset: CGFloat) {
         timelineScrollOffset = offset
-        let width = timelineViewportWidth
-        guard width > 1, outputDuration > 0.1 else { return }
-        // 间隔变了（缩放档位或整段时长变化），旧槽位全部失效
+        guard timelineViewportWidth > 1, outputDuration > 0.1 else { return }
         let interval = thumbnailInterval
         if abs(interval - filmstripInterval) > 1e-9 {
             filmstripInterval = interval
             requestFilmstrip(resetCache: true)
             return
         }
-        let ins = timelineInset(pps: pps)
-        // 时间轴可视窗口 -> 素材时间窗口（片段的素材入点是 clip.start，在时间轴上却从累加时长处开始）
-        let tlStart = max(0, Double(offset - ins) / pps)
-        let tlEnd = Double(offset + width - ins) / pps
-        var assetLow = Double.greatestFiniteMagnitude
-        var assetHigh = -Double.greatestFiniteMagnitude
-        var cursor = 0.0
-        for clip in clips {
-            let slotStart = cursor
-            let slotEnd = cursor + clip.duration
-            cursor = slotEnd
-            let from = max(tlStart, slotStart)
-            let to = min(tlEnd, slotEnd)
-            guard to > from else { continue }
-            assetLow = min(assetLow, clip.start + (from - slotStart))
-            assetHigh = max(assetHigh, clip.start + (to - slotStart))
-        }
-        visibleStartTime = assetHigh > assetLow ? assetLow : tlStart
-        visibleEndTime = assetHigh > assetLow ? assetHigh : tlEnd
         requestFilmstrip()
     }
 
@@ -292,71 +413,93 @@ final class MacEditorModel: ObservableObject {
     }
 
     /// 只解可视窗口 ± 一屏余量内的槽位；同档位下滚动复用缓存，不重复解码。
-    /// 这里自己开关容差，不能用 core 那张「无限容差取最近关键帧」的流式接口，
-    /// 否则长 GOP 的视频会整条胶片都变成同一帧。
+    /// 多素材（V2.8.6）：每个片段按自己的素材取帧，槽位键带上片段 id。
     private func generateFilmstrip(generationID: Int) async {
-        guard let source, assetDuration > 0.1, timelineViewportWidth > 1 else { return }
+        guard timelineViewportWidth > 1, !clips.isEmpty else { return }
         let interval = thumbnailInterval
-        let margin = max(2 * Double(timelineViewportWidth) / pps, 5)
-        let startT = max(0, visibleStartTime - margin)
-        let endT = min(assetDuration, visibleEndTime + margin)
-        let first = Int(floor(startT / interval))
-        let last = Int(ceil(endT / interval))
-        guard last > first, last - first <= 900 else { return }
-        // 只补「没有缓存、也不在飞行中」的槽位：滚动时同一批帧不会重复取
-        let slots = (first..<last).filter { filmstrip[$0] == nil && !pendingSlots.contains($0) }
-        guard !slots.isEmpty else { return }
-        pendingSlots.formUnion(slots)
+        let viewport = Double(timelineViewportWidth)
+        let margin = max(2 * viewport / pps, 5)
+        let visibleStart = Double(timelineScrollOffset - timelineInset(pps: pps)) / pps
+        let visibleEnd = visibleStart + viewport
+        let windowStart = max(0, visibleStart - margin)
+        let windowEnd = visibleEnd + margin
 
-        let asset = self.asset ?? AVURLAsset(url: source.url)
-        var times: [NSValue] = []
-        var indexByKey: [String: Int] = [:]
-        let lastSlot = last - 1
-        for slot in slots {
-            // 最后一格：整段除不尽时按视频末帧补，避免尾部出现空格
-            var seconds = Double(slot) * interval
-            if slot == lastSlot, seconds > assetDuration - 0.05 {
-                seconds = max(assetDuration - 0.04, 0)
+        var cursor = 0.0
+        var groups: [UUID: (asset: AVURLAsset, keys: [MacFilmKey], times: [Double])] = [:]
+        for clip in clips {
+            let clipStart = cursor
+            let clipEnd = cursor + clip.duration
+            cursor = clipEnd
+            let from = max(windowStart, clipStart)
+            let to = min(windowEnd, clipEnd)
+            guard to > from, let sourceID = clip.sourceID,
+                  let tracks = materialTracks[sourceID], tracks.videoTrack != nil else { continue }
+            let assetFrom = clip.start + (from - clipStart)
+            let assetTo = clip.start + (to - clipStart)
+            let first = max(Int(floor(assetFrom / interval)), Int(floor(clip.start / interval)))
+            let last = min(Int(ceil(assetTo / interval)), Int(ceil(clip.end / interval)))
+            guard last >= first else { continue }
+            var group = groups[sourceID] ?? (asset: tracks.asset, keys: [], times: [])
+            for slot in first...last {
+                let key = MacFilmKey(clipID: clip.id, slot: slot)
+                guard filmstrip[key] == nil, !pendingSlots.contains(key) else { continue }
+                group.keys.append(key)
+                group.times.append(Double(slot) * interval)
             }
-            let time = CMTime(seconds: seconds, preferredTimescale: 1800)
-            indexByKey["\(time.value)-\(time.timescale)"] = slot
-            times.append(NSValue(time: time))
+            groups[sourceID] = group
         }
+        guard !groups.isEmpty else { return }
 
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 200, height: 200)
-        // 间隔可以细到 1/30s，容差跟着缩，避免相邻帧取重
-        let tolerance = CMTime(seconds: min(0.05, interval / 3), preferredTimescale: 1800)
-        generator.requestedTimeToleranceBefore = tolerance
-        generator.requestedTimeToleranceAfter = tolerance
-        filmstripGenerator = generator
+        for (_, group) in groups {
+            guard !group.keys.isEmpty else { continue }
+            pendingSlots.formUnion(group.keys)
 
-        defer { flushFrames() }
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            let lock = NSLock()
-            var remaining = times.count
-            generator.generateCGImagesAsynchronously(forTimes: times) { requested, image, _, _, _ in
-                let key = "\(requested.value)-\(requested.timescale)"
-                if let slot = indexByKey[key] {
-                    Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        self.pendingSlots.remove(slot)
-                        guard self.filmstripGenerationID == generationID, let image else { return }
-                        // 先入缓冲，40ms 批量提交，一次滚动只重绘几次而不是几十次
-                        self.frameBuffer[slot] = image
-                        self.scheduleFrameFlush()
+            // 同一素材、同一时间可能被两个片段同时请求（复制成两段），同一次取帧要回填所有键
+            var keysByTime: [String: [MacFilmKey]] = [:]
+            var values: [NSValue] = []
+            var seen: Set<String> = []
+            for (key, seconds) in zip(group.keys, group.times) {
+                let time = CMTime(seconds: max(0, seconds), preferredTimescale: 1800)
+                let signature = "\(time.value)-\(time.timescale)"
+                keysByTime[signature, default: []].append(key)
+                guard !seen.contains(signature) else { continue }
+                seen.insert(signature)
+                values.append(NSValue(time: time))
+            }
+
+            let generator = AVAssetImageGenerator(asset: group.asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 200, height: 200)
+            // 间隔可以细到 1/30s，容差跟着缩，避免相邻帧取重
+            let tolerance = CMTime(seconds: min(0.05, interval / 3), preferredTimescale: 1800)
+            generator.requestedTimeToleranceBefore = tolerance
+            generator.requestedTimeToleranceAfter = tolerance
+            filmstripGenerator = generator
+
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                let lock = NSLock()
+                var remaining = values.count
+                generator.generateCGImagesAsynchronously(forTimes: values) { requested, image, _, _, _ in
+                    let signature = "\(requested.value)-\(requested.timescale)"
+                    if let keys = keysByTime[signature] {
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            self.pendingSlots.subtract(keys)
+                            guard self.filmstripGenerationID == generationID, let image else { return }
+                            for key in keys { self.frameBuffer[key] = image }
+                            self.scheduleFrameFlush()
+                        }
                     }
+                    lock.lock()
+                    remaining -= 1
+                    let finished = remaining <= 0
+                    lock.unlock()
+                    if finished { continuation.resume() }
                 }
-                lock.lock()
-                remaining -= 1
-                let finished = remaining <= 0
-                lock.unlock()
-                if finished { continuation.resume() }
             }
         }
+        flushFrames()
     }
-
 
     /// 每 40ms 把缓冲里的帧一次性并进 filmstrip（一次发布 = 一次重绘）
     private func scheduleFrameFlush() {
@@ -372,23 +515,23 @@ final class MacEditorModel: ObservableObject {
     private func flushFrames() {
         guard !frameBuffer.isEmpty else { return }
         var merged = filmstrip
-        for (slot, image) in frameBuffer { merged[slot] = image }
+        for (key, image) in frameBuffer { merged[key] = image }
         frameBuffer.removeAll()
         filmstrip = merged
     }
 
-    /// 草稿里的片段按当前视频时长校验，边界不对的一律丢掉
-    private func restoredClips(from draft: MacEditorDraft?) -> [MacClip] {
-        guard let draft, !draft.clips.isEmpty else {
-            return [MacClip(start: 0, end: assetDuration)]
+    /// 现场里的片段按素材时长校验，边界不对的一律丢掉
+    private func validated(_ stored: [MacClip]) -> [MacClip] {
+        var out: [MacClip] = []
+        for clip in stored {
+            let sourceID = clip.sourceID ?? materials.first?.id
+            guard let sourceID, let duration = materialTracks[sourceID]?.duration, duration > 0.05 else { continue }
+            let start = min(max(clip.start, 0), duration)
+            let end = min(max(clip.end, 0), duration)
+            guard end - start > 0.05 else { continue }
+            out.append(MacClip(id: clip.id, sourceID: sourceID, start: start, end: end))
         }
-        let mapped = draft.clips.compactMap { clip -> MacClip? in
-            let start = min(max(clip.start, 0), assetDuration)
-            let end = min(max(clip.end, 0), assetDuration)
-            guard end - start > 0.05 else { return nil }
-            return MacClip(start: start, end: end)
-        }
-        return mapped.isEmpty ? [MacClip(start: 0, end: assetDuration)] : mapped
+        return out
     }
 
     // MARK: - 播放
@@ -424,6 +567,7 @@ final class MacEditorModel: ObservableObject {
     func toggleMute() {
         isMuted.toggle()
         player.isMuted = isMuted
+        persist()
     }
 
     // MARK: - 编辑操作
@@ -436,39 +580,18 @@ final class MacEditorModel: ObservableObject {
         canUndo = !undoStack.isEmpty
         rebuildComposition(preserveTime: currentTime)
         keepScale(oldInterval)
-        saveDraft()
+        persist()
     }
 
-    /// 重置：整条原片一段
+    /// 重置：按素材列表顺序，每条素材整段依次排开
     func resetTimeline() {
         pushUndo()
-        clips = [MacClip(start: 0, end: assetDuration)]
+        clips = materials.compactMap { material in
+            guard let duration = materialTracks[material.id]?.duration, duration > 0.05 else { return nil }
+            return MacClip(sourceID: material.id, start: 0, end: duration)
+        }
         rebuildComposition(preserveTime: 0)
-        saveDraft()
-    }
-
-    /// 退回空项目（V2.8.5）：项目里正在编辑的那条素材被删掉时，时间轴、播放器一起清空
-    func clearProject() {
-        pause()
-        source = nil
-        clips = []
-        outputDuration = 0
-        currentTime = 0
-        undoStack.removeAll()
-        canUndo = false
-        isClipSelected = false
-        asset = nil
-        assetDuration = 0
-        videoTrack = nil
-        audioTrack = nil
-        audioTimeRange = .zero
-        transform = .identity
-        filmstrip = [:]
-        filmstripInterval = 0
-        pendingSlots.removeAll()
-        frameBuffer.removeAll()
-        filmstripTask?.cancel()
-        player.replaceCurrentItem(with: nil)
+        persist()
     }
 
     /// 在播放头处把当前片段切成两段
@@ -479,10 +602,13 @@ final class MacEditorModel: ObservableObject {
         guard anchor.sourceTime - clip.start > 0.05, clip.end - anchor.sourceTime > 0.05 else { return }
         pushUndo()
         // V2.7.13：左段沿用原 id，右段新建，切割只重画右段，不整条闪
-        clips[anchor.index] = MacClip(id: clip.id, start: clip.start, end: anchor.sourceTime)
-        clips.insert(MacClip(start: anchor.sourceTime, end: clip.end), at: anchor.index + 1)
+        clips[anchor.index] = MacClip(id: clip.id, sourceID: clip.sourceID, start: clip.start, end: anchor.sourceTime)
+        clips.insert(
+            MacClip(sourceID: clip.sourceID, start: anchor.sourceTime, end: clip.end),
+            at: anchor.index + 1
+        )
         rebuildComposition(preserveTime: currentTime)
-        saveDraft()
+        persist()
     }
 
     /// 播放头当前落在哪个片段（时间轴的选中框跟着它走）
@@ -502,7 +628,7 @@ final class MacEditorModel: ObservableObject {
         return clips[anchor.index].end - anchor.sourceTime > 0.05
     }
 
-    /// 删除播放头所在的片段；删到一段不剩就回到「素材拖进来」的空状态
+    /// 删除播放头所在的片段；删到一段不剩就回到「拖素材进来」的空状态
     func deleteClipAtPlayhead() {
         guard let anchor = clipAt(currentTime) else { return }
         let oldInterval = thumbnailInterval
@@ -510,7 +636,7 @@ final class MacEditorModel: ObservableObject {
         clips.remove(at: anchor.index)
         rebuildComposition(preserveTime: currentTime)
         keepScale(oldInterval)
-        saveDraft()
+        persist()
     }
 
     /// 向左裁剪（V2.7.17）：只裁「选中这一段」——把它从播放头处切掉左半，右半接着用，
@@ -521,12 +647,12 @@ final class MacEditorModel: ObservableObject {
         guard anchor.sourceTime - clip.start > 0.02 else { return }
         let oldInterval = thumbnailInterval
         pushUndo()
-        clips[anchor.index] = MacClip(id: clip.id, start: anchor.sourceTime, end: clip.end)
+        clips[anchor.index] = MacClip(id: clip.id, sourceID: clip.sourceID, start: anchor.sourceTime, end: clip.end)
         // 播放头对准这一段的起点：它前面所有片段的时长之和
         let head = clips[..<anchor.index].reduce(0) { $0 + $1.duration }
         rebuildComposition(preserveTime: head)
         keepScale(oldInterval)
-        saveDraft()
+        persist()
     }
 
     /// 向右裁剪（V2.7.17）：同样只裁「选中这一段」——从播放头处切掉右半，
@@ -537,10 +663,10 @@ final class MacEditorModel: ObservableObject {
         guard clip.end - anchor.sourceTime > 0.02 else { return }
         let oldInterval = thumbnailInterval
         pushUndo()
-        clips[anchor.index] = MacClip(id: clip.id, start: clip.start, end: anchor.sourceTime)
+        clips[anchor.index] = MacClip(id: clip.id, sourceID: clip.sourceID, start: clip.start, end: anchor.sourceTime)
         rebuildComposition(preserveTime: currentTime)
         keepScale(oldInterval)
-        saveDraft()
+        persist()
     }
 
     /// 剪辑后把缩放换算回「每秒像素不变」的档位：剩下的时间轴只变短，不被重新拉伸
@@ -584,34 +710,38 @@ final class MacEditorModel: ObservableObject {
 
     // MARK: - composition
 
-    private func rebuildComposition(preserveTime: Double?) {
-        player.pause()
-        isPlaying = false
-        guard let videoTrack else { return }
-
+    /// 按时间轴顺序把每条片段的素材拼成一条 composition（播放与导出共用）。
+    /// 导出时如果静音，干脆不入音轨（省得再走 audioMix）。
+    private func makeComposition(includeAudio: Bool = true) -> (composition: AVMutableComposition, total: Double) {
         let composition = AVMutableComposition()
-        let compositionVideo = composition.addMutableTrack(
+        let total = max(clips.reduce(0) { $0 + $1.duration }, 0)
+        guard let compositionVideo = composition.addMutableTrack(
             withMediaType: .video,
             preferredTrackID: kCMPersistentTrackID_Invalid
-        )
-        guard let compositionVideo else { return }
-        compositionVideo.preferredTransform = transform
-
-        let compositionAudio = audioTrack == nil
-            ? nil
-            : composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+        ) else {
+            return (composition, total)
+        }
+        let compositionAudio = includeAudio
+            ? composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+            : nil
 
         var cursor = CMTime.zero
+        var transformApplied = false
         for clip in clips {
+            guard let tracks = tracks(for: clip), let videoTrack = tracks.videoTrack else { continue }
+            if !transformApplied {
+                compositionVideo.preferredTransform = tracks.transform
+                transformApplied = true
+            }
             let range = CMTimeRange(
-                start: CMTime(seconds: clip.start, preferredTimescale: 600),
+                start: CMTime(seconds: max(0, clip.start), preferredTimescale: 600),
                 duration: CMTime(seconds: max(0.01, clip.duration), preferredTimescale: 600)
             )
             try? compositionVideo.insertTimeRange(range, of: videoTrack, at: cursor)
 
-            if let audioTrack, let compositionAudio, audioTimeRange.duration > .zero {
-                let start = CMTimeMaximum(range.start, audioTimeRange.start)
-                let end = CMTimeMinimum(range.end, audioTimeRange.end)
+            if let audioTrack = tracks.audioTrack, let compositionAudio, tracks.audioRange.duration > .zero {
+                let start = CMTimeMaximum(range.start, tracks.audioRange.start)
+                let end = CMTimeMinimum(range.end, tracks.audioRange.end)
                 if end > start {
                     try? compositionAudio.insertTimeRange(
                         CMTimeRange(start: start, end: end),
@@ -623,12 +753,36 @@ final class MacEditorModel: ObservableObject {
             cursor = cursor + range.duration
         }
 
-        // 用片段时长求和而不是 CMTime 取整后的结果：切割前后总长严格相等，
-        // 缩略图间隔不会因为几微秒的取整误差被判成「换档」，胶片就不会整块重取
-        outputDuration = max(clips.reduce(0) { $0 + $1.duration }, 0)
+        return (composition, total)
+    }
+
+    private func tracks(for clip: MacClip) -> MaterialTracks? {
+        if let sourceID = clip.sourceID, let tracks = materialTracks[sourceID] {
+            return tracks
+        }
+        guard let first = materials.first else { return nil }
+        return materialTracks[first.id]
+    }
+
+    private func rebuildComposition(preserveTime: Double?) {
+        player.pause()
+        isPlaying = false
+        guard !clips.isEmpty else {
+            outputDuration = 0
+            currentTime = 0
+            filmstrip = [:]
+            filmstripInterval = 0
+            player.replaceCurrentItem(with: nil)
+            return
+        }
+
+        let built = makeComposition()
+        outputDuration = built.total
+        guard built.composition.tracks(withMediaType: .video).first != nil else { return }
+
         let target = min(max(preserveTime ?? 0, 0), max(0, outputDuration - 0.02))
         isRebuildingPlayer = true
-        player.replaceCurrentItem(with: AVPlayerItem(asset: composition))
+        player.replaceCurrentItem(with: AVPlayerItem(asset: built.composition))
         player.isMuted = isMuted
         currentTime = target
         player.seek(
@@ -644,28 +798,46 @@ final class MacEditorModel: ObservableObject {
         }
     }
 
-    // MARK: - 草稿 / 导出
+    // MARK: - 存档 / 导出
 
-    func saveDraft() {
-        guard let videoID = source?.libraryVideoID else { return }
-        guard !clips.isEmpty else {
-            MacEditorDraftStore.clear(for: videoID)
+    /// 把整项目现场（素材清单 + 片段表 + 播放状态）写回存档，最近编辑据此还原
+    func persist() {
+        guard !materials.isEmpty || !clips.isEmpty else {
+            MacProjectStore.remove(projectID)
             return
         }
-        MacEditorDraftStore.save(
-            MacEditorDraft(
+        let record = MacProjectRecord(
+            id: projectID,
+            title: title,
+            createdAt: createdAt,
+            updatedAt: Date(),
+            materials: materials.map { material in
+                MacProjectMaterialFile(
+                    id: material.id,
+                    fileName: storedFileName(for: material),
+                    title: material.title,
+                    duration: material.duration
+                )
+            },
             clips: clips,
             isMuted: isMuted,
-            updatedAt: Date(),
             currentTime: currentTime,
             zoomLevel: zoomLevel
-        ),
-            for: videoID
         )
+        MacProjectStore.save(record)
+    }
+
+    private func storedFileName(for material: MacProjectMaterial) -> String {
+        let dir = MacProjectStore.directory(for: projectID).path
+        let path = material.url.path
+        if path.hasPrefix(dir + "/") {
+            return material.url.lastPathComponent
+        }
+        return path
     }
 
     func export() async -> URL? {
-        guard let source, !clips.isEmpty, outputDuration > 0.1 else {
+        guard !clips.isEmpty, outputDuration > 0.1 else {
             errorMessage = "时间轴里没有可导出的片段"
             return nil
         }
@@ -675,11 +847,10 @@ final class MacEditorModel: ObservableObject {
         exportProgress = 0
         defer { isExporting = false }
 
-        let exportClips = clips.map { VideoExporter.Clip(start: $0.start, end: $0.end) }
+        let built = makeComposition(includeAudio: !isMuted)
         do {
             let url = try await VideoExporter.export(
-                sourceURL: source.url,
-                clips: exportClips,
+                composition: built.composition,
                 quality: ExportSettings.quality,
                 progressHandler: { [weak self] progress in
                     self?.exportProgress = progress
@@ -730,19 +901,17 @@ struct MacEditorView: View {
     @State private var timelineOffset: CGFloat = 0
     /// 时间轴可视宽度（时间轴上报，缩放时用于夹取偏移）
     @State private var timelineWidth: CGFloat = 0
-    /// 项目素材（V2.8.5）：编辑页导入过的视频列表，独立于素材库
-    @State private var projectMaterials: [MacProjectMaterial] = []
-    /// 每条素材的首帧缩略图缓存
-    @State private var materialThumbnails: [UUID: CGImage] = [:]
     /// 素材区里选中的素材（V2.8.5：支持 ⌘ 多选后删除）
     @State private var selectedMaterialIDs: Set<UUID> = []
     /// 导出进度弹框
     @State private var isExportSheetPresented = false
     /// 导出失败文案（弹框内展示，不走全局 alert）
     @State private var exportErrorText: String?
+    /// 空编辑区是否正被拖拽悬停
+    @State private var isDropTargeted = false
 
-    init(initialSource: MacEditorSource?) {
-        _model = StateObject(wrappedValue: MacEditorModel(source: initialSource))
+    init(project: MacProjectRecord) {
+        _model = StateObject(wrappedValue: MacEditorModel(project: project))
     }
 
     var body: some View {
@@ -769,8 +938,8 @@ struct MacEditorView: View {
         }
         .task {
             await model.load()
-            seedInitialMaterialIfNeeded()
-        }        .onDisappear { model.saveDraft() }
+        }
+        .onDisappear { model.persist() }
         .alert("提示", isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }
@@ -801,12 +970,12 @@ struct MacEditorView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Text(model.source?.title ?? "新建编辑")
+            Text(model.title)
                 .font(.headline)
                 .foregroundStyle(.white)
                 .lineLimit(1)
 
-            if model.source == nil {
+            if !model.hasClips {
                 Text("空白项目")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(MacTheme.accent)
@@ -815,7 +984,7 @@ struct MacEditorView: View {
                     .background(MacTheme.accent.opacity(0.14), in: Capsule())
             }
 
-            if model.hasSource {
+            if model.hasClips {
                 Text("\(model.currentTime.timecode) / \(model.outputDuration.timecode)")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
@@ -889,7 +1058,7 @@ struct MacEditorView: View {
                     alignment: .leading,
                     spacing: 12
                 ) {
-                    ForEach(projectMaterials) { material in
+                    ForEach(model.materials) { material in
                         materialCell(material)
                     }
                     addMaterialCell
@@ -908,12 +1077,9 @@ struct MacEditorView: View {
     private var materialSide: CGFloat { 128 }
 
     private func materialCell(_ material: MacProjectMaterial) -> some View {
-        let loaded = model.source?.id == material.id
         let picked = selectedMaterialIDs.contains(material.id)
-        return Button {
-            handleMaterialTap(material)
-        } label: {
-        VStack(alignment: .leading, spacing: 7) {
+        // 不用 Button：Button 会把鼠标按下攥在手里，拖拽起不来。点用 onTapGesture，拖用 onDrag
+        return VStack(alignment: .leading, spacing: 7) {
             ZStack(alignment: .topTrailing) {
                 materialThumbnail(material)
                     .frame(width: materialSide, height: materialSide)
@@ -928,14 +1094,14 @@ struct MacEditorView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(
-                        picked ? Color.white : (loaded ? MacTheme.accent : Color.white.opacity(0.06)),
-                        lineWidth: picked ? 2.5 : (loaded ? 2 : 1)
+                        picked ? MacTheme.accent : Color.white.opacity(0.08),
+                        lineWidth: picked ? 2 : 1
                     )
             )
 
             Text(material.title)
                 .font(.caption)
-                .foregroundStyle(picked || loaded ? Color.white : Color.white.opacity(0.62))
+                .foregroundStyle(picked ? Color.white : Color.white.opacity(0.62))
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -945,9 +1111,14 @@ struct MacEditorView: View {
             picked ? Color.white.opacity(0.06) : Color.clear,
             in: RoundedRectangle(cornerRadius: 10, style: .continuous)
         )
+        .onTapGesture {
+            handleMaterialTap(material)
         }
-        .buttonStyle(.plain)
-        .help("点一下载进时间轴，⌘ 点选可多选，Delete 键删除")
+        // V2.8.6：素材要靠拖进时间轴才会上轨道；⌘ 多选后可一次拖一组
+        .onDrag {
+            NSItemProvider(object: dragPayload(for: material) as NSString)
+        }
+        .help("拖到时间轴添加；⌘ 点选可多选，Delete 键删除")
     }
 
     /// 正方形首帧缩略图（取不到就显示占位图标）
@@ -955,7 +1126,7 @@ struct MacEditorView: View {
     private func materialThumbnail(_ material: MacProjectMaterial) -> some View {
         ZStack {
             Color.white.opacity(0.06)
-            if let image = materialThumbnails[material.id] {
+            if let image = model.materialThumbnails[material.id] {
                 Image(decorative: image, scale: 1)
                     .resizable()
                     .scaledToFill()
@@ -964,9 +1135,6 @@ struct MacEditorView: View {
                     .font(.system(size: 22))
                     .foregroundStyle(.white.opacity(0.30))
             }
-        }
-        .task(id: material.id) {
-            loadThumbnail(for: material)
         }
     }
 
@@ -997,7 +1165,7 @@ struct MacEditorView: View {
         .help("导入一条本地视频")
     }
 
-    /// 点 cell：⌘ 点击切换多选；普通点击选中并载进时间轴
+    /// 点 cell：⌘ 点击切换多选；普通点击只选中（V2.8.6：素材要靠拖进时间轴才会上轨道）
     private func handleMaterialTap(_ material: MacProjectMaterial) {
         if NSEvent.modifierFlags.contains(.command) {
             if selectedMaterialIDs.contains(material.id) {
@@ -1008,8 +1176,6 @@ struct MacEditorView: View {
             return
         }
         selectedMaterialIDs = [material.id]
-        guard model.source?.id != material.id else { return }
-        Task { await model.open(MacEditorSource(id: material.id, url: material.url, title: material.title, libraryVideoID: nil)) }
     }
 
     private func confirmDeleteSelectedMaterials() {
@@ -1017,44 +1183,19 @@ struct MacEditorView: View {
         deleteSelectedMaterials()
     }
 
-    /// 删素材：只从项目里移除，不动磁盘文件；删到正在编辑的那条就把时间轴清空
+    /// 删素材：从项目里移除，引用它的片段一起从时间轴消失
     private func deleteSelectedMaterials() {
         let ids = selectedMaterialIDs
         guard !ids.isEmpty else { return }
-        let removesLoaded = model.source.map { ids.contains($0.id) } ?? false
-        projectMaterials.removeAll { ids.contains($0.id) }
-        for id in ids {
-            materialThumbnails[id] = nil
-        }
         selectedMaterialIDs.removeAll()
-        if removesLoaded {
-            model.clearProject()
-        }
-    }
-
-    /// 首帧缩略图：异步取 0 秒那一帧，生成后回主线程塞进缓存
-    private func loadThumbnail(for material: MacProjectMaterial) {
-        guard materialThumbnails[material.id] == nil else { return }
-        let id = material.id
-        let url = material.url
-        Task {
-            let asset = AVURLAsset(url: url)
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 400, height: 400)
-            generator.requestedTimeToleranceBefore = .zero
-            generator.requestedTimeToleranceAfter = .zero
-            if let frame = try? await generator.image(at: .zero) {
-                materialThumbnails[id] = frame.image
-            }
-        }
+        model.removeMaterials(ids)
     }
 
     // MARK: - 编辑区
 
     private var editingPanel: some View {
         VStack(spacing: 0) {
-            if model.hasSource && !model.clips.isEmpty {
+            if !model.clips.isEmpty {
                 toolRow
                     .padding(.horizontal, 12)
                     .padding(.top, 10)
@@ -1089,6 +1230,9 @@ struct MacEditorView: View {
                     },
                     onDeselect: {
                         model.isClipSelected = false
+                    },
+                    onDropPayload: { payload, x in
+                        handleTimelineDrop(payload: payload, x: x)
                     }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1116,8 +1260,8 @@ struct MacEditorView: View {
             toolRow
                 .padding(.horizontal, 12)
                 .padding(.top, 10)
-                .disabled(!model.hasSource)
-                .opacity(model.hasSource ? 1 : 0.40)
+                .disabled(true)
+                .opacity(0.40)
 
             emptyRuler
                 .frame(height: 26)
@@ -1136,7 +1280,7 @@ struct MacEditorView: View {
                 Image(systemName: "film")
                     .font(.system(size: 18, weight: .regular))
                     .foregroundStyle(.white.opacity(0.55))
-                Text("点左侧「添加视频」载入素材，开始你的大作吧～")
+                Text("把左侧素材拖到这条时间轴上，开始你的大作吧～")
                     .font(.system(size: 15))
                     .foregroundStyle(.white.opacity(0.62))
                 Spacer(minLength: 0)
@@ -1156,6 +1300,17 @@ struct MacEditorView: View {
                     )
             )
             .padding(.horizontal, 12)
+            .onDrop(of: [.text], isTargeted: $isDropTargeted) { providers in
+                appendDroppedMaterials(providers)
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(
+                        isDropTargeted ? MacTheme.accent : Color.clear,
+                        lineWidth: 1
+                    )
+                    .padding(.horizontal, 12)
+            )
 
             Spacer(minLength: 0)
         }
@@ -1239,7 +1394,7 @@ struct MacEditorView: View {
 
             VStack(spacing: 0) {
                 canvas
-                if model.hasSource {
+                if model.hasClips {
                     playerBar
                 }
             }
@@ -1253,7 +1408,7 @@ struct MacEditorView: View {
     private var canvas: some View {
         ZStack {
             Color.black
-            if model.hasSource {
+            if model.hasClips {
                 MacPlayerSurface(player: model.player)
             } else {
                 VStack(spacing: 10) {
@@ -1328,10 +1483,10 @@ struct MacEditorView: View {
                 .padding(.vertical, 10)
                 .background(MacTheme.accentGradient, in: Capsule())
                 .contentShape(Capsule())
-                .opacity(model.hasSource && !model.isExporting ? 1 : 0.45)
+                .opacity(model.hasClips && !model.isExporting ? 1 : 0.45)
             }
             .buttonStyle(.plain)
-            .disabled(!model.hasSource || model.isExporting)
+            .disabled(!model.hasClips || model.isExporting)
 
             if model.isExporting {
                 ProgressView(value: model.exportProgress)
@@ -1378,50 +1533,80 @@ struct MacEditorView: View {
     /// V2.8.4：编辑页不再导入素材库 —— 选中的本地文件直接载进时间轴
     private func addVideo() {
         guard let url = MacAlerts.chooseVideoFile() else { return }
-        loadLocalVideo(from: url)
+        importVideo(from: url)
     }
 
-    /// 把选中的本地文件拷成临时文件，加进项目素材列表并载进时间轴（不写素材库）
-    private func loadLocalVideo(from url: URL) {
-        let title = url.deletingPathExtension().lastPathComponent
+    /// 选中的本地文件拷进项目目录，只进素材列表（V2.8.6：要不要上时间轴由用户拖决定）
+    private func importVideo(from url: URL) {
         Task {
             isImporting = true
             defer { isImporting = false }
-            do {
-                let temp = try VideoImporter.prepare(from: url)
-                let duration = await VideoImporter.duration(of: temp)
-                let material = MacProjectMaterial(id: UUID(), url: temp, title: title, duration: duration)
-                projectMaterials.append(material)
-                selectedMaterialIDs = [material.id]
-                loadThumbnail(for: material)
-                await model.open(
-                    MacEditorSource(id: material.id, url: temp, title: title, libraryVideoID: nil)
-                )
-            } catch {
-                show(error.localizedDescription)
+            guard let material = await model.importMaterial(from: url) else {
+                if let message = model.errorMessage {
+                    show(message)
+                    model.errorMessage = nil
+                }
+                return
             }
+            selectedMaterialIDs = [material.id]
         }
     }
 
-    /// 从「最近编辑」等入口带素材进来的窗口，把这条素材放进列表（首帧缩略图照旧现取）
-    private func seedInitialMaterialIfNeeded() {
-        guard let source = model.source else { return }
-        guard !projectMaterials.contains(where: { $0.id == source.id }) else { return }
-        let material = MacProjectMaterial(
-            id: source.id,
-            url: source.url,
-            title: source.title,
-            duration: model.outputDuration
-        )
-        projectMaterials = [material] + projectMaterials
-        loadThumbnail(for: material)
+    // MARK: - 拖进时间轴
+
+    /// 素材 cell 的拖拽载荷：多选时一次带上整组（按素材列表顺序）
+    private func dragPayload(for material: MacProjectMaterial) -> String {
+        let ids = selectedMaterialIDs.contains(material.id) ? selectedMaterialIDs : [material.id]
+        let ordered = model.materials.filter { ids.contains($0.id) }.map { $0.id.uuidString }
+        return "mat:" + ordered.joined(separator: "|")
+    }
+
+    /// 空编辑区接收拖入（无位置概念，直接按顺序追加）
+    private func appendDroppedMaterials(_ providers: [NSItemProvider]) -> Bool {
+        for provider in providers {
+            provider.loadObject(ofClass: NSString.self) { object, _ in
+                guard let payload = object as? NSString else { return }
+                let ids = self.materialIDs(from: payload as String)
+                guard !ids.isEmpty else { return }
+                Task { @MainActor in
+                    self.selectedMaterialIDs = Set(ids)
+                    self.model.appendMaterials(ids)
+                }
+            }
+        }
+        return true
+    }
+
+    /// 时间轴里的落点：素材按顺序追加；片段按 x 算插入位置
+    private func handleTimelineDrop(payload: String, x: CGFloat) {
+        if payload.hasPrefix("clip:") {
+            guard let id = UUID(uuidString: String(payload.dropFirst(5))) else { return }
+            let time = Double(max(0, x + timelineOffset - timelineInset)) / Double(model.pixelsPerSecond)
+            var insertion = 0
+            var cursor = 0.0
+            for clip in model.clips {
+                if time > cursor + clip.duration / 2 { insertion += 1 }
+                cursor += clip.duration
+            }
+            model.moveClip(id: id, toInsertionIndex: insertion)
+            return
+        }
+        let ids = materialIDs(from: payload)
+        guard !ids.isEmpty else { return }
+        selectedMaterialIDs = Set(ids)
+        model.appendMaterials(ids)
+    }
+
+    private func materialIDs(from payload: String) -> [UUID] {
+        let body = payload.hasPrefix("mat:") ? String(payload.dropFirst(4)) : payload
+        return body.split(separator: "|").compactMap { UUID(uuidString: String($0)) }
     }
 
     // MARK: - 导出（V2.8.0 起带进度弹框，默认落到「下载」文件夹）
 
     /// 点导出：先把弹框顶上来，再在后台渲染时间轴，进度实时写进 model.exportProgress
     private func startExport() {
-        guard model.hasSource, !model.clips.isEmpty, !model.isExporting else { return }
+        guard !model.clips.isEmpty, !model.isExporting else { return }
         model.pause()
         model.exportedURL = nil
         exportErrorText = nil
@@ -1438,7 +1623,7 @@ struct MacEditorView: View {
         }
 
         let stamp = Int(Date().timeIntervalSince1970)
-        let base = (model.source?.title ?? "clip").replacingOccurrences(of: "/", with: "-")
+        let base = model.title.replacingOccurrences(of: "/", with: "-")
         let destination = MacExportPaths.downloads
             .appendingPathComponent("\(base)-\(stamp).mp4")
         do {

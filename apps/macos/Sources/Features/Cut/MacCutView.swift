@@ -8,8 +8,8 @@ struct MacCutView: View {
 
     @State private var playingVideo: VideoItem?
     @State private var toast: String?
-    /// 删掉草稿后让「最近编辑」重新读一遍草稿状态
-    @State private var draftRevision = 0
+    /// 最近编辑的项目（V2.8.6：来自项目存档，每条都是动过时间轴的现场）
+    @State private var projects: [MacProjectRecord] = []
 
     /// 热门工具：macOS 端先把入口摆齐，能力后续逐个接（点只提示）。
     private let tools: [(icon: String, title: String)] = [
@@ -23,7 +23,7 @@ struct MacCutView: View {
         // V2.3：进剪辑一律新开一个独立窗口，本页始终停在首页
         home
             .onReceive(NotificationCenter.default.publisher(for: .macEditorWindowClosed)) { _ in
-                draftRevision += 1
+                reloadProjects()
             }
     }
 
@@ -57,6 +57,7 @@ struct MacCutView: View {
         }
         .animation(.easeOut(duration: 0.18), value: toast)
         .task {
+            reloadProjects()
             openFirstVideoIfNeeded()
         }
     }
@@ -66,13 +67,20 @@ struct MacCutView: View {
         #if DEBUG
         guard UserDefaults.standard.bool(forKey: "autoOpenFirstVideo") else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            guard let item = library.recentVideos.first else { return }
-            MacEditorWindowManager.shared.open(
-                source: MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id),
-                library: library
-            )
+            if let project = MacProjectStore.recentProjects().first {
+                MacEditorWindowManager.shared.open(projectID: project.id, library: library)
+            } else if let item = library.recentVideos.first {
+                MacEditorWindowManager.shared.open(
+                    source: MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id),
+                    library: library
+                )
+            }
         }
         #endif
+    }
+
+    private func reloadProjects() {
+        projects = MacProjectStore.recentProjects()
     }
 
     // MARK: - 热门工具
@@ -180,16 +188,16 @@ struct MacCutView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
                 Spacer()
-                Text("\(library.recentVideos.count) 个视频")
+                Text("\(projects.count) 个项目")
                     .font(.caption)
                     .foregroundStyle(Color.white.opacity(0.45))
             }
 
-            if library.recentVideos.isEmpty {
+            if projects.isEmpty {
                 MacEmptyStateView(
                     symbol: "film",
-                    title: "还没有视频",
-                    message: "点上面的「开始编辑」选一个本地视频，剪完就会留在这里。"
+                    title: "还没有编辑过的项目",
+                    message: "点上面的「开始编辑」，把素材拖进时间轴，剪完就会留在这里。"
                 )
                 .frame(height: 200)
                 .background(
@@ -203,22 +211,17 @@ struct MacCutView: View {
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
-                        ForEach(library.recentVideos) { item in
-                            MacRecentEditCard(
-                                item: item,
-                                draft: MacEditorDraftStore.draft(for: item.id),
+                        ForEach(projects) { project in
+                            MacRecentProjectCard(
+                                project: project,
                                 onOpen: {
-                                    MacEditorWindowManager.shared.open(
-                                        source: MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id),
-                                        library: library
-                                    )
+                                    MacEditorWindowManager.shared.open(projectID: project.id, library: library)
                                 },
-                                onDelete: { delete(item) }
+                                onDelete: { delete(project) }
                             )
                         }
                     }
                     .padding(.vertical, 2)
-                    .id(draftRevision)
                 }
             }
         }
@@ -226,15 +229,14 @@ struct MacCutView: View {
 
     // MARK: - 动作
 
-    private func delete(_ item: VideoItem) {
+    private func delete(_ project: MacProjectRecord) {
         guard MacAlerts.confirmDelete(
-            title: "删除「\(item.title)」？",
-            message: "会连同素材库里的文件、缩略图和草稿一起删掉。"
+            title: "删除「\(project.title)」？",
+            message: "会连同项目里导入的素材文件、缩略图和整条时间轴现场一起删掉。"
         ) else { return }
-        MacEditorDraftStore.clear(for: item.id)
-        library.deleteVideo(item.id)
-        draftRevision += 1
-        toast = "视频已删除"
+        MacProjectStore.remove(project.id)
+        reloadProjects()
+        toast = "项目已删除"
     }
 }
 
@@ -279,11 +281,10 @@ private struct MacToolTile: View {
     }
 }
 
-// MARK: - 最近编辑卡片
+// MARK: - 最近编辑卡片（V2.8.6：一个项目一张卡，缩略图取首条素材的首帧）
 
-private struct MacRecentEditCard: View {
-    let item: VideoItem
-    let draft: MacEditorDraft?
+private struct MacRecentProjectCard: View {
+    let project: MacProjectRecord
     let onOpen: () -> Void
     let onDelete: () -> Void
 
@@ -296,17 +297,16 @@ private struct MacRecentEditCard: View {
         return formatter
     }()
 
-    private var badgeDuration: Double { draft?.outputDuration ?? item.duration }
-
     var body: some View {
         Button(action: onOpen) {
             VStack(alignment: .leading, spacing: 8) {
                 ZStack(alignment: .bottomTrailing) {
-                    MacThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 10)
+                    cover
                         .frame(width: 200, height: 112)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .clipped()
 
-                    Text(badgeDuration.timecode)
+                    Text(project.outputDuration.timecode)
                         .font(.caption2.monospacedDigit().weight(.semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6)
@@ -315,28 +315,26 @@ private struct MacRecentEditCard: View {
                         .padding(6)
                 }
                 .overlay(alignment: .topLeading) {
-                    if draft != nil {
-                        HStack(spacing: 3) {
-                            Image(systemName: "square.and.pencil")
-                                .font(.system(size: 9, weight: .bold))
-                            Text("草稿")
-                                .font(.caption2.weight(.bold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(MacTheme.accent, in: Capsule())
-                        .padding(6)
+                    HStack(spacing: 3) {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 9, weight: .bold))
+                        Text("\(project.clips.count) 段")
+                            .font(.caption2.weight(.bold))
                     }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(MacTheme.accent, in: Capsule())
+                    .padding(6)
                 }
 
-                Text(item.title)
+                Text(project.title)
                     .font(.callout.weight(.medium))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .frame(width: 200, alignment: .leading)
 
-                Text(subtitle)
+                Text("现场 · \(Self.relativeFormatter.localizedString(for: project.updatedAt, relativeTo: Date()))")
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.45))
                     .lineLimit(1)
@@ -354,17 +352,27 @@ private struct MacRecentEditCard: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(draft == nil ? "打开剪辑台" : "继续上次的裁剪")
+        .help("继续上次的时间轴现场")
         .contextMenu {
             Button("继续编辑", action: onOpen)
             Button("删除", role: .destructive, action: onDelete)
         }
     }
 
-    private var subtitle: String {
-        guard let draft else {
-            return "未编辑 · \(item.fileSize.fileSizeText)"
+    @ViewBuilder
+    private var cover: some View {
+        ZStack {
+            Color.white.opacity(0.05)
+            if let id = project.coverMaterialID,
+               let image = MacProjectStore.thumbnail(for: id) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: "film")
+                    .font(.system(size: 22))
+                    .foregroundStyle(.white.opacity(0.28))
+            }
         }
-        return "草稿 · \(Self.relativeFormatter.localizedString(for: draft.updatedAt, relativeTo: Date()))"
     }
 }

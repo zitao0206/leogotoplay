@@ -11,8 +11,8 @@ import SwiftUI
 /// - 编辑区可滑动时间轴：轨道上方的空白带支持鼠标拖拽平移，面板内任意位置的横向滚动 / 两指滑动也能平移。
 struct MacTimelineView: View {
     let clips: [MacClip]
-    /// 缩略图缓存：key = 槽位序号，覆盖时间 = 序号 × thumbnailInterval
-    let frames: [Int: CGImage]
+    /// 缩略图缓存：key = 片段 id + 槽位序号（多素材时间轴同一秒可能来自不同素材）
+    let frames: [MacFilmKey: CGImage]
     /// 当前缩略图间隔（秒），由缩放档位决定
     let thumbnailInterval: Double
     let selectedIndex: Int?
@@ -27,6 +27,8 @@ struct MacTimelineView: View {
     let onViewportChange: (CGFloat) -> Void
     /// 点轨道外的空白带（不是刻度尺、也不是片段）时取消选中
     let onDeselect: () -> Void
+    /// 拖放载荷（"mat:…" 素材 / "clip:…" 片段）落到时间轴上的 x（视图内坐标）
+    let onDropPayload: (String, CGFloat) -> Void
 
     private let trackHeight: CGFloat = CGFloat(MacEditorModel.thumbnailSide)
     /// 左侧不留余量：时间轴起点永远贴住面板左边（滑杆拖到最左、内容不足一屏都不出现空白）
@@ -282,23 +284,33 @@ struct MacTimelineView: View {
         // V2.7.13：手势装在没有 offset 的透明层上，坐标空间永远是 0…width，
         // 直接叠在位移过的片段行上算「x + 偏移 - 余量」，滚动后也不会点哪跳哪
         ZStack(alignment: .topLeading) {
-            clipRow(visibleRange: visibleRange)
-                .padding(.top, 8)
-                .offset(x: ins - offset)
-
+            // 空白区域：点一下定位播放头
             Color.clear
                 .contentShape(Rectangle())
                 .gesture(seekGesture(offset: offset, inset: ins))
+
+            // 片段在上层：既能点（定位播放头），也能拖（调整顺序）
+            clipRow(visibleRange: visibleRange, offset: offset, inset: ins)
+                .padding(.top, 8)
+                .offset(x: ins - offset)
         }
         .frame(width: width, height: trackHeight + 8, alignment: .topLeading)
         .clipped()
+        .onDrop(of: ["public.text"], delegate: MacTimelineDropDelegate(onPayload: onDropPayload))
     }
 
-    private func clipRow(visibleRange: ClosedRange<Double>) -> some View {
+    private func clipRow(visibleRange: ClosedRange<Double>, offset: CGFloat, inset ins: CGFloat) -> some View {
         let starts = timelineStarts()
         return HStack(spacing: clipGap) {
             ForEach(Array(clips.enumerated()), id: \.element.id) { index, clip in
-                clipBlock(clip, index: index, timelineStart: starts[index], visibleRange: visibleRange)
+                clipBlock(
+                    clip,
+                    index: index,
+                    timelineStart: starts[index],
+                    visibleRange: visibleRange,
+                    offset: offset,
+                    inset: ins
+                )
             }
         }
         .frame(height: trackHeight, alignment: .topLeading)
@@ -315,7 +327,14 @@ struct MacTimelineView: View {
         return out
     }
 
-    private func clipBlock(_ clip: MacClip, index: Int, timelineStart: Double, visibleRange: ClosedRange<Double>) -> some View {
+    private func clipBlock(
+        _ clip: MacClip,
+        index: Int,
+        timelineStart: Double,
+        visibleRange: ClosedRange<Double>,
+        offset: CGFloat,
+        inset ins: CGFloat
+    ) -> some View {
         // 缝宽从片段宽度里扣：HStack 再补上 clipGap，第 i 段的左边缘仍精确落在时间点上
         let width = max(CGFloat(clip.duration) * pps - clipGap, 6)
         let selected = index == selectedIndex
@@ -346,7 +365,19 @@ struct MacTimelineView: View {
             }
         }
         .frame(width: drawWidth, height: trackHeight, alignment: .topLeading)
-        .allowsHitTesting(false)
+        .contentShape(Rectangle())
+        // 拖这一段可以换顺序（落点由时间轴统一算插入位置）
+        .onDrag {
+            NSItemProvider(object: "clip:\(clip.id.uuidString)" as NSString)
+        }
+        // 点在片段上照样定位播放头
+        .simultaneousGesture(
+            SpatialTapGesture()
+                .onEnded { value in
+                    onSeek(timelineStart + Double(max(0, value.location.x)) / pixelsPerSecond)
+                }
+        )
+        .help("拖动可调整这段在时间轴上的顺序")
     }
 
     // MARK: - 逐帧胶片（V2.7.16：整条胶片按「素材时间 → 像素」绝对定位，切割只是换个裁剪窗口）
@@ -378,7 +409,7 @@ struct MacTimelineView: View {
                 ZStack {
                     Rectangle()
                         .fill(Color.white.opacity(0.10))
-                    if let image = frames[slot] {
+                    if let image = frames[MacFilmKey(clipID: clip.id, slot: slot)] {
                         Image(decorative: image, scale: 1)
                             .resizable()
                             .scaledToFill()
@@ -504,5 +535,33 @@ private struct ScrollWheelPanReader: NSViewRepresentable {
                 NSEvent.removeMonitor(monitor)
             }
         }
+    }
+}
+
+
+// MARK: - 时间轴拖放（V2.8.6：素材拖进来上轨道，片段拖动能换顺序）
+
+/// 读拖放载荷并把落点 x 交给上层：素材按顺序追加，片段按 x 算插入位置
+private struct MacTimelineDropDelegate: DropDelegate {
+    let onPayload: (String, CGFloat) -> Void
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: ["public.text"])
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let location = info.location
+        let providers = info.itemProviders(for: ["public.text"])
+        guard !providers.isEmpty else { return false }
+        for provider in providers {
+            provider.loadObject(ofClass: NSString.self) { object, _ in
+                guard let payload = object as? NSString else { return }
+                let text = payload as String
+                Task { @MainActor in
+                    onPayload(text, location.x)
+                }
+            }
+        }
+        return true
     }
 }
