@@ -59,9 +59,14 @@ final class MacEditorModel: ObservableObject {
     private var timelineScrollOffset: CGFloat = 0
     private var visibleStartTime: Double = 0
     private var visibleEndTime: Double = 0
+    /// 新项目标记（V2.8.2）：从首页「开始编辑」进来的窗口 source 为 nil，
+    /// 之后往里拖素材也不还原这条素材上次的草稿（裁点 / 播放头 / 缩放 / 静音），保证是从头开始的干净项目。
+    /// 从「最近编辑」或素材库带着 source 打开的窗口仍然照常还原草稿。
+    private let restoresDraft: Bool
 
     init(source: MacEditorSource?) {
         self.source = source
+        self.restoresDraft = source != nil
         observePlayer()
     }
 
@@ -195,7 +200,7 @@ final class MacEditorModel: ObservableObject {
 
         guard assetDuration > 0.1, videoTrack != nil else { return }
 
-        let draft = newSource.libraryVideoID.flatMap { MacEditorDraftStore.draft(for: $0) }
+        let draft = restoresDraft ? newSource.libraryVideoID.flatMap { MacEditorDraftStore.draft(for: $0) } : nil
         clips = restoredClips(from: draft)
         if let draft {
             isMuted = draft.isMuted
@@ -755,6 +760,15 @@ struct MacEditorView: View {
                 .font(.headline)
                 .foregroundStyle(.white)
                 .lineLimit(1)
+
+            if model.source == nil {
+                Text("空白项目")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(MacTheme.accent)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(MacTheme.accent.opacity(0.14), in: Capsule())
+            }
 
             if model.hasSource {
                 Text("\(model.currentTime.timecode) / \(model.outputDuration.timecode)")

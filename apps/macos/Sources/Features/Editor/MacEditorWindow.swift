@@ -35,6 +35,8 @@ final class MacEditorWindowManager: NSObject, NSWindowDelegate {
             defer: false
         )
         window.isReleasedWhenClosed = false
+        // V2.8.2：剪辑窗口不参与系统的「重新打开窗口」恢复，避免下次启动被系统还原出上一次的项目
+        window.isRestorable = false
         window.title = source.map { "剪辑 · \($0.title)" } ?? "新建剪辑"
         window.subtitle = "LeogotoPlay"
         window.minSize = NSSize(width: 1040, height: 660)

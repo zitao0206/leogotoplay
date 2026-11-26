@@ -56,7 +56,9 @@ struct MacCutView: View {
             }
         }
         .animation(.easeOut(duration: 0.18), value: toast)
-        .task { openFirstVideoIfNeeded() }
+        .task {
+            openFirstVideoIfNeeded()
+        }
     }
 
     /// Debug 启动参数 `-autoOpenFirstVideo YES`：直接打开最近一个视频的剪辑窗口，方便截图与联调。
