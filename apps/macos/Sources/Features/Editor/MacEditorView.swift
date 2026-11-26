@@ -449,9 +449,15 @@ final class MacEditorModel: ObservableObject {
     @Published var scrollToStartToken = 0
     var currentClipIndex: Int? { isClipSelected ? clipAt(currentTime)?.index : nil }
     var clipCount: Int { clips.count }
-    /// 播放头左侧 / 右侧还有内容就能裁（单段里播放头在中间时两个按钮都能用）
-    var canTrimBefore: Bool { currentTime > 0.05 }
-    var canTrimAfter: Bool { currentTime < outputDuration - 0.05 }
+    /// 播放头落在某段「里面」、且这一侧还有余量，才能对这一段做裁剪
+    var canTrimBefore: Bool {
+        guard let anchor = clipAt(currentTime) else { return false }
+        return anchor.sourceTime - clips[anchor.index].start > 0.05
+    }
+    var canTrimAfter: Bool {
+        guard let anchor = clipAt(currentTime) else { return false }
+        return clips[anchor.index].end - anchor.sourceTime > 0.05
+    }
 
     /// 删除播放头所在的片段；删到一段不剩就回到「素材拖进来」的空状态
     func deleteClipAtPlayhead() {
@@ -464,33 +470,31 @@ final class MacEditorModel: ObservableObject {
         saveDraft()
     }
 
-    /// 向左裁剪（V2.7.16）：删掉播放头左侧的全部时间轴——当前片段左半 + 前面所有片段一起没，
-    /// 当前片段从播放头处起保留；剩下的时间轴顶到 00:00，播放指针回到开头。
+    /// 向左裁剪（V2.7.17）：只裁「选中这一段」——把它从播放头处切掉左半，右半接着用，
+    /// 前面、后面的片段一根汗毛都不动；播放指针停在（裁完后）这一段的起点。
     func trimBeforePlayhead() {
         guard let anchor = clipAt(currentTime) else { return }
         let clip = clips[anchor.index]
-        guard anchor.sourceTime - clip.start > 0.02 || anchor.index > 0 else { return }
+        guard anchor.sourceTime - clip.start > 0.02 else { return }
         let oldInterval = thumbnailInterval
         pushUndo()
-        var rest = anchor.index + 1 < clips.count ? Array(clips[(anchor.index + 1)...]) : []
-        rest.insert(MacClip(id: clip.id, start: anchor.sourceTime, end: clip.end), at: 0)
-        clips = rest
-        rebuildComposition(preserveTime: 0)
+        clips[anchor.index] = MacClip(id: clip.id, start: anchor.sourceTime, end: clip.end)
+        // 播放头对准这一段的起点：它前面所有片段的时长之和
+        let head = clips[..<anchor.index].reduce(0) { $0 + $1.duration }
+        rebuildComposition(preserveTime: head)
         keepScale(oldInterval)
-        scrollToStartToken += 1
         saveDraft()
     }
 
-    /// 向右裁剪（V2.7.16）：删掉播放头右侧的全部时间轴——当前片段右半 + 后面所有片段一起没，
-    /// 剩下的时间轴原点不动，播放指针停在原处（也就是新的末尾）。
+    /// 向右裁剪（V2.7.17）：同样只裁「选中这一段」——从播放头处切掉右半，
+    /// 后面的片段原地保留（整体往前接上）；播放指针停在原处（新的段末）。
     func trimAfterPlayhead() {
         guard let anchor = clipAt(currentTime) else { return }
         let clip = clips[anchor.index]
-        guard clip.end - anchor.sourceTime > 0.02 || anchor.index + 1 < clips.count else { return }
+        guard clip.end - anchor.sourceTime > 0.02 else { return }
         let oldInterval = thumbnailInterval
         pushUndo()
-        clips = Array(clips[..<anchor.index])
-            + [MacClip(id: clip.id, start: clip.start, end: anchor.sourceTime)]
+        clips[anchor.index] = MacClip(id: clip.id, start: clip.start, end: anchor.sourceTime)
         rebuildComposition(preserveTime: currentTime)
         keepScale(oldInterval)
         saveDraft()

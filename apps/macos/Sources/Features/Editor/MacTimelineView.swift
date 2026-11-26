@@ -31,9 +31,9 @@ struct MacTimelineView: View {
     private let trackHeight: CGFloat = CGFloat(MacEditorModel.thumbnailSide)
     /// 缩放空间余量：内容放得下时两端各留的滑动距离（放不下时用满）
     static let sideInset: CGFloat = 100
-    /// V2.7.13：片段之间不再留 2pt 缝。缝隙会把每个片段的实际落点往后推 gap，
-    /// 播放指针按「时间 × 每秒像素」绝对定位，段一多就会和片段边界错开。
-    private let clipGap: CGFloat = 0
+    /// V2.7.17：片段之间留 2pt 缝。缝宽从每个片段自己的宽度里扣，而不是加到后面去，
+    /// 所以第 i 段左边缘仍等于「前面所有时长 × pps」，播放指针、刻度尺不会随段数往后漂。
+    private let clipGap: CGFloat = 2
     private let rulerHeight: CGFloat = 26
     /// 底部拖动条区域总高（6 间距 + 10 条 + 2 底边距）
     private let bottomBarSpace: CGFloat = 18
@@ -307,12 +307,15 @@ struct MacTimelineView: View {
     }
 
     private func clipBlock(_ clip: MacClip, index: Int, timelineStart: Double, visibleRange: ClosedRange<Double>) -> some View {
-        let width = max(CGFloat(clip.duration) * pps, 6)
+        // 缝宽从片段宽度里扣：HStack 再补上 clipGap，第 i 段的左边缘仍精确落在时间点上
+        let width = max(CGFloat(clip.duration) * pps - clipGap, 6)
         let selected = index == selectedIndex
         let drawWidth = max(width, 4)
 
         return ZStack(alignment: .topLeading) {
             filmstrip(for: clip, timelineStart: timelineStart, visibleRange: visibleRange)
+                .frame(width: drawWidth, height: trackHeight, alignment: .topLeading)
+                .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
             // 未选中：细白框；选中：白色粗框（和 App 的选中框一致）
