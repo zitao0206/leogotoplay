@@ -146,9 +146,22 @@ final class MacEditorModel: ObservableObject {
     /// 还原现场时希望时间轴滚到的播放头时间，视图拿到可视宽度后消费一次
     var restoredScrollTime: Double?
 
-    /// 默认间隔：整段时长除以 16
+    /// 默认间隔：整段时长除以 8（只用于「每秒像素」这条全局尺度）
     var baseThumbnailInterval: Double {
         max(outputDuration / Self.thumbnailsAtDefault, Self.minThumbnailInterval)
+    }
+
+    /// V2.8.13：每一段取几张缩略图（默认 8，缩小一档 4、两档 2，放大按 1.5 倍加）
+    var thumbnailsPerClip: Double {
+        if zoomLevel >= 0 {
+            return Self.thumbnailsAtDefault * pow(Self.zoomInStep, zoomLevel)
+        }
+        return max(Self.thumbnailsAtDefault / pow(Self.zoomOutStep, -zoomLevel), 2)
+    }
+
+    /// 某一段的缩略图间隔：该段时长 / 张数，最短 1/30s
+    func filmStep(for clip: MacClip) -> Double {
+        max(clip.duration / max(thumbnailsPerClip, 1), Self.minThumbnailInterval)
     }
 
     /// 当前间隔（秒）：由档位和整段时长算出来，不单独存，避免裁完片段后还留着旧时长的间隔
@@ -416,7 +429,6 @@ final class MacEditorModel: ObservableObject {
     /// 多素材（V2.8.6）：每个片段按自己的素材取帧，槽位键带上片段 id。
     private func generateFilmstrip(generationID: Int) async {
         guard timelineViewportWidth > 1, !clips.isEmpty else { return }
-        let interval = thumbnailInterval
         let viewport = Double(timelineViewportWidth)
         let margin = max(2 * viewport / pps, 5)
         let visibleStart = Double(timelineScrollOffset - timelineInset(pps: pps)) / pps
@@ -434,17 +446,21 @@ final class MacEditorModel: ObservableObject {
             let to = min(windowEnd, clipEnd)
             guard to > from, let sourceID = clip.sourceID,
                   let tracks = materialTracks[sourceID], tracks.videoTrack != nil else { continue }
-            let assetFrom = clip.start + (from - clipStart)
-            let assetTo = clip.start + (to - clipStart)
-            let first = max(Int(floor(assetFrom / interval)), Int(floor(clip.start / interval)))
-            let last = min(Int(ceil(assetTo / interval)), Int(ceil(clip.end / interval)))
+            // V2.8.13：槽位按「本段的 时长 / 张数」切，从本段第一帧开始
+            let step = filmStep(for: clip)
+            let token = MacFilmKey.token(step)
+            let slotCount = max(1, Int(ceil(clip.duration / step - 1e-9)))
+            let localFrom = from - clipStart
+            let localTo = to - clipStart
+            let first = max(0, Int(floor(localFrom / step)))
+            let last = min(slotCount - 1, Int(ceil(localTo / step)))
             guard last >= first else { continue }
             var group = groups[sourceID] ?? (asset: tracks.asset, keys: [], times: [])
             for slot in first...last {
-                let key = MacFilmKey(clipID: clip.id, slot: slot)
+                let key = MacFilmKey(clipID: clip.id, slot: slot, step: token)
                 guard filmstrip[key] == nil, !pendingSlots.contains(key) else { continue }
                 group.keys.append(key)
-                group.times.append(Double(slot) * interval)
+                group.times.append(clip.start + Double(slot) * step)
             }
             groups[sourceID] = group
         }
@@ -471,7 +487,7 @@ final class MacEditorModel: ObservableObject {
             generator.appliesPreferredTrackTransform = true
             generator.maximumSize = CGSize(width: 200, height: 200)
             // 间隔可以细到 1/30s，容差跟着缩，避免相邻帧取重
-            let tolerance = CMTime(seconds: min(0.05, interval / 3), preferredTimescale: 1800)
+            let tolerance = CMTime(seconds: min(0.05, thumbnailInterval / 3), preferredTimescale: 1800)
             generator.requestedTimeToleranceBefore = tolerance
             generator.requestedTimeToleranceAfter = tolerance
             filmstripGenerator = generator
@@ -1130,7 +1146,7 @@ struct MacEditorView: View {
         .onDrag {
             NSItemProvider(object: dragPayload(for: material) as NSString)
         }
-        .help("拖到时间轴添加；⌘ 点选可多选，Delete 键删除")
+        .help("拖到时间轴添加；选中后按 Delete 键删除")
     }
 
     /// 正方形首帧缩略图（取不到就显示占位图标）
@@ -1177,16 +1193,8 @@ struct MacEditorView: View {
         .help("导入一条本地视频")
     }
 
-    /// 点 cell：⌘ 点击切换多选；普通点击只选中（V2.8.6：素材要靠拖进时间轴才会上轨道）
+    /// V2.8.13：点 cell 只选这一个（一次只能选中一个视频）；点空白取消选中
     private func handleMaterialTap(_ material: MacProjectMaterial) {
-        if NSEvent.modifierFlags.contains(.command) {
-            if selectedMaterialIDs.contains(material.id) {
-                selectedMaterialIDs.remove(material.id)
-            } else {
-                selectedMaterialIDs.insert(material.id)
-            }
-            return
-        }
         selectedMaterialIDs = [material.id]
     }
 
@@ -1218,6 +1226,7 @@ struct MacEditorView: View {
                     clips: model.clips,
                     frames: model.filmstrip,
                     thumbnailInterval: model.thumbnailInterval,
+                    thumbnailsPerClip: model.thumbnailsPerClip,
                     selectedIndex: model.currentClipIndex,
                     outputDuration: model.outputDuration,
                     currentTime: model.currentTime,
@@ -1548,9 +1557,9 @@ struct MacEditorView: View {
 
     /// 添加本地视频：一次可以选多条，全部进素材列表（上不上时间轴由用户拖决定）
     private func addVideo() {
-        let urls = MacAlerts.chooseVideoFiles()
-        guard !urls.isEmpty else { return }
-        importVideos(from: urls)
+        // V2.8.13：一次只能导入一个视频
+        guard let url = MacAlerts.chooseVideoFile() else { return }
+        importVideos(from: [url])
     }
 
     /// 逐个把选中的本地文件拷进项目目录，只进素材列表；全部导入后一起选中，方便一次拖上时间轴
@@ -1571,7 +1580,7 @@ struct MacEditorView: View {
             // V2.8.10：导入只进素材列表，不上时间轴；要上轨一律靠手动拖（多选后整组一次拖）
             selectedMaterialIDs = Set(imported)
             if !imported.isEmpty {
-                show(imported.count == 1 ? "已添加 1 个视频" : "已添加 \(imported.count) 个视频，拖到时间轴即可")
+                show("已添加 1 个视频，拖到时间轴即可")
             }
             if let failure {
                 let failed = urls.count - imported.count
@@ -1582,11 +1591,9 @@ struct MacEditorView: View {
 
     // MARK: - 拖进时间轴
 
-    /// 素材 cell 的拖拽载荷：多选时一次带上整组（按素材列表顺序）
+    /// 素材 cell 的拖拽载荷：V2.8.13 起一次只带这一个视频
     private func dragPayload(for material: MacProjectMaterial) -> String {
-        let ids = selectedMaterialIDs.contains(material.id) ? selectedMaterialIDs : [material.id]
-        let ordered = model.materials.filter { ids.contains($0.id) }.map { $0.id.uuidString }
-        return "mat:" + ordered.joined(separator: "|")
+        "mat:" + material.id.uuidString
     }
 
     /// 空编辑区接收拖入（无位置概念，直接按顺序追加）

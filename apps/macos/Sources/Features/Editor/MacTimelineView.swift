@@ -13,8 +13,10 @@ struct MacTimelineView: View {
     let clips: [MacClip]
     /// 缩略图缓存：key = 片段 id + 槽位序号（多素材时间轴同一秒可能来自不同素材）
     let frames: [MacFilmKey: CGImage]
-    /// 当前缩略图间隔（秒），由缩放档位决定
+    /// 当前缩略图间隔（秒），由缩放档位决定的「全局尺度」，只用于每秒像素与刻度
     let thumbnailInterval: Double
+    /// V2.8.13：每一段取几张缩略图（默认 8，缩小 4 / 2，放大按 1.5 倍加）
+    let thumbnailsPerClip: Double
     let selectedIndex: Int?
     let outputDuration: Double
     let currentTime: Double
@@ -416,24 +418,18 @@ struct MacTimelineView: View {
     /// 切割后右侧片段只是从更靠后的裁剪窗口开始，不会重复也不会跳帧。
     /// 只建可视窗口内（±1 个槽位）的那几十个视图。
     private func filmstrip(for clip: MacClip, timelineStart: Double, visibleRange: ClosedRange<Double>) -> some View {
-        let interval = max(thumbnailInterval, 1.0 / 30)
-        let firstSlot = Int(floor(clip.start / interval))
-        let lastSlot = max(Int(ceil(clip.end / interval)), firstSlot + 1)
-
-        // 可视窗口先夹回本片段自己的区间：滚动位置比片段末尾还靠右时，
-        // 未夹紧的 lowerBound 会把 first 推到 last 之后，ForEach(renderFirst..<renderLast) 直接 trap
-        // （Mac-V2.8.11 修复：两个视频一起拖进时间轴时的崩溃就出在这里）
-        let assetVisibleStart = min(clip.end, clip.start + max(0, visibleRange.lowerBound - timelineStart))
-        let assetVisibleEnd = min(clip.end, max(assetVisibleStart, clip.start + max(0, visibleRange.upperBound - timelineStart)))
-        // 两端各多留一格，避免「只露半张」的槽位被裁掉
-        let rawFirst = max(firstSlot, Int(floor(assetVisibleStart / interval)) - 1)
-        let rawLast = max(Int(ceil(assetVisibleEnd / interval)) + 1, rawFirst + 1)
-        // 最后再夹一次上界：保证 lowerBound <= upperBound，绝不构造空/倒置区间
-        let renderFirst = min(max(firstSlot, rawFirst), lastSlot - 1)
-        let renderLast = max(renderFirst + 1, min(lastSlot, rawLast))
-
+        // V2.8.13：每段的张数固定（默认 8），间隔 = 本段时长 / 张数，从本段第一帧开始
+        let step = max(clip.duration / max(thumbnailsPerClip, 1), 1.0 / 30)
+        let slotCount = max(1, Int(ceil(clip.duration / step - 1e-9)))
         let width = max(CGFloat(clip.duration) * pps, 4)
-        let slotWidth = CGFloat(interval) * pps
+        let slotWidth = CGFloat(step) * pps
+        let token = MacFilmKey.token(step)
+
+        // 可视窗口先夹回本段自己的区间，再夹索引，保证 renderFirst < renderLast（绝不构造倒置区间）
+        let localStart = max(0, visibleRange.lowerBound - timelineStart)
+        let localEnd = min(clip.duration, max(localStart, visibleRange.upperBound - timelineStart))
+        let renderFirst = min(max(0, Int(floor(localStart / step)) - 1), slotCount - 1)
+        let renderLast = max(renderFirst + 1, min(slotCount, Int(ceil(localEnd / step)) + 1))
 
         return ZStack(alignment: .topLeading) {
             Rectangle()
@@ -443,7 +439,7 @@ struct MacTimelineView: View {
                 ZStack {
                     Rectangle()
                         .fill(Color.white.opacity(0.10))
-                    if let image = frames[MacFilmKey(clipID: clip.id, slot: slot)] {
+                    if let image = frames[MacFilmKey(clipID: clip.id, slot: slot, step: token)] {
                         Image(decorative: image, scale: 1)
                             .resizable()
                             .scaledToFill()
@@ -451,7 +447,7 @@ struct MacTimelineView: View {
                 }
                 .frame(width: slotWidth, height: trackHeight)
                 .clipped()
-                .offset(x: CGFloat(Double(slot) * interval - clip.start) * pps)
+                .offset(x: CGFloat(slot) * slotWidth)
             }
         }
         // 必须 topLeading：默认居中对齐会在「只渲染了一部分槽位」时把胶片整体挪位

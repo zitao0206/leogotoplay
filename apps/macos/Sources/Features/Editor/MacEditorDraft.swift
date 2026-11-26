@@ -23,6 +23,10 @@ struct MacClip: Codable, Equatable, Identifiable {
 struct MacFilmKey: Hashable {
     var clipID: UUID
     var slot: Int
+    /// V2.8.13：槽位间隔（毫秒）。每段的间隔 = 段时长 / 张数，裁剪后间隔会变，带上它避免复用旧帧
+    var step: Int = 0
+
+    static func token(_ step: Double) -> Int { Int((step * 1000).rounded()) }
 }
 
 /// macOS 剪辑草稿：V2.0~V2.8.5 的单素材现场（按素材库视频 id 存）。
