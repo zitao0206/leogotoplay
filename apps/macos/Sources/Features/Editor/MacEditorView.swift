@@ -1,7 +1,6 @@
 import AVFoundation
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 import LeogotoPlayCore
 
 /// 编辑器数据源（macOS）：素材库视频，或从文件导入的视频。
@@ -688,15 +687,12 @@ struct MacEditorView: View {
 
     @State private var toast: String?
     @State private var isImporting = false
-    @State private var isDropTarget = false
     /// 时间轴的横向滚动位置（由下面的滑杆控制）
     @State private var timelineOffset: CGFloat = 0
     /// 时间轴可视宽度（时间轴上报，缩放时用于夹取偏移）
     @State private var timelineWidth: CGFloat = 0
     /// 导出进度弹框
     @State private var isExportSheetPresented = false
-    /// 新项目空态里的「从素材库选择」弹框（V2.8.3）
-    @State private var isLibrarySheetPresented = false
     /// 导出失败文案（弹框内展示，不走全局 alert）
     @State private var exportErrorText: String?
 
@@ -740,9 +736,6 @@ struct MacEditorView: View {
             MacExportSheet(model: model, errorText: exportErrorText) {
                 isExportSheetPresented = false
             }
-        }
-        .sheet(isPresented: $isLibrarySheetPresented) {
-            libraryPickerSheet
         }
         .overlay(alignment: .bottom) {
             if let toast {
@@ -804,38 +797,12 @@ struct MacEditorView: View {
         }
     }
 
-    /// 素材列表上被选中的视频（V2.7.11：支持多选 + 删除）
-    @State private var selectedVideoIDs: Set<UUID> = []
+    // MARK: - 素材区
 
-    /// 素材卡片固定正方形（V2.7.8）：列宽即单元边长
-    private let mediaCardSide: CGFloat = 132
-    private var mediaColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: mediaCardSide, maximum: mediaCardSide), spacing: 12, alignment: .top)]
-    }
-
-    /// 素材区（V2.3）：参考剪映的素材面板 —— 顶部「导入」+「全部」，下面是两列以上的卡片墙
+    /// 素材区（V2.8.4）：编辑页不再提供任何素材库导入入口 ——
+    /// 只显示当前项目的素材，外加一个「添加视频 / 更换素材」按钮，选了本地文件直接载进时间轴。
     private var mediaPanel: some View {
-        Group {
-            // V2.8.3：新项目（首页「开始编辑」进来、还没载入素材）素材区保持全空，
-            // 不再把整个 App 素材库铺进项目里，避免"一进新项目就看到上次那条视频"
-            if isFreshBlankProject {
-                blankProjectMediaPanel
-            } else {
-                libraryMediaPanel
-            }
-        }
-        .background(
-            MacTheme.surface
-                .contentShape(Rectangle())
-                .onTapGesture { selectedVideoIDs.removeAll() }
-        )
-    }
-
-    private var isFreshBlankProject: Bool { model.source == nil }
-
-    /// 新项目空态：只留「添加视频」「从素材库选择」两个入口
-    private var blankProjectMediaPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Text("素材")
                     .font(.system(size: 15, weight: .semibold))
@@ -850,345 +817,100 @@ struct MacEditorView: View {
             .padding(.horizontal, 14)
             .padding(.top, 12)
 
-            VStack(spacing: 14) {
-                Image(systemName: "film.stack")
-                    .font(.system(size: 30, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.30))
-                Text("新项目还没有素材")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-                Text("添加一条本地视频，或者从素材库挑一条，\n拖到下面的时间轴就可以开始剪。")
-                    .font(.caption)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.white.opacity(0.45))
-
-                HStack(spacing: 10) {
-                    Button {
-                        addVideo()
-                    } label: {
-                        Label("添加视频", systemImage: "plus")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
-                            .background(MacTheme.accentGradient, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isImporting)
-
-                    Button {
-                        isLibrarySheetPresented = true
-                    } label: {
-                        Text(library.videos.isEmpty ? "素材库是空的" : "从素材库选择（\(library.videos.count)）")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(library.videos.isEmpty ? Color.white.opacity(0.35) : Color.white.opacity(0.80))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
-                            .background(Color.white.opacity(0.06), in: Capsule())
-                            .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(library.videos.isEmpty)
-                }
-                .padding(.top, 2)
+            if let source = model.source {
+                currentMaterialCard(source)
+                    .padding(.horizontal, 14)
+            } else {
+                emptyMaterialCard
+                    .padding(.horizontal, 14)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 34)
-            .background(
-                Color.white.opacity(0.04),
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.white.opacity(0.10), style: StrokeStyle(lineWidth: 1, dash: [6, 5]))
-            )
-            .padding(.horizontal, 14)
 
             Spacer(minLength: 0)
         }
-    }
-
-    /// 从素材库挑一条载进时间轴（新项目空态里的入口）
-    private var libraryPickerSheet: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Text("从素材库选择")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-                Spacer(minLength: 0)
-                Button("取消") { isLibrarySheetPresented = false }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.6))
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 14)
-
-            Divider()
-
-            ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 132, maximum: 132), spacing: 12, alignment: .top)], alignment: .leading, spacing: 12) {
-                    ForEach(library.videos) { item in
-                        Button {
-                            isLibrarySheetPresented = false
-                            loadFromLibrary(item)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 7) {
-                                ZStack(alignment: .topTrailing) {
-                                    MacThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 8)
-                                        .frame(width: 132, height: 132)
-                                        .clipped()
-                                    Text(item.duration.timecode)
-                                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                                        .foregroundStyle(.white)
-                                        .shadow(color: .black.opacity(0.65), radius: 2, y: 1)
-                                        .padding(6)
-                                }
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
-                                )
-                                Text(item.title)
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.62))
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                            }
-                            .padding(2)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("载入「\(item.title)」")
-                    }
-                }
-                .padding(18)
-            }
-        }
-        .frame(width: 620, height: 460)
         .background(MacTheme.surface)
     }
 
-    private func loadFromLibrary(_ item: VideoItem) {
-        Task {
-            await model.open(MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id))
-        }
-    }
+    private func currentMaterialCard(_ source: MacEditorSource) -> some View {
+        HStack(spacing: 12) {
+            MacThumbnailView(thumbnailName: thumbnailName(for: source), cornerRadius: 8)
+                .frame(width: 88, height: 88)
+                .clipped()
 
-    private var libraryMediaPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                if isImporting {
-                    Text("正在读取…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 0)
-
-                if !selectedVideoIDs.isEmpty {
-                    Button {
-                        deleteSelectedVideos()
-                    } label: {
-                        Label("删除 \(selectedVideoIDs.count)", systemImage: "trash")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(
-                                Color.red.opacity(0.55),
-                                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .help("删除选中的视频（也可以按 Delete 键）")
-                }
-
-                Text("\(library.videos.count)")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 12)
-
-            Text("全部")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-
-            if library.videos.isEmpty {
-                emptyLibraryCard
-                    .padding(.horizontal, 14)
-                    .padding(.top, 6)
-                Spacer(minLength: 0)
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: mediaColumns, alignment: .leading, spacing: 12) {
-                        ForEach(library.videos) { item in
-                            mediaCard(item)
-                        }
-                        addVideoCard
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 14)
-                }
-            }
-        }
-    }
-
-    /// 点卡片：默认单选，⌘ 点击切换选中
-    private func handleMediaTap(_ item: VideoItem) {
-        if NSEvent.modifierFlags.contains(.command) {
-            if selectedVideoIDs.contains(item.id) {
-                selectedVideoIDs.remove(item.id)
-            } else {
-                selectedVideoIDs.insert(item.id)
-            }
-        } else {
-            selectedVideoIDs = [item.id]
-        }
-    }
-
-    private func deleteSelectedVideos() {
-        deleteVideos(ids: selectedVideoIDs)
-    }
-
-    /// Delete 键（V2.7.14）：先删素材列表里选中的视频；素材没选中时删时间轴上选中的片段
-    private func handleDeleteKey() {
-        if !selectedVideoIDs.isEmpty {
-            deleteSelectedVideos()
-            return
-        }
-        guard model.isClipSelected, model.currentClipIndex != nil else { return }
-        model.deleteClipAtPlayhead()
-    }
-
-    /// 删除选中的视频：连同文件、缩略图、草稿一起删，删前确认
-    private func deleteVideos(ids: Set<UUID>) {
-        let items = library.videos.filter { ids.contains($0.id) }
-        guard !items.isEmpty else {
-            selectedVideoIDs.removeAll()
-            return
-        }
-        let title = items.count == 1
-            ? "删除「\(items[0].title)」？"
-            : "删除选中的 \(items.count) 条视频？"
-        guard MacAlerts.confirmDelete(
-            title: title,
-            message: "会连同素材库里的文件、缩略图和草稿一起删掉，不能恢复。"
-        ) else { return }
-        for item in items {
-            MacEditorDraftStore.clear(for: item.id)
-            library.deleteVideo(item.id)
-        }
-        selectedVideoIDs.removeAll()
-    }
-
-    /// 素材列表为空时的空态（V2.7.9）：整块大圆角灰底，点哪儿都能导入
-    private var emptyLibraryCard: some View {
-        Button {
-            addVideo()
-        } label: {
-            VStack(spacing: 10) {
-                HStack(spacing: 8) {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 21, weight: .semibold))
-                        .foregroundStyle(MacTheme.accent)
-                    Text("导入")
-                        .font(.system(size: 21, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-                Text("视频，支持拖入或点击导入")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.40))
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 250)
-            .background(
-                Color.white.opacity(0.055),
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("导入一条视频")
-    }
-
-    private func mediaCard(_ item: VideoItem) -> some View {
-        let opened = model.source?.libraryVideoID == item.id
-        let picked = selectedVideoIDs.contains(item.id)
-        return VStack(alignment: .leading, spacing: 7) {
-            ZStack(alignment: .topTrailing) {
-                MacThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 8)
-                    .frame(width: mediaCardSide, height: mediaCardSide)
-                    .clipped()
-
-                Text(item.duration.timecode)
-                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
+            VStack(alignment: .leading, spacing: 5) {
+                Text(source.title)
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.65), radius: 2, y: 1)
-                    .padding(6)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(model.outputDuration.timecode)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Button {
+                    addVideo()
+                } label: {
+                    Label("更换素材", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.08), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(isImporting)
+                .padding(.top, 2)
             }
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(
-                        picked ? Color.white : (opened ? MacTheme.accent : Color.white.opacity(0.06)),
-                        lineWidth: picked ? 2.5 : (opened ? 2 : 1)
-                    )
-            )
 
-            Text(item.title)
-                .font(.caption)
-                .foregroundStyle(picked || opened ? Color.white : Color.white.opacity(0.62))
-                .lineLimit(1)
-                .truncationMode(.middle)
+            Spacer(minLength: 0)
         }
-        .contentShape(Rectangle())
-        .padding(2)
+        .padding(10)
         .background(
-            picked ? Color.white.opacity(0.06) : Color.clear,
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            Color.white.opacity(0.045),
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
         )
-        .onTapGesture {
-            handleMediaTap(item)
-        }
-        .contextMenu {
-            Button(picked && selectedVideoIDs.count > 1
-                   ? "删除选中的 \(selectedVideoIDs.count) 条视频"
-                   : "删除「\(item.title)」",
-                   role: .destructive) {
-                deleteVideos(ids: picked ? selectedVideoIDs : [item.id])
-            }
-        }
-        .onDrag {
-            NSItemProvider(object: item.id.uuidString as NSString)
-        }
-        .help("拖到下方编辑区载入这条视频，⌘ 点选可多选，Delete 键删除")
     }
 
-    private var addVideoCard: some View {
-        Button {
-            addVideo()
-        } label: {
-            VStack(spacing: 6) {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .semibold))
-                Text("添加视频")
-                    .font(.caption)
+    private var emptyMaterialCard: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "film.stack")
+                .font(.system(size: 26))
+                .foregroundStyle(.white.opacity(0.28))
+            Text("这个项目还没有素材")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+            Text("点「添加视频」选一条本地视频，直接载进时间轴开始剪。")
+                .font(.caption)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.white.opacity(0.45))
+
+            Button {
+                addVideo()
+            } label: {
+                Label("添加视频", systemImage: "plus")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(MacTheme.accentGradient, in: Capsule())
             }
-            .foregroundStyle(MacTheme.accent)
-            .frame(width: mediaCardSide, height: mediaCardSide)
-            .background(
-                MacTheme.accent.opacity(0.06),
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(MacTheme.accent.opacity(0.30), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
-            )
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .disabled(isImporting)
         }
-        .buttonStyle(.plain)
-        .disabled(isImporting)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 26)
+        .background(
+            Color.white.opacity(0.04),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(0.10), style: StrokeStyle(lineWidth: 1, dash: [6, 5]))
+        )
+    }
+
+    /// 素材库里的那条视频有缩略图；本地选的文件没有，走占位图
+    private func thumbnailName(for source: MacEditorSource) -> String? {
+        guard let id = source.libraryVideoID else { return nil }
+        return library.videos.first(where: { $0.id == id })?.thumbnailName
     }
 
     // MARK: - 编辑区
@@ -1249,13 +971,6 @@ struct MacEditorView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { model.isClipSelected = false }
         )
-        .overlay(
-            Rectangle()
-                .stroke(isDropTarget ? MacTheme.accent.opacity(0.7) : Color.clear, lineWidth: 2)
-        )
-        .onDrop(of: [UTType.plainText], isTargeted: $isDropTarget) { providers in
-            handleDrop(providers)
-        }
     }
 
     /// 还没拖进视频时的编辑区（V2.7.9）：置灰的工具条 + 空刻度尺 + 虚线拖入区
@@ -1284,7 +999,7 @@ struct MacEditorView: View {
                 Image(systemName: "film")
                     .font(.system(size: 18, weight: .regular))
                     .foregroundStyle(.white.opacity(0.55))
-                Text("素材拖拽到这里，开始你的大作吧～")
+                Text("点左侧「添加视频」载入素材，开始你的大作吧～")
                     .font(.system(size: 15))
                     .foregroundStyle(.white.opacity(0.62))
                 Spacer(minLength: 0)
@@ -1294,12 +1009,12 @@ struct MacEditorView: View {
             .frame(height: 118)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.white.opacity(isDropTarget ? 0.05 : 0.015))
+                    .fill(Color.white.opacity(0.015))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .strokeBorder(
-                        Color.white.opacity(isDropTarget ? 0.30 : 0.10),
+                        Color.white.opacity(0.10),
                         style: StrokeStyle(lineWidth: 1, dash: [4, 3])
                     )
             )
@@ -1337,26 +1052,6 @@ struct MacEditorView: View {
                 t += 1
             }
         }
-    }
-
-    private var dropHint: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "arrow.down.doc")
-                .font(.system(size: 26, weight: .light))
-                .foregroundStyle(MacTheme.accent.opacity(0.7))
-            Text("把上面列表里的视频拖到这里")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            Text("拖动即载入，松手后时间轴就出现在这里")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.white.opacity(isDropTarget ? 0.35 : 0.12), style: StrokeStyle(lineWidth: 1, dash: [6, 4]))
-        )
     }
 
     private var toolRow: some View {
@@ -1533,32 +1228,27 @@ struct MacEditorView: View {
     /// 内容落点：左端不留余量，片段起点（0.00）永远贴住面板左边，不随缩放漂移
     private var timelineInset: CGFloat { MacTimelineView.leadingInset }
 
-    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard let provider = providers.first else { return false }
-        provider.loadObject(ofClass: NSString.self) { object, _ in
-            guard let raw = object as? String, let id = UUID(uuidString: raw) else { return }
-            Task { @MainActor in
-                guard let item = library.videos.first(where: { $0.id == id }) else { return }
-                await model.open(MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id))
-            }
-        }
-        return true
+    /// Delete 键（V2.8.4）：编辑页只删时间轴上选中的片段
+    private func handleDeleteKey() {
+        guard model.isClipSelected, model.currentClipIndex != nil else { return }
+        model.deleteClipAtPlayhead()
     }
 
+    /// V2.8.4：编辑页不再导入素材库 —— 选中的本地文件直接载进时间轴
     private func addVideo() {
         guard let url = MacAlerts.chooseVideoFile() else { return }
+        loadLocalVideo(from: url)
+    }
+
+    /// 把选中的本地文件拷成临时文件后直接载进时间轴（不写素材库）
+    private func loadLocalVideo(from url: URL) {
+        let title = url.deletingPathExtension().lastPathComponent
         Task {
             isImporting = true
             defer { isImporting = false }
             do {
                 let temp = try VideoImporter.prepare(from: url)
-                let item = try await library.importVideo(
-                    fromTempURL: temp,
-                    source: .files,
-                    suggestedTitle: url.deletingPathExtension().lastPathComponent
-                )
-                VideoImporter.cleanTemporaryFile(at: temp)
-                show("已添加「\(item.title)」，拖到编辑区即可载入")
+                await model.open(MacEditorSource(url: temp, title: title, libraryVideoID: nil))
             } catch {
                 show(error.localizedDescription)
             }
