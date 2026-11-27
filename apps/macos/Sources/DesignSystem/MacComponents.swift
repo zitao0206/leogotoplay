@@ -115,10 +115,16 @@ struct MacVideoCard<MenuContent: View>: View {
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(.white)
                 .lineLimit(1)
-            Text("\(item.fileSize.fileSizeText) · \(item.duration.timecode)")
-                .font(.system(size: 9.5))
-                .foregroundStyle(Color.white.opacity(0.5))
-                .lineLimit(1)
+            HStack(spacing: 4) {
+                Text("\(item.fileSize.fileSizeText) · \(item.duration.timecode)")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(Color.white.opacity(0.5))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: "play.circle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.white.opacity(0.35))
+            }
         }
         .padding(6)
         .background(
@@ -380,6 +386,10 @@ struct MacVideoRow<MenuContent: View>: View {
             }
 
             Spacer(minLength: 8)
+
+            Image(systemName: "play.circle")
+                .font(.system(size: 16))
+                .foregroundStyle(Color.white.opacity(0.35))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
