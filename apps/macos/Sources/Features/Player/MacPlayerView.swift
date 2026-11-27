@@ -364,7 +364,9 @@ struct MacPlayerView: View {
             controlsIdleHidden = false
         }
 
-        setCursorHidden(isFullscreen && controlsIdleHidden)
+        // 失焦时把指针还回去，免得隐藏计数带到别的 App
+        if cursorHidden, !NSApp.isActive { setCursorHidden(false) }
+        setCursorHidden(controlsIdleHidden)
 
         // 拖动过程中冻结 hover 轮询：每 60ms 改状态会打断 SwiftUI 的拖动手势
         if dragStartPoint != nil || dragStartOffset != nil {
@@ -397,24 +399,18 @@ struct MacPlayerView: View {
         }
     }
 
-    /// 全透明光标：比 NSCursor.hide() 稳，不受窗口光标重设影响，也不会漏到系统
-    private static let invisibleCursor: NSCursor = {
-        let image = NSImage(size: NSSize(width: 1, height: 1))
-        image.lockFocus()
-        NSColor.clear.setFill()
-        NSRect(x: 0, y: 0, width: 1, height: 1).fill()
-        image.unlockFocus()
-        return NSCursor(image: image, hotSpot: .zero)
-    }()
-
-    /// 藏 / 显鼠标指针：隐藏期间每轮询都重设一次（窗口一改光标就被顶回去）
+    /// 藏 / 显鼠标指针。
+    /// 不能用「每帧重设透明光标」：窗口自身的 cursor rect 会不停把箭头设回来，
+    /// 两边每 60ms 抢一次，指针就一直闪 / 抖。改成系统的 hide 计数（光标矩形改不回来），
+    /// 只在状态切换的瞬间换一次光标图像。
     private func setCursorHidden(_ hidden: Bool) {
-        if hidden == cursorHidden {
-            if hidden { Self.invisibleCursor.set() }
-            return
-        }
+        guard hidden != cursorHidden else { return }
         cursorHidden = hidden
-        (hidden ? Self.invisibleCursor : NSCursor.arrow).set()
+        if hidden {
+            NSCursor.hide()
+        } else {
+            NSCursor.unhide()
+        }
     }
 
     private func setPointerInside(_ inside: Bool) {
