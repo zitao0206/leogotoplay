@@ -136,6 +136,28 @@ public final class LibraryStore: ObservableObject {
         return newFolder
     }
 
+    /// 把文件夹移到另一个父级下（`nil` = 根目录）。不允许移到自己或自己的子孙里。
+    public func moveFolder(_ folderID: UUID, to parentID: UUID?) {
+        guard let index = folders.firstIndex(where: { $0.id == folderID }) else { return }
+        if let parentID {
+            var cursor: UUID? = parentID
+            var depth = 0
+            while let current = cursor, depth < 128 {
+                if current == folderID {
+                    lastErrorMessage = "不能把文件夹移动到它自己或它的子文件夹里"
+                    return
+                }
+                cursor = folder(with: current)?.parentID
+                depth += 1
+            }
+        }
+        folders[index].parentID = parentID
+        folders[index].updatedAt = Date()
+        touchFolder(folderID)
+        touchFolder(parentID)
+        persist()
+    }
+
     public func renameFolder(_ folderID: UUID, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let index = folders.firstIndex(where: { $0.id == folderID }) else { return }

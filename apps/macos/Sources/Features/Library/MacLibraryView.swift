@@ -24,6 +24,11 @@ struct MacLibraryView: View {
     /// 长按视频弹出的操作面板
     @State private var actionVideo: VideoItem?
     @State private var showVideoActions = false
+    /// 长按文件夹弹出的操作面板
+    @State private var actionFolder: VideoFolder?
+    @State private var showFolderActions = false
+    /// 正在移动的文件夹
+    @State private var moveFolderTarget: VideoFolder?
 
     private var currentFolder: VideoFolder? { library.folder(with: openFolderID) }
 
@@ -55,6 +60,17 @@ struct MacLibraryView: View {
                     library.moveVideo(item.id, to: folderID)
                 }
             }
+            .sheet(item: $moveFolderTarget) { folder in
+                MacMoveSheet(
+                    folders: library.folders.filter { $0.id != folder.id },
+                    currentFolderID: folder.parentID,
+                    rootTitle: "根目录",
+                    title: "移动文件夹"
+                ) { parentID in
+                    library.moveFolder(folder.id, to: parentID)
+                    showToast("已移动文件夹「\(folder.name)」")
+                }
+            }
             .sheet(isPresented: $showNewFolder) {
                 MacNewFolderSheet { name in
                     // 在子文件夹里新建 → 建在当前文件夹下；首页新建 → 建在根目录
@@ -63,6 +79,7 @@ struct MacLibraryView: View {
                 }
             }
             .overlay { videoActionsPanel }
+            .overlay { folderActionsPanel }
             .overlay(alignment: .bottom) {
                 if let toast {
                     Text(toast)
@@ -251,7 +268,8 @@ struct MacLibraryView: View {
                             folder: folder,
                             videoCount: library.videoCount(in: folder.id),
                             subfolderCount: library.subfolderCount(in: folder.id),
-                            onOpen: { openFolderID = folder.id }
+                            onOpen: { openFolderID = folder.id },
+                            onLongPress: { showFolderActionsPanel(for: folder) }
                         )
                         .contextMenu {
                             Button("打开") { openFolderID = folder.id }
@@ -280,7 +298,7 @@ struct MacLibraryView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("文件夹").font(.system(size: 17, weight: .semibold))
-                Text("\(library.folders.count) 个文件夹")
+                Text("\(library.subfolders(in: nil).count) 个文件夹")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -288,7 +306,7 @@ struct MacLibraryView: View {
                     .buttonStyle(.link)
             }
 
-            if library.folders.isEmpty {
+            if library.subfolders(in: nil).isEmpty {
                 Button {
                     showNewFolder = true
                 } label: {
@@ -309,12 +327,13 @@ struct MacLibraryView: View {
             } else {
                 // V3.0.0：按 iOS 的列表样式排（一条文件夹一行）
                 VStack(spacing: 8) {
-                    ForEach(library.folders) { folder in
+                    ForEach(library.subfolders(in: nil)) { folder in
                         MacFolderRow(
                             folder: folder,
                             videoCount: library.videoCount(in: folder.id),
                             subfolderCount: library.subfolderCount(in: folder.id),
-                            onOpen: { openFolderID = folder.id }
+                            onOpen: { openFolderID = folder.id },
+                            onLongPress: { showFolderActionsPanel(for: folder) }
                         )
                         .contextMenu {
                             Button("打开") { openFolderID = folder.id }
@@ -342,7 +361,7 @@ struct MacLibraryView: View {
     private var videoSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(openFolderID == nil ? "视频" : "文件夹内视频")
+                Text("视频")
                     .font(.system(size: 17, weight: .semibold))
                 if !displayedVideos.isEmpty {
                     Text("\(displayedVideos.count) 个 · \(displayedSize)")
@@ -411,6 +430,72 @@ struct MacLibraryView: View {
 
     private func play(_ item: VideoItem) {
         MacPlayerWindowManager.shared.open(item: item, library: library)
+    }
+
+    private func showFolderActionsPanel(for folder: VideoFolder) {
+        actionFolder = folder
+        showFolderActions = true
+    }
+
+    private func dismissFolderActions() {
+        showFolderActions = false
+    }
+
+    /// 长按 / 右键文件夹弹出的三项操作面板
+    @ViewBuilder
+    private var folderActionsPanel: some View {
+        if showFolderActions, let folder = actionFolder {
+            ZStack {
+                Color.black.opacity(0.35)
+                    .ignoresSafeArea()
+                    .onTapGesture { dismissFolderActions() }
+
+                VStack(spacing: 0) {
+                    Text(folder.name)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.55))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+
+                    Divider().overlay(Color.white.opacity(0.08))
+
+                    MacActionPanelRow(title: "重命名", systemImage: "pencil") {
+                        dismissFolderActions()
+                        renameFolderTarget = folder
+                    }
+                    MacActionPanelRow(title: "移动", systemImage: "folder") {
+                        dismissFolderActions()
+                        moveFolderTarget = folder
+                    }
+                    MacActionPanelRow(title: "删除", systemImage: "trash", isDestructive: true) {
+                        dismissFolderActions()
+                        deleteFolderWithConfirm(folder)
+                    }
+                }
+                .frame(width: 268)
+                .background(MacTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.4), radius: 18, y: 8)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .transition(.opacity)
+        }
+    }
+
+    private func deleteFolderWithConfirm(_ folder: VideoFolder) {
+        guard MacAlerts.confirmDelete(
+            title: "删除文件夹「\(folder.name)」？",
+            message: "文件夹会被删掉，里面的 \(library.videoCount(in: folder.id)) 个视频会保留在「未分类」里；文件夹本身不可恢复。"
+        ) else { return }
+        library.deleteFolder(folder.id, deleteVideos: false)
+        showToast("已删除文件夹「\(folder.name)」")
     }
 
     private func showActions(for item: VideoItem) {

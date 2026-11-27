@@ -51,15 +51,17 @@ struct MacRenameSheet: View {
 struct MacMoveSheet: View {
     let folders: [VideoFolder]
     let currentFolderID: UUID?
+    var rootTitle: String = "未分类"
+    var title: String = "移动到文件夹"
     let onPick: (UUID?) -> Void
 
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("移动到文件夹").font(.headline)
+            Text(title).font(.headline)
             VStack(spacing: 0) {
-                row(title: "未分类", isCurrent: currentFolderID == nil) { onPick(nil) }
+                row(title: rootTitle, isCurrent: currentFolderID == nil) { onPick(nil) }
                 ForEach(folders) { folder in
                     Divider()
                     row(title: folder.name, isCurrent: currentFolderID == folder.id) { onPick(folder.id) }

@@ -286,6 +286,7 @@ struct MacFolderRow: View {
     let videoCount: Int
     let subfolderCount: Int
     var onOpen: () -> Void
+    var onLongPress: (() -> Void)? = nil
 
     @State private var hovering = false
 
@@ -329,8 +330,14 @@ struct MacFolderRow: View {
                 .stroke(Color.white.opacity(hovering ? 0.16 : 0.06), lineWidth: 1)
         )
         .contentShape(Rectangle())
-        .onTapGesture(perform: onOpen)
-        .onHover { hovering = $0 }
+        .overlay {
+            MacPressHoldOverlay(
+                onTap: onOpen,
+                onLongPress: { onLongPress?() },
+                onSecondary: { onLongPress?() },
+                onHoverChange: { hovering = $0 }
+            )
+        }
     }
 }
 
