@@ -57,7 +57,8 @@ struct MacThumbnailView: View {
 struct MacVideoCard<MenuContent: View>: View {
     let item: VideoItem
     var onPlay: () -> Void
-    var onEdit: () -> Void
+    var onEdit: (() -> Void)? = nil
+    var onLongPress: (() -> Void)? = nil
     @ViewBuilder var menuContent: MenuContent
 
     @State private var hovering = false
@@ -65,8 +66,19 @@ struct MacVideoCard<MenuContent: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .bottomTrailing) {
-                MacThumbnailView(thumbnailName: item.thumbnailName)
+                // 用无内在尺寸的 Color.clear 定 16:10 比例，缩略图放 overlay：
+                // 竖屏素材直接贴在缩略图上会把卡片撑高（长宽比被素材反向决定）
+                Color.clear
                     .aspectRatio(16 / 10, contentMode: .fit)
+                    .overlay {
+                        // GeometryReader 一定按父级给的尺寸布局，素材再怎么长宽比都撑不大
+                        GeometryReader { geo in
+                            MacThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 8)
+                                .frame(width: geo.size.width, height: geo.size.height)
+                                .clipped()
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                 Text(item.duration.timecode)
                     .font(.caption2.monospacedDigit().weight(.semibold))
@@ -101,28 +113,31 @@ struct MacVideoCard<MenuContent: View>: View {
 
             Text(item.title)
                 .font(.callout.weight(.medium))
+                .foregroundStyle(.white)
                 .lineLimit(1)
-            Text("\(item.fileSize.fileSizeText) · \(item.source == .editor ? "剪辑导出" : "本地导入")")
+            Text("\(item.fileSize.fileSizeText) · \(item.duration.timecode) · \(item.source == .editor ? "剪辑导出" : "本地导入")")
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.5))
                 .lineLimit(1)
         }
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: MacTheme.cardRadius, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(hovering ? Color.white.opacity(0.06) : MacTheme.surface)
         )
         .overlay(
             RoundedRectangle(cornerRadius: MacTheme.cardRadius, style: .continuous)
-                .stroke(Color.primary.opacity(hovering ? 0.18 : 0.06), lineWidth: 1)
+                .stroke(Color.white.opacity(hovering ? 0.16 : 0.06), lineWidth: 1)
         )
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(perform: onPlay)
-        .contextMenu {
-            Button("播放", action: onPlay)
-            Button("剪辑", action: onEdit)
-            menuContent
+        .contentShape(RoundedRectangle(cornerRadius: MacTheme.cardRadius, style: .continuous))
+        .overlay {
+            MacPressHoldOverlay(
+                onTap: onPlay,
+                onLongPress: { onLongPress?() },
+                onSecondary: { onLongPress?() },
+                onHoverChange: { hovering = $0 }
+            )
+            .clipShape(RoundedRectangle(cornerRadius: MacTheme.cardRadius, style: .continuous))
         }
         .help("单击播放，右键更多操作")
     }
@@ -319,10 +334,12 @@ struct MacFolderRow: View {
     }
 }
 
-/// 视频行：缩略图 + 名字 + 「体积 · 日期 · 时长」+ 右侧箭头，点一行就播放
+/// 视频行（列表布局）：缩略图 + 名字 + 「体积 · 日期 · 时长」，点一行就播放。
+/// V3.1.15：去掉右侧 chevron 箭头（用户反馈导航指示符多余），并支持长按。
 struct MacVideoRow<MenuContent: View>: View {
     let item: VideoItem
     var onPlay: () -> Void
+    var onLongPress: (() -> Void)? = nil
     @ViewBuilder var menuContent: MenuContent
 
     @State private var hovering = false
@@ -356,10 +373,6 @@ struct MacVideoRow<MenuContent: View>: View {
             }
 
             Spacer(minLength: 8)
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(hovering ? 0.6 : 0.35))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
@@ -372,8 +385,112 @@ struct MacVideoRow<MenuContent: View>: View {
                 .stroke(Color.white.opacity(hovering ? 0.16 : 0.06), lineWidth: 1)
         )
         .contentShape(Rectangle())
-        .onTapGesture(perform: onPlay)
-        .onHover { hovering = $0 }
-        .contextMenu { menuContent }
+        .overlay {
+            MacPressHoldOverlay(
+                onTap: onPlay,
+                onLongPress: { onLongPress?() },
+                onSecondary: { onLongPress?() },
+                onHoverChange: { hovering = $0 }
+            )
+        }
+    }
+}
+
+/// 单击 / 长按 / 右键的 AppKit 触碰层。
+/// SwiftUI 的 onLongPressGesture / contextMenu 在 ScrollView 里的行上实测收不到长按（onTap 正常），
+/// 所以自己用 NSView 计时：按下 0.55s 未抬起 → 长按，抬起即取消。
+struct MacPressHoldOverlay: NSViewRepresentable {
+    var onTap: () -> Void
+    var onLongPress: () -> Void
+    var onSecondary: () -> Void
+    var onHoverChange: ((Bool) -> Void)? = nil
+
+    func makeNSView(context: Context) -> MacPressHoldView {
+        let view = MacPressHoldView()
+        view.onTap = onTap
+        view.onLongPress = onLongPress
+        view.onSecondary = onSecondary
+        view.onHoverChange = onHoverChange
+        return view
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: MacPressHoldView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
+
+    func updateNSView(_ view: MacPressHoldView, context: Context) {
+        view.onTap = onTap
+        view.onLongPress = onLongPress
+        view.onSecondary = onSecondary
+        view.onHoverChange = onHoverChange
+    }
+}
+
+final class MacPressHoldView: NSView {
+    var onTap: (() -> Void)?
+    var onLongPress: (() -> Void)?
+    var onSecondary: (() -> Void)?
+    var onHoverChange: ((Bool) -> Void)?
+
+    private var pending: DispatchWorkItem?
+    private var didLongPress = false
+    private var downPoint = NSPoint.zero
+
+    override var isFlipped: Bool { true }
+    private var hovering = false
+
+    override func mouseDown(with event: NSEvent) {
+        didLongPress = false
+        downPoint = convert(event.locationInWindow, from: nil)
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.didLongPress = true
+            self.onLongPress?()
+        }
+        pending = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55, execute: work)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if hypot(point.x - downPoint.x, point.y - downPoint.y) > 8 {
+            pending?.cancel()
+            pending = nil
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        pending?.cancel()
+        pending = nil
+        if !didLongPress { onTap?() }
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        onSecondary?()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hovering = true
+        onHoverChange?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovering = false
+        onHoverChange?(false)
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
     }
 }

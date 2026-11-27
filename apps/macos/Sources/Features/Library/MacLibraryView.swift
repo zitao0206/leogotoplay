@@ -19,6 +19,12 @@ struct MacLibraryView: View {
     @State private var isImporting = false
     @State private var toast: String?
 
+    /// 视频区布局：宫格 / 列表（V3.1.15）
+    @AppStorage("libraryVideoLayout") private var videoLayout = "grid"
+    /// 长按视频弹出的操作面板
+    @State private var actionVideo: VideoItem?
+    @State private var showVideoActions = false
+
     private var currentFolder: VideoFolder? { library.folder(with: openFolderID) }
 
     private var displayedSize: String {
@@ -54,6 +60,7 @@ struct MacLibraryView: View {
                     library.createFolder(named: name)
                 }
             }
+            .overlay { videoActionsPanel }
             .overlay(alignment: .bottom) {
                 if let toast {
                     Text(toast)
@@ -255,6 +262,16 @@ struct MacLibraryView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                if !displayedVideos.isEmpty {
+                    Picker("布局", selection: $videoLayout) {
+                        Image(systemName: "square.grid.2x2").tag("grid")
+                        Image(systemName: "list.bullet").tag("list")
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 88)
+                    .help("切换宫格 / 列表")
+                }
             }
 
             if displayedVideos.isEmpty {
@@ -270,34 +287,119 @@ struct MacLibraryView: View {
                     }
                 )
                 .frame(height: 320)
-            } else {
+            } else if videoLayout == "list" {
                 VStack(spacing: 8) {
                     ForEach(displayedVideos) { item in
                         MacVideoRow(
                             item: item,
-                            onPlay: { MacPlayerWindowManager.shared.open(item: item, library: library) }
+                            onPlay: { play(item) },
+                            onLongPress: { showActions(for: item) }
                         ) {
-                            Button(item.isFavorite ? "取消收藏" : "收藏") {
-                                library.toggleFavorite(item.id)
-                            }
-                            Button("重命名") { renameVideoTarget = item }
-                            Button("移动到文件夹…") { moveVideoTarget = item }
-                            Button("在 Finder 中显示") {
-                                NSWorkspace.shared.activateFileViewerSelecting([item.fileURL])
-                            }
-                            Divider()
-                            Button("删除", role: .destructive) {
-                                guard MacAlerts.confirmDelete(
-                                    title: "删除「\(item.title)」？",
-                                    message: "视频文件会从素材库中移除，且不可恢复。"
-                                ) else { return }
-                                library.deleteVideo(item.id)
-                            }
+                            videoMenuActions(for: item)
+                        }
+                    }
+                }
+            } else {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 190, maximum: 300), spacing: 12)],
+                    alignment: .leading,
+                    spacing: 12
+                ) {
+                    ForEach(displayedVideos) { item in
+                        MacVideoCard(
+                            item: item,
+                            onPlay: { play(item) },
+                            onLongPress: { showActions(for: item) }
+                        ) {
+                            videoMenuActions(for: item)
                         }
                     }
                 }
             }
         }
+    }
+
+    // MARK: - 视频操作（长按弹框 / 右键菜单共用一套）
+
+    private func play(_ item: VideoItem) {
+        MacPlayerWindowManager.shared.open(item: item, library: library)
+    }
+
+    private func showActions(for item: VideoItem) {
+        actionVideo = item
+        showVideoActions = true
+    }
+
+    private func dismissActions() {
+        showVideoActions = false
+    }
+
+    /// 长按 / 右键弹出的四项操作面板
+    @ViewBuilder
+    private var videoActionsPanel: some View {
+        if showVideoActions, let item = actionVideo {
+            ZStack {
+                Color.black.opacity(0.35)
+                    .ignoresSafeArea()
+                    .onTapGesture { dismissActions() }
+
+                VStack(spacing: 0) {
+                    Text(item.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.55))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+
+                    Divider().overlay(Color.white.opacity(0.08))
+
+                    MacActionPanelRow(title: "播放", systemImage: "play.fill") {
+                        dismissActions()
+                        play(item)
+                    }
+                    MacActionPanelRow(title: "重命名", systemImage: "pencil") {
+                        dismissActions()
+                        renameVideoTarget = item
+                    }
+                    MacActionPanelRow(title: "移动到文件夹", systemImage: "folder") {
+                        dismissActions()
+                        moveVideoTarget = item
+                    }
+                    MacActionPanelRow(title: "删除", systemImage: "trash", isDestructive: true) {
+                        dismissActions()
+                        confirmDelete(item)
+                    }
+                }
+                .frame(width: 268)
+                .background(MacTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.4), radius: 18, y: 8)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .transition(.opacity)
+        }
+    }
+
+    @ViewBuilder
+    private func videoMenuActions(for item: VideoItem) -> some View {
+        Button("播放") { play(item) }
+        Button("重命名") { renameVideoTarget = item }
+        Button("删除", role: .destructive) { confirmDelete(item) }
+        Button("移动到文件夹") { moveVideoTarget = item }
+    }
+
+    private func confirmDelete(_ item: VideoItem) {
+        guard MacAlerts.confirmDelete(
+            title: "删除「\(item.title)」？",
+            message: "视频文件会从素材库中移除，且不可恢复。"
+        ) else { return }
+        library.deleteVideo(item.id)
     }
 
     // MARK: - 导入
@@ -335,5 +437,35 @@ struct MacLibraryView: View {
         )
         VideoImporter.cleanTemporaryFile(at: temp)
         toast = "已导入「\(item.title)」"
+    }
+}
+
+/// 操作面板里的一行按钮（自带 hover 高亮）
+private struct MacActionPanelRow: View {
+    let title: String
+    let systemImage: String
+    var isDestructive = false
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 18)
+                Text(title)
+                    .font(.system(size: 14))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(isDestructive ? Color.red : Color.white)
+            .padding(.horizontal, 14)
+            .frame(height: 42)
+            .contentShape(Rectangle())
+            .background(Color.white.opacity(hovering ? 0.08 : 0))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }

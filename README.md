@@ -106,6 +106,16 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - 整段除不尽时，最后一格的取帧时间夹到视频末帧（`assetDuration - 0.04`），尾部不会再留空槽位。
 - 缩放状态从「绝对间隔」改成「档位 `zoomLevel`」，间隔由档位和当前整段时长实时算出来：裁完片段后密度自动按新时长重算，不会留着旧时长的间隔；间隔一变胶片缓存整块作废重建。
 
+### Mac-V3.1.15 · Library 视频区：宫格/列表切换 + 去箭头 + 长按四项操作
+
+- 视频区标题右侧加分段切换（`@AppStorage("libraryVideoLayout")`，`grid` / `list` 持久化）：宫格用 `LazyVGrid` 自适应 190–300pt 列宽，列表用整行 `MacVideoRow`，切换即生效。
+- 宫格卡片缩略图改用 `Color.clear.aspectRatio(16/10)` + `GeometryReader` 钉死比例：竖屏素材不再把卡片撑高、图片也不再盖住上下文字。
+- 列表行去掉右侧 `chevron.right`；文件夹行保留箭头（那里确实是导航）。
+- 长按视频（卡片和行都支持）弹出操作面板：播放 / 重命名 / 移动到文件夹 / 删除，点空白处收起；右键弹同一套面板。
+- 踩坑一：SwiftUI 的 `onLongPressGesture` 和 `simultaneousGesture(LongPressGesture)` 在这些行上收不到长按（单击正常），`contextMenu` 也不稳定。改成自建 `MacPressHoldOverlay`：一个 `NSView` 用 `DispatchWorkItem` 自己计时 0.55s，抬起取消、拖动超 8pt 取消，同时接管 hover 高亮。`NSViewRepresentable` 必须实现 `sizeThatFits` 返回父级提议尺寸，否则这个 overlay 宽高都是 0，鼠标事件一个都进不来。
+- 踩坑二：操作面板没用 `confirmationDialog`——macOS 上它按系统 alert 排版，四个动作 + 取消被挤成三键样式，「移动到文件夹」直接被吃掉。改成自绘浮层：半透明遮罩 + 268pt 卡片 + 四行按钮（删除红色、hover 高亮）。
+- 验证：宫格 / 列表两种渲染分别截图确认、列表行无箭头；对 `AXRadioGroup` 的第二个按钮做 `AXPress` 后 `libraryVideoLayout` 由 `grid` 变 `list` 且视图立即切成整行；长按卡片、长按行都弹出四项面板，面板「播放」能打开播放窗口、「移动到文件夹」能拉起选文件夹的 sheet。
+
 ### Mac-V3.1.14 · 界面语种改为简体中文
 
 - Info.plist 里 `CFBundleDevelopmentRegion` 改成 `zh-Hans`，并声明 `CFBundleLocalizations = [zh-Hans, en]`，工程 `developmentRegion` / `knownRegions` 同步更新。
