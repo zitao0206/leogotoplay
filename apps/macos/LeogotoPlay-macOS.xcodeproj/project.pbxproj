@@ -12,6 +12,7 @@
 		8E94A5B34DFFBA18D86B0BFE /* MacComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65467B156477125DD466742 /* MacComponents.swift */; };
 		5F6B5E1FD76A3D5CA7985434 /* MacTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0636332518459CAED2A14EAF /* MacTheme.swift */; };
 		2A8ED1C618EA9CC1A627F78E /* MacCutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FCBB293AC1B2365543E5BE /* MacCutView.swift */; };
+		3A5C7E9B2D4F60718293A4B6 /* MacFaceExtract.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A69788796A5B4C /* MacFaceExtract.swift */; };
 		1D22EE923CB26B5B6E4CF857 /* MacEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1560606A3D0E1CEB03204FAA /* MacEditorView.swift */; };
 		9D2E4F6A8B0C1D3E5F7A9B2C /* MacTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F3A5B7C9D0246E8A0C2D4F /* MacTimelineView.swift */; };
 		7A3B5C9D1E2F40618293A4B5 /* MacEditorWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4D8E2F60A1B3C5D7E9F0A1B /* MacEditorWindow.swift */; };
@@ -32,6 +33,7 @@
 		B65467B156477125DD466742 /* MacComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacComponents.swift; sourceTree = "<group>"; };
 		0636332518459CAED2A14EAF /* MacTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTheme.swift; sourceTree = "<group>"; };
 		37FCBB293AC1B2365543E5BE /* MacCutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCutView.swift; sourceTree = "<group>"; };
+		F1E2D3C4B5A69788796A5B4C /* MacFaceExtract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFaceExtract.swift; sourceTree = "<group>"; };
 		1560606A3D0E1CEB03204FAA /* MacEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacEditorView.swift; sourceTree = "<group>"; };
 		E1F3A5B7C9D0246E8A0C2D4F /* MacTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTimelineView.swift; sourceTree = "<group>"; };
 		C4D8E2F60A1B3C5D7E9F0A1B /* MacEditorWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacEditorWindow.swift; sourceTree = "<group>"; };
@@ -105,6 +107,7 @@
 			isa = PBXGroup;
 			children = (
 				37FCBB293AC1B2365543E5BE /* child */,
+				F1E2D3C4B5A69788796A5B4C /* child */,
 			);
 			path = Cut;
 			sourceTree = "<group>";
@@ -268,6 +271,7 @@
 				8E94A5B34DFFBA18D86B0BFE /* MacComponents.swift in Sources */,
 				5F6B5E1FD76A3D5CA7985434 /* MacTheme.swift in Sources */,
 				2A8ED1C618EA9CC1A627F78E /* MacCutView.swift in Sources */,
+				3A5C7E9B2D4F60718293A4B6 /* MacFaceExtract.swift in Sources */,
 				1D22EE923CB26B5B6E4CF857 /* MacEditorView.swift in Sources */,
 				9D2E4F6A8B0C1D3E5F7A9B2C /* MacTimelineView.swift in Sources */,
 				7A3B5C9D1E2F40618293A4B5 /* MacEditorWindow.swift in Sources */,

@@ -122,7 +122,12 @@ struct MacCutView: View {
             ) {
                 ForEach(tools, id: \.title) { tool in
                     MacToolTile(icon: tool.icon, title: tool.title) {
-                        toast = "\(tool.title) · macOS 端开发中"
+                        switch tool.title {
+                        case "一键提取人脸":
+                            MacFaceExtractWindowManager.shared.open()
+                        default:
+                            toast = "\(tool.title) · macOS 端开发中"
+                        }
                     }
                 }
             }

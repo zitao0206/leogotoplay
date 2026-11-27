@@ -106,6 +106,17 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - 整段除不尽时，最后一格的取帧时间夹到视频末帧（`assetDuration - 0.04`），尾部不会再留空槽位。
 - 缩放状态从「绝对间隔」改成「档位 `zoomLevel`」，间隔由档位和当前整段时长实时算出来：裁完片段后密度自动按新时长重算，不会留着旧时长的间隔；间隔一变胶片缓存整块作废重建。
 
+### Mac-V4.0.0 · Cut 一键提取人脸
+
+- 参考 iOS 端 `FaceExtractService` / `FaceExtractView` 落地 macOS 版：`Cut` 页「一键提取人脸」不再提示「macOS 端开发中」，改成打开独立的提取窗口（`MacFaceExtractWindowManager`，1060×808，深色、可缩放、关窗即释放）。
+- 提取算法与 iOS 同源：`AVAssetReader` 按取帧间隔跳帧 → `Vision` 检测人脸（`VNDetectFaceCaptureQualityRequest` GPU → CPU → `VNDetectFaceRectanglesRequest` GPU → CPU → Core Image 逐级降级）→ 同一张脸用「时间窗 + IoU / 中心距离」归并、只留质量最高一帧 → 按 3:4 竖图裁切（高取 `max(脸高 × 2, 120)`，中心上偏 0.15 脸高）→ 最多 80 张，按时间排序。
+- 取帧间隔沿用 iOS 的 1…10 秒滑杆，值存 `UserDefaults`（key `face.extract.interval`）；确认框先跑一次中间帧实测本机单帧耗时，再给出「视频 00:20 · 每 1 秒 1 帧 · 20 帧」与「按本机速度预计需要 约 N 秒」。
+- 处理中是全屏进度蒙版（百分比 + 进度条 + 停止提取 → 二次确认），取消走 `Task.cancel`，`AVAssetReader` 立刻停下，原视频不动。
+- 结果页：`共 N 张 / 时长 / 3:4 裁切` 三颗信息胶囊 + 5 列 3:4 网格（左下角角标是该帧时间码），点开全屏预览，右上角可「再提一次」。
+- macOS 没有相册，保存改成「导出到文件夹…」：`NSOpenPanel` 选目录 → 自动建 `人脸提取-yyyyMMdd-HHmmss` 子文件夹 → 写 JPG（≥ 0.92 质量），完成后弹提示并直接在 Finder 里定位。
+- `MacFaceExtractor` 与 iOS 版唯一的结构差异：`UIImage` 换 `NSImage`、相册写入换文件写入；其余常量（`maxFaces 80`、`minFacePixels 48`、估时 clamp 2…900 秒）保持一致。
+- 调试钩子：`-faceExtractTestURL /path/x.mp4`（开窗直接载入该视频，省掉驱动 `NSOpenPanel`）、`-faceExtractSkipConfirm YES`（跳过确认框直接跑）、`-faceExtractExportDir /tmp/face_out`（跑完自动导出到该目录）。
+
 ### Mac-V3.1.25 · 视频卡片 / 列表行末尾加播放图标
 
 - 宫格卡片：在「体积 · 时长」这行尾部加 `play.circle`（11pt，白 35% 透明度），与左侧信息行同一基线。
