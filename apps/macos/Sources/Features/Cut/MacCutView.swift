@@ -232,8 +232,8 @@ struct MacCutView: View {
                         .stroke(MacTheme.inkStroke, lineWidth: 1)
                 )
             } else {
-                // V3.0.2：正方形宫格布局 —— 列数随窗口宽度自适应，每格边长恒等于列宽，永远是正方形
-                MacSquareGrid(minSide: 208, maxSide: 320, spacing: 12) {
+                // V3.0.3：格子固定正方形 128pt，只有列数随窗口宽度变
+                MacSquareGrid(fixedSide: 128, minSide: 128, maxSide: 128, spacing: 10) {
                     ForEach(projects) { project in
                         MacRecentProjectCard(
                             project: project,
@@ -308,6 +308,8 @@ private struct MacToolTile: View {
 
 /// 按可用宽度算列数，每格边长 = 该列宽度，因此永远是正方形；窗口拖宽多排一列，拖窄自动回收。
 private struct MacSquareGrid: Layout {
+    /// 给了就把格子钉死成这个边长，只让列数随宽度变化
+    var fixedSide: CGFloat? = nil
     var minSide: CGFloat = 208
     var maxSide: CGFloat = 320
     var spacing: CGFloat = 12
@@ -319,7 +321,11 @@ private struct MacSquareGrid: Layout {
 
     /// 同尺寸格子：先按最小边长定列数，边长超过上限再增加列数
     private func metrics(for width: CGFloat) -> Metrics {
-        guard width > 0 else { return Metrics(columns: 1, side: minSide) }
+        guard width > 0 else { return Metrics(columns: 1, side: fixedSide ?? minSide) }
+        if let fixedSide {
+            let columns = max(1, Int((width + spacing) / (fixedSide + spacing)))
+            return Metrics(columns: columns, side: fixedSide)
+        }
         func side(forColumns columns: Int) -> CGFloat {
             (width - CGFloat(columns - 1) * spacing) / CGFloat(columns)
         }
@@ -377,31 +383,33 @@ private struct MacRecentProjectCard: View {
     var body: some View {
         // V3.0.0：每个格子固定正方形（缩略图铺满，标题压在底部渐变上）
         ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(MacTheme.surface)
 
             cover
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .clipped()
 
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(project.title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                        .padding(.trailing, 22)
-                    Text("现场 · \(Self.relativeFormatter.localizedString(for: project.updatedAt, relativeTo: Date()))")
-                        .font(.caption2)
+                        .minimumScaleFactor(0.7)
+                        .padding(.trailing, 16)
+                    Text(Self.relativeFormatter.localizedString(for: project.updatedAt, relativeTo: Date()))
+                        .font(.system(size: 9))
                         .foregroundStyle(.white.opacity(0.62))
                         .lineLimit(1)
-                        .padding(.trailing, 22)
+                        .minimumScaleFactor(0.7)
+                        .padding(.trailing, 16)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 10)
-                .padding(.bottom, 9)
-                .padding(.top, 26)
+                .padding(.horizontal, 7)
+                .padding(.bottom, 6)
+                .padding(.top, 18)
                 .background(
                     LinearGradient(
                         colors: [.clear, .black.opacity(0.15), .black.opacity(0.78)],
@@ -411,30 +419,30 @@ private struct MacRecentProjectCard: View {
                 )
             }
 
-            HStack(spacing: 3) {
+            HStack(spacing: 2) {
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 7, weight: .bold))
                 Text("\(project.clips.count) 段")
-                    .font(.caption2.weight(.bold))
+                    .font(.system(size: 9, weight: .bold))
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
             .background(MacTheme.accent, in: Capsule())
-            .padding(8)
+            .padding(5)
 
             Text(project.outputDuration.timecode)
-                .font(.caption2.monospacedDigit().weight(.semibold))
+                .font(.system(size: 9, weight: .semibold).monospacedDigit())
                 .foregroundStyle(.white)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
                 .background(.black.opacity(0.72), in: Capsule())
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                .padding(8)
+                .padding(5)
         }
         // 尺寸由外面的 MacSquareGrid 直接给成正方形，这里不要再用 aspectRatio（.fit 会按内容比例算高）
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(Color.white.opacity(hovering ? 0.18 : 0.06), lineWidth: 1)
         )
         .overlay(alignment: .bottomTrailing) {
@@ -442,15 +450,15 @@ private struct MacRecentProjectCard: View {
                 showMenu.toggle()
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.white.opacity(hovering ? 0.95 : 0.6))
-                    .frame(width: 20, height: 18)
+                    .frame(width: 15, height: 13)
                     .background(Color.white.opacity(hovering ? 0.18 : 0.08),
-                                in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                                in: RoundedRectangle(cornerRadius: 4, style: .continuous))
             }
             .buttonStyle(.plain)
-            .frame(width: 20, height: 18)
-            .padding(8)
+            .frame(width: 15, height: 13)
+            .padding(5)
             .help("重命名 / 删除")
             .popover(isPresented: $showMenu, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -499,7 +507,7 @@ private struct MacRecentProjectCard: View {
                     .scaledToFill()
             } else {
                 Image(systemName: "film")
-                    .font(.system(size: 22))
+                    .font(.system(size: 16))
                     .foregroundStyle(.white.opacity(0.28))
             }
         }
