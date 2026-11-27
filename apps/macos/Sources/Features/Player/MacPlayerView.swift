@@ -4,7 +4,7 @@ import AppKit
 import SwiftUI
 import LeogotoPlayCore
 
-// MARK: - 播放窗口（V3.1.0）
+// MARK: - 播放窗口（V3.1.1）
 
 /// 播放器独立开窗：黑底、画面按原比例自适应铺满、底部悬浮控制面板（对齐参考稿）。
 @MainActor
@@ -72,10 +72,22 @@ struct MacPlayerView: View {
     @State private var duration: Double
     @State private var volume: Double = 1
     @State private var rate: Double = 1
-    @State private var showSpeedMenu = false
+    @State private var showSettings = false
     @State private var showPlaylist = false
     @State private var toast: String?
     @State private var pipController: AVPictureInPictureController?
+
+    /// 画面尺寸（素材原始尺寸，读取失败就按 16:9）
+    @State private var videoSize = CGSize(width: 16, height: 9)
+    /// 旋转角度（0/90/180/270）与左右上下翻转
+    @State private var rotation = 0
+    @State private var flipH = false
+    @State private var flipV = false
+
+    /// 窗口置顶（「在最前」）
+    @State private var isPinned = false
+    @State private var pinHovering = false
+    @State private var window: NSWindow?
 
     @State private var timeObserver: Any?
     @State private var endObserver: NSObjectProtocol?
@@ -90,11 +102,7 @@ struct MacPlayerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            // 画面：AVPlayerLayer 用 resizeAspect，窗口怎么拖都按视频原始比例铺满
-            MacPlayerSurface(player: player, onReady: { view in
-                makePiPController(for: view)
-            })
-            .allowsHitTesting(false)
+            videoCanvas
 
             VStack(spacing: 0) {
                 titleBar
@@ -102,7 +110,20 @@ struct MacPlayerView: View {
                 controlPanel
                     .padding(.bottom, 28)
             }
+
+            if showSettings {
+                // 点空白处收起
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .onTapGesture { showSettings = false }
+                settingsPanel
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(.trailing, 26)
+                    .padding(.bottom, 132)
+                    .transition(.opacity)
+            }
         }
+        .background(MacPlayerWindowReader { window = $0 })
         .overlay(alignment: .bottomTrailing) {
             if let toast {
                 Text(toast)
@@ -125,7 +146,35 @@ struct MacPlayerView: View {
         }
     }
 
-    // MARK: - 顶部标题
+    // MARK: - 画面
+
+    /// 画面按素材原始比例缩放；旋转 90°/270° 时按旋转后的宽高来算，避免被裁掉
+    private var videoCanvas: some View {
+        GeometryReader { geo in
+            let fitted = fittedVideoSize(in: geo.size)
+            MacPlayerSurface(player: player, onReady: { view in
+                makePiPController(for: view)
+            })
+            .frame(width: fitted.width, height: fitted.height)
+            .rotationEffect(.degrees(Double(rotation)))
+            .scaleEffect(x: flipH ? -1 : 1, y: flipV ? -1 : 1)
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func fittedVideoSize(in container: CGSize) -> CGSize {
+        let source = videoSize.width > 0 && videoSize.height > 0
+            ? videoSize
+            : CGSize(width: 16, height: 9)
+        let swapped = rotation == 90 || rotation == 270
+        let visualWidth = swapped ? source.height : source.width
+        let visualHeight = swapped ? source.width : source.height
+        let scale = min(container.width / visualWidth, container.height / visualHeight)
+        return CGSize(width: source.width * scale, height: source.height * scale)
+    }
+
+    // MARK: - 顶部标题 + 置顶钉子
 
     private var titleBar: some View {
         HStack(spacing: 10) {
@@ -143,17 +192,20 @@ struct MacPlayerView: View {
         .padding(.bottom, 10)
         .overlay(alignment: .trailing) {
             Button {
-                togglePictureInPicture()
+                isPinned.toggle()
+                window?.level = isPinned ? .floating : .normal
             } label: {
-                Image(systemName: "pip.enter")
+                Image(systemName: "pin")
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(pinHovering || isPinned ? MacTheme.accent : Color.white.opacity(0.85))
+                    .rotationEffect(.degrees(isPinned ? 45 : 0))
+                    .animation(.easeInOut(duration: 0.25), value: isPinned)
                     .frame(width: 26, height: 22)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("画中画")
-            .disabled(pipController == nil)
+            .onHover { pinHovering = $0 }
+            .help(isPinned ? "取消最前" : "在最前")
             .padding(.trailing, 14)
         }
         .background(
@@ -195,17 +247,14 @@ struct MacPlayerView: View {
                 transportButton("camera", size: 15, tip: "截取当前帧") { captureFrame() }
 
                 Button {
-                    showSpeedMenu.toggle()
+                    showSettings.toggle()
                 } label: {
                     Image(systemName: "gearshape")
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(showSpeedMenu ? MacTheme.accent : .white.opacity(0.9))
+                        .foregroundStyle(showSettings ? MacTheme.accent : .white.opacity(0.9))
                 }
                 .buttonStyle(.plain)
                 .help("播放设置")
-                .popover(isPresented: $showSpeedMenu, arrowEdge: .bottom) {
-                    speedMenu
-                }
 
                 Button {
                     showPlaylist.toggle()
@@ -272,38 +321,132 @@ struct MacPlayerView: View {
         .help(tip)
     }
 
-    private var speedMenu: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach([0.5, 1.0, 1.5, 2.0], id: \.self) { value in
-                Button {
-                    rate = value
-                    showSpeedMenu = false
-                } label: {
-                    HStack {
-                        Text(value == 1.0 ? "正常速度" : String(format: "%.1f×", value))
-                        Spacer()
-                        if rate == value {
-                            Image(systemName: "checkmark")
-                        }
+    // MARK: - 设置面板（对齐参考稿：速度 / 循环 / 旋转）
+
+    private var settingsPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("速度")
+                    .font(.system(size: 15, weight: .semibold))
+                Spacer()
+                Text(String(format: "%.1f 倍", rate))
+                    .font(.system(size: 14))
+                    .foregroundStyle(.white.opacity(0.85))
+            }
+            .padding(.top, 4)
+
+            Slider(value: $rate, in: 0.5...2.0)
+                .tint(MacTheme.accent)
+                .padding(.top, 10)
+
+            HStack {
+                ForEach([0.5, 1.0, 1.5, 2.0], id: \.self) { value in
+                    Button {
+                        rate = value
+                    } label: {
+                        Text(String(format: "%.1fx", value))
+                            .font(.system(size: 12))
+                            .foregroundStyle(rate == value ? Color.white : Color.white.opacity(0.45))
+                            .frame(maxWidth: .infinity)
                     }
-                    .frame(width: 120, alignment: .leading)
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.top, 6)
+            .padding(.bottom, 14)
+
+            Divider().opacity(0.25)
+
+            Toggle(isOn: $autoLoop) {
+                Text("循环播放")
+                    .font(.system(size: 15, weight: .semibold))
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .padding(.vertical, 12)
+
+            Divider().opacity(0.25)
+
+            Text("旋转")
+                .font(.system(size: 15, weight: .semibold))
+                .padding(.top, 12)
+                .padding(.bottom, 10)
+
+            HStack(spacing: 10) {
+                rotationButton("arrow.counterclockwise", tip: "向左旋转") { rotate(by: -90) }
+                rotationButton("arrow.clockwise", tip: "向右旋转") { rotate(by: 90) }
+                rotationButton("arrow.left.and.right", tip: "水平翻转", active: flipH) { flipH.toggle() }
+                rotationButton("arrow.up.and.down", tip: "垂直翻转", active: flipV) { flipV.toggle() }
+            }
+            .padding(.bottom, 12)
+
+            Divider().opacity(0.25)
+
+            HStack(spacing: 8) {
+                Button {
+                    showSettings = false
+                    togglePictureInPicture()
+                } label: {
+                    Label("画中画", systemImage: "pip.enter")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white.opacity(0.85))
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
+                .disabled(pipController == nil)
+
+                Spacer()
+
+                Button {
+                    resetTransform()
+                } label: {
+                    Text("重置")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+                .buttonStyle(.plain)
             }
-
-            Divider().padding(.vertical, 3)
-
-            Toggle("循环播放", isOn: $autoLoop)
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .padding(.horizontal, 8)
-                .padding(.bottom, 4)
+            .padding(.top, 10)
         }
-        .font(.system(size: 12))
-        .padding(6)
+        .padding(15)
+        .frame(width: 300)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(white: 0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.45), radius: 22, y: 10)
     }
+
+    private func rotationButton(_ symbol: String, tip: String, active: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(active ? MacTheme.accent : .white.opacity(0.9))
+                .frame(maxWidth: .infinity, minHeight: 42)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.white.opacity(active ? 0.16 : 0.08))
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(tip)
+    }
+
+    private func rotate(by degrees: Int) {
+        rotation = ((rotation + degrees) % 360 + 360) % 360
+    }
+
+    private func resetTransform() {
+        rotation = 0
+        flipH = false
+        flipV = false
+    }
+
+    // MARK: - 播放列表
 
     private var playlist: some View {
         let items = playlistItems
@@ -347,21 +490,23 @@ struct MacPlayerView: View {
         }
         .frame(width: 280)
         .padding(6)
+        .background(Color(white: 0.10))
     }
 
+    /// 当前视频所在文件夹里的全部视频，按创建时间倒序（= 列表里看到的顺序）
     private var playlistItems: [VideoItem] {
         let scope = library.videos(in: current.folderID)
         let list = scope.isEmpty ? library.videos(in: nil) : scope
         return list.sorted { $0.createdAt > $1.createdAt }
     }
 
+    // MARK: - 播放控制
+
     /// 00:00:00 这种「时:分:秒」，和参考稿一致
     static func hms(_ seconds: Double) -> String {
         let total = Int(max(0, seconds.rounded()))
         return String(format: "%02d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60)
     }
-
-    // MARK: - 播放控制
 
     private func start() {
         timeObserver = player.addPeriodicTimeObserver(
@@ -378,7 +523,27 @@ struct MacPlayerView: View {
 
         player.volume = Float(volume)
         observeEnd()
+        loadVideoSize()
         play()
+    }
+
+    private func loadVideoSize() {
+        guard let asset = player.currentItem?.asset else { return }
+        Task {
+            guard let track = try? await asset.loadTracks(withMediaType: .video).first else { return }
+            let natural = (try? await track.load(.naturalSize)) ?? CGSize(width: 16, height: 9)
+            let transform = (try? await track.load(.preferredTransform)) ?? .identity
+            let applied = natural.applying(transform)
+            let size = CGSize(width: abs(applied.width), height: abs(applied.height))
+            await MainActor.run {
+                if size.width > 0 && size.height > 0 {
+                    videoSize = size
+                    rotation = 0
+                    flipH = false
+                    flipV = false
+                }
+            }
+        }
     }
 
     private func observeEnd() {
@@ -391,6 +556,9 @@ struct MacPlayerView: View {
                 player.seek(to: .zero)
                 player.rate = Float(rate)
                 isPlaying = true
+            } else if let next = adjacentVideo(offset: 1) {
+                // 顺序播放：播完自动接当前文件夹里的下一条
+                load(next)
             } else {
                 isPlaying = false
             }
@@ -412,6 +580,15 @@ struct MacPlayerView: View {
         }
     }
 
+    private func adjacentVideo(offset: Int) -> VideoItem? {
+        let items = playlistItems
+        guard !items.isEmpty,
+              let index = items.firstIndex(where: { $0.id == current.id }) else { return nil }
+        let target = index + offset
+        guard items.indices.contains(target) else { return nil }
+        return items[target]
+    }
+
     private func load(_ video: VideoItem) {
         if let endObserver {
             NotificationCenter.default.removeObserver(endObserver)
@@ -423,6 +600,7 @@ struct MacPlayerView: View {
         player.pause()
         player.replaceCurrentItem(with: AVPlayerItem(url: video.fileURL))
         observeEnd()
+        loadVideoSize()
         play()
     }
 
@@ -547,4 +725,20 @@ private struct MacPlayerProgressBar: View {
         }
         .frame(height: 18)
     }
+}
+
+// MARK: - 拿窗口引用（置顶用）
+
+private struct MacPlayerWindowReader: NSViewRepresentable {
+    var onWindow: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            if let window = view.window { onWindow(window) }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
