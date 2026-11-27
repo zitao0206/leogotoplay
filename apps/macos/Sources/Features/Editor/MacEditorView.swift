@@ -68,6 +68,12 @@ final class MacEditorModel: ObservableObject {
         let duration: Double
         /// 源视频的像素尺寸（导出体积预估按它挑码率）
         var pixelSize: CGSize = .zero
+        /// 源视频帧率
+        var frameRate: Double = 30
+        /// 源视频编码（"h264" / "hevc"）
+        var codec: String = "h264"
+        /// 源码率（kbps，按文件大小/时长粗算）
+        var bitrateKbps: Double = 0
     }
     private var materialTracks: [UUID: MaterialTracks] = [:]
 
@@ -303,9 +309,22 @@ final class MacEditorModel: ObservableObject {
         }
         let transform = (try? await video?.load(.preferredTransform)) ?? .identity
         var pixelSize = CGSize.zero
-        if let video, let natural = try? await video.load(.naturalSize) {
-            pixelSize = CGSize(width: abs(natural.width), height: abs(natural.height))
+        var frameRate: Double = 30
+        var codec = "h264"
+        if let video {
+            if let natural = try? await video.load(.naturalSize) {
+                pixelSize = CGSize(width: abs(natural.width), height: abs(natural.height))
+            }
+            if let fps = try? await video.load(.nominalFrameRate), fps > 1 {
+                frameRate = Double(fps)
+            }
+            if let formats = try? await video.load(.formatDescriptions), let first = formats.first,
+               CMFormatDescriptionGetMediaSubType(first) == kCMVideoCodecType_HEVC {
+                codec = "hevc"
+            }
         }
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: material.url.path)[.size] as? Int) ?? 0
+        let bitrateKbps = duration > 0.1 ? Double(fileSize) * 8 / duration / 1000 : 0
         materialTracks[material.id] = MaterialTracks(
             asset: asset,
             videoTrack: video,
@@ -313,7 +332,10 @@ final class MacEditorModel: ObservableObject {
             audioRange: audioRange,
             transform: transform,
             duration: duration,
-            pixelSize: pixelSize
+            pixelSize: pixelSize,
+            frameRate: frameRate,
+            codec: codec,
+            bitrateKbps: bitrateKbps
         )
         if let index = materials.firstIndex(where: { $0.id == material.id }) {
             materials[index].duration = duration
@@ -980,26 +1002,55 @@ final class MacEditorModel: ObservableObject {
         return path
     }
 
-    /// 导出面板的体积预估：按画质档位挑码率 × 时长，再加 128kbps 音轨（只求数量级对得上）
+    /// 导出画面/码率方案（V2.9.1）
+    ///
+    /// 以前用 `AVAssetExportPreset1280x720`，那是「固定码率档」：源码率再低也会按
+    /// 720p 的高码率重灌一遍，于是 1080p 300MB 的片子导成 720p 反而 800MB。
+    /// 现在码率跟着源码率走：目标码率 = 源码率 × (目标像素/源像素)^0.9，并且不超过源码率。
+    func exportPlan(for quality: VideoExporter.Quality) -> VideoExporter.ExportPlan {
+        let tracks = clips.first?.sourceID.flatMap { materialTracks[$0] }
+            ?? materialTracks.values.first
+        let srcW = max(2, Int(tracks?.pixelSize.width ?? 1920))
+        let srcH = max(2, Int(tracks?.pixelSize.height ?? 1080))
+        let srcFps = max(24, min(60, tracks?.frameRate ?? 30))
+        let srcKbps = tracks?.bitrateKbps ?? 0
+        let codec = tracks?.codec ?? "h264"
+
+        let targetShortSide: Double
+        switch quality {
+        case .highest: targetShortSide = Double(min(srcW, srcH))
+        case .p1080: targetShortSide = 1080
+        case .p720: targetShortSide = 720
+        }
+        let shortSide = Double(min(srcW, srcH))
+        let scale = min(1, targetShortSide / shortSide)
+        let even = { (value: Double) in max(2, Int((value / 2).rounded()) * 2) }
+        let width = even(Double(srcW) * scale)
+        let height = even(Double(srcH) * scale)
+
+        // 源码率优先；拿不到就给一个按像素量的兜底值
+        let baseKbps = srcKbps > 0 ? srcKbps : Double(width * height) / 1000.0
+        let areaRatio = (Double(width * height)) / (Double(srcW * srcH))
+        var kbps = baseKbps * pow(min(1, areaRatio), 0.9)
+        kbps = min(kbps, baseKbps)          // 绝不比源更费
+        kbps = max(kbps, 700)               // 太低会糊，兜个底
+        if codec == "h264" { kbps = min(kbps, 12_000) }
+
+        return VideoExporter.ExportPlan(
+            width: width,
+            height: height,
+            frameRate: srcFps,
+            bitrate: Int(kbps * 1000),
+            codec: codec
+        )
+    }
+
+    /// 导出面板的体积预估：直接用上面的码率方案 × 时长 + 128kbps 音轨，和实际产出基本一致
     func estimatedExportBytes(quality: VideoExporter.Quality, duration: Double) -> Int64 {
         guard duration > 0 else { return 0 }
-        // 预设只缩小不放大：有效高度取「源高度」和「目标高度」的较小值，再按它挑码率
-        let sourceHeight = clips.first?.sourceID.flatMap { materialTracks[$0]?.pixelSize.height } ?? 0
-        let targetHeight: Double
-        switch quality {
-        case .p720: targetHeight = 720
-        case .p1080: targetHeight = 1080
-        case .highest: targetHeight = sourceHeight
-        }
-        let effective = sourceHeight > 0 ? min(sourceHeight, targetHeight) : targetHeight
-        let videoMbps: Double
-        if effective >= 2000 { videoMbps = 45 }
-        else if effective >= 1400 { videoMbps = 24 }
-        else if effective >= 1080 { videoMbps = 12 }
-        else if effective >= 720 { videoMbps = 5 }
-        else { videoMbps = 2 }
-        let totalMbps = videoMbps + 0.128
-        return Int64(totalMbps * duration / 8 * 1_000_000)
+        let plan = exportPlan(for: quality)
+        let totalKbps = Double(plan.bitrate) / 1000 + 128
+        return Int64(totalKbps * 1000 * duration / 8)
     }
 
     func export(quality: VideoExporter.Quality = ExportSettings.quality,
@@ -1015,15 +1066,36 @@ final class MacEditorModel: ObservableObject {
         defer { isExporting = false }
 
         let built = makeComposition(includeAudio: !isMuted)
+        let plan = exportPlan(for: quality)
+        let progress: @MainActor (Double) -> Void = { [weak self] value in
+            self?.exportProgress = value
+        }
         do {
-            let url = try await VideoExporter.export(
-                composition: built.composition,
-                quality: quality,
-                fileType: fileType,
-                progressHandler: { [weak self] progress in
-                    self?.exportProgress = progress
+            let url: URL
+            if quality == .highest {
+                // 原始：不重编码，换封装即可（体积≈源、最快）；素材编码混着来时退回重编码
+                do {
+                    url = try await VideoExporter.exportPassthrough(
+                        composition: built.composition,
+                        fileType: fileType,
+                        progressHandler: progress
+                    )
+                } catch {
+                    url = try await VideoExporter.exportWithPlan(
+                        composition: built.composition,
+                        plan: plan,
+                        fileType: fileType,
+                        progressHandler: progress
+                    )
                 }
-            )
+            } else {
+                url = try await VideoExporter.exportWithPlan(
+                    composition: built.composition,
+                    plan: plan,
+                    fileType: fileType,
+                    progressHandler: progress
+                )
+            }
             exportedURL = url
             return url
         } catch {
