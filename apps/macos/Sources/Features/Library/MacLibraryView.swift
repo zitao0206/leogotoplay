@@ -660,11 +660,7 @@ private struct MacAccentToolbarButtonStyle: ButtonStyle {
             .padding(.vertical, 4)
             .background(
                 Capsule(style: .continuous)
-                    .fill(Color.white.opacity(configuration.isPressed ? 0.10 : 0.0))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(MacTheme.accent.opacity(0.45), lineWidth: 1)
+                    .fill(Color.white.opacity(configuration.isPressed ? 0.20 : 0.12))
             )
             .contentShape(Capsule(style: .continuous))
     }
