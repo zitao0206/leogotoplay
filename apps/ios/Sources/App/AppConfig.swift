@@ -15,7 +15,7 @@ struct AppConfig {
         var title: String {
             switch self {
             case .cut: return "Cut"
-            case .list: return "List"
+            case .list: return "Library"
             case .mine: return "Mine"
             }
         }

@@ -328,52 +328,64 @@ private struct MacRecentProjectCard: View {
     }()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .bottomTrailing) {
-                cover
-                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .clipped()
-
-                Text(project.outputDuration.timecode)
-                    .font(.caption2.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.black.opacity(0.72), in: Capsule())
-                    .padding(6)
-            }
-            .overlay(alignment: .topLeading) {
-                HStack(spacing: 3) {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 9, weight: .bold))
-                    Text("\(project.clips.count) 段")
-                        .font(.caption2.weight(.bold))
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(MacTheme.accent, in: Capsule())
-                .padding(6)
-            }
-
-            Text(project.title)
-                .font(.callout.weight(.medium))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, 22)
-
-            Text("现场 · \(Self.relativeFormatter.localizedString(for: project.updatedAt, relativeTo: Date()))")
-                .font(.caption2)
-                .foregroundStyle(Color.white.opacity(0.45))
-                .lineLimit(1)
-        }
-        .padding(8)
-        .background(
+        // V3.0.0：每个格子固定正方形（缩略图铺满，标题压在底部渐变上）
+        ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(MacTheme.surface)
-        )
+
+            cover
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipped()
+
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(project.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .padding(.trailing, 22)
+                    Text("现场 · \(Self.relativeFormatter.localizedString(for: project.updatedAt, relativeTo: Date()))")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.62))
+                        .lineLimit(1)
+                        .padding(.trailing, 22)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 9)
+                .padding(.top, 26)
+                .background(
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(0.15), .black.opacity(0.78)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+            }
+
+            HStack(spacing: 3) {
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 9, weight: .bold))
+                Text("\(project.clips.count) 段")
+                    .font(.caption2.weight(.bold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(MacTheme.accent, in: Capsule())
+            .padding(8)
+
+            Text(project.outputDuration.timecode)
+                .font(.caption2.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(.black.opacity(0.72), in: Capsule())
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(8)
+        }
+        .aspectRatio(1, contentMode: .fit)
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.white.opacity(hovering ? 0.18 : 0.06), lineWidth: 1)
@@ -384,14 +396,14 @@ private struct MacRecentProjectCard: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.white.opacity(hovering ? 0.9 : 0.5))
+                    .foregroundStyle(.white.opacity(hovering ? 0.95 : 0.6))
                     .frame(width: 20, height: 18)
-                    .background(Color.white.opacity(hovering ? 0.12 : 0.04),
+                    .background(Color.white.opacity(hovering ? 0.18 : 0.08),
                                 in: RoundedRectangle(cornerRadius: 5, style: .continuous))
             }
             .buttonStyle(.plain)
             .frame(width: 20, height: 18)
-            .padding(6)
+            .padding(8)
             .help("重命名 / 删除")
             .popover(isPresented: $showMenu, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 2) {

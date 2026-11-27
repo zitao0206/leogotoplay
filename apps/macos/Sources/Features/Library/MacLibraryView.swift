@@ -3,7 +3,7 @@ import PhotosUI
 import SwiftUI
 import LeogotoPlayCore
 
-/// macOS 素材库：文件夹 + 视频网格，右键管理，双击进入文件夹。
+/// macOS Library 页（原 List）：统计条 + 文件夹 + 视频网格，搜索/导入/新建文件夹/播放器齐备。
 struct MacLibraryView: View {
     @EnvironmentObject private var library: LibraryStore
 
@@ -111,6 +111,7 @@ struct MacLibraryView: View {
                 header
 
                 if openFolderID == nil {
+                    statsBar
                     folderSection
                 }
 
@@ -134,7 +135,7 @@ struct MacLibraryView: View {
                 .help("返回素材库")
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(currentFolder?.name ?? "素材库")
+                Text(currentFolder?.name ?? "Library")
                     .font(.title2.weight(.semibold))
                 Text("\(displayedVideos.count) 个视频 · \(library.folders.count) 个文件夹 · \(library.totalSize.fileSizeText)")
                     .font(.caption)
@@ -142,6 +143,40 @@ struct MacLibraryView: View {
             }
             Spacer()
         }
+    }
+
+    // MARK: - 统计条（视频 / 占用空间 / 总时长，参考 iOS）
+
+    private var statsBar: some View {
+        HStack(spacing: 0) {
+            statItem(value: "\(library.videos.count)", title: "视频")
+            Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1, height: 26)
+            statItem(value: library.totalSize.fileSizeText, title: "占用空间")
+            Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1, height: 26)
+            statItem(value: library.totalDuration.timecode, title: "总时长")
+        }
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: MacTheme.cardRadius, style: .continuous)
+                .fill(MacTheme.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: MacTheme.cardRadius, style: .continuous)
+                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+        )
+    }
+
+    private func statItem(value: String, title: String) -> some View {
+        VStack(spacing: 3) {
+            Text(value)
+                .font(.system(size: 17, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.white)
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(Color.white.opacity(0.5))
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - 文件夹

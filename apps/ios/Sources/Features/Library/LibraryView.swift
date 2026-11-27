@@ -2,7 +2,7 @@ import PhotosUI
 import SwiftUI
 import LeogotoPlayCore
 
-/// List 页：素材库。文件夹管理 + 导入（相册 / 文件）+ 搜索。
+/// Library 页：素材库。文件夹管理 + 导入（相册 / 文件）+ 搜索。
 /// V1.0.4：固定为列表展示（去掉布局切换键与 All 按钮），统计卡改为
 /// 视频总数 / 占用空间 / 总时长，点击进入全部视频页。
 struct LibraryView: View {
@@ -53,7 +53,7 @@ struct LibraryView: View {
                     .environmentObject(library)
             }
         }
-        .navigationTitle("List")
+        .navigationTitle("Library")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索视频名称")
         .toolbar {

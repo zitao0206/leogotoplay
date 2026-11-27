@@ -1343,10 +1343,7 @@ struct MacEditorView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Text(model.title)
-                .font(.headline)
-                .foregroundStyle(.white)
-                .lineLimit(1)
+            // V3.0.0：项目名只在窗口标题栏显示，这行不再重复
 
             if !model.hasClips {
                 Text("空白项目")

@@ -13,7 +13,7 @@ struct TabLayoutView: View {
         NavigationStack {
             Form {
                 Section {
-                    Toggle("List", isOn: $showList)
+                    Toggle("Library", isOn: $showList)
                         .disabled(!showCut)
                         .padding(.vertical, 5.5)
                     Toggle("Cut", isOn: $showCut)

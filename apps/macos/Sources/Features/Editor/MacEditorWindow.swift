@@ -62,9 +62,9 @@ final class MacEditorWindowManager: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         // V2.8.2：剪辑窗口不参与系统的「重新打开窗口」恢复，避免下次启动被系统还原出上一次的项目
         window.isRestorable = false
-        // V2.9.6：标题栏不再显示项目名（项目名只在编辑页左上角显示）
-        window.title = ""
-        window.titleVisibility = .hidden
+        // V3.0.0：项目名只留在窗口标题栏（编辑页左上角那一处去掉，避免重复）
+        window.title = project.title
+        window.titleVisibility = .visible
         window.subtitle = "LeogotoPlay"
         window.minSize = NSSize(width: 1040, height: 660)
         window.appearance = NSAppearance(named: .darkAqua)

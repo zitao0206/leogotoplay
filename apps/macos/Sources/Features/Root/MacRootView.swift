@@ -1,10 +1,10 @@
 import SwiftUI
 import LeogotoPlayCore
 
-/// 侧栏分区：对应 iOS 的三个 Tab（Cut / List / Mine），桌面端以侧栏 + 主区域呈现。
-/// V1.0：导航条目统一按 Cut / List / Mine 命名（与 iOS Tab 同名），侧栏底部不再显示登录状态。
+/// 侧栏分区：对应 iOS 的三个 Tab（Cut / Library / Mine），桌面端以侧栏 + 主区域呈现。
+/// V3.0.0：原 List 统一改名 Library（与 iOS 对齐），侧栏底部不再显示登录状态。
 enum MacSection: String, CaseIterable, Identifiable {
-    // V2.8.12：首页分区顺序改为 List（素材库）→ Cut（剪辑台）→ Mine
+    // V2.8.12：首页分区顺序改为 Library（素材库）→ Cut（剪辑台）→ Mine
     case library
     case cut
     case mine
@@ -14,7 +14,7 @@ enum MacSection: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .cut: return "Cut"
-        case .library: return "List"
+        case .library: return "Library"
         case .mine: return "Mine"
         }
     }

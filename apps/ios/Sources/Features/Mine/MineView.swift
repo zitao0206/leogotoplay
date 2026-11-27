@@ -202,7 +202,7 @@ struct MineView: View {
     private var tabLayoutSubtitle: String {
         switch (showList, showCut) {
         case (true, true): return "List + Cut"
-        case (true, false): return "List"
+        case (true, false): return "Library"
         case (false, true): return "Cut"
         default: return "List + Cut"
         }
