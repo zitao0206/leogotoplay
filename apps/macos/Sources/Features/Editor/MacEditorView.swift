@@ -80,9 +80,60 @@ final class MacEditorModel: ObservableObject {
     private var pendingSlots: Set<MacFilmKey> = []
     /// 到货的帧先入缓冲，批量提交给视图，避免一帧一次重绘
     private var frameBuffer: [MacFilmKey: CGImage] = [:]
+    /// 换档时用「最近邻帧」临时顶上的槽位：先上屏不空白，真实帧解出来后再换掉
+    private var provisionalSlots: Set<MacFilmKey> = []
     private var flushTask: Task<Void, Never>?
     private var filmstripGenerator: AVAssetImageGenerator?
     private var filmstripGenerationID = 0
+
+    // MARK: 帧缓存（V2.8.17）：以「素材 + 量化时间」为键，跨缩放档位复用
+
+    /// 素材时间量化到 1/60s：不同档位取到同一时刻时共用一张图
+    private static let frameQuantum = 1.0 / 60
+    /// 内存上限（200×200 的 CGImage ≈ 160KB，500 张 ≈ 80MB）
+    private static let frameCacheLimit = 500
+    private static let frameCacheTrimCount = 100
+
+    private struct SourceFrameKey: Hashable {
+        let sourceID: UUID
+        let tick: Int
+    }
+
+    private var sourceFrames: [SourceFrameKey: CGImage] = [:]
+    private var sourceFrameOrder: [SourceFrameKey] = []
+
+    private static func frameTick(_ seconds: Double) -> Int {
+        Int((max(0, seconds) / frameQuantum).rounded())
+    }
+
+    private func cachedSourceFrame(_ sourceID: UUID, time: Double) -> CGImage? {
+        sourceFrames[SourceFrameKey(sourceID: sourceID, tick: Self.frameTick(time))]
+    }
+
+    private func storeSourceFrame(_ image: CGImage, sourceID: UUID, time: Double) {
+        let key = SourceFrameKey(sourceID: sourceID, tick: Self.frameTick(time))
+        if sourceFrames[key] == nil {
+            sourceFrameOrder.append(key)
+            if sourceFrameOrder.count > Self.frameCacheLimit {
+                let overflow = min(Self.frameCacheTrimCount, sourceFrameOrder.count - Self.frameCacheLimit)
+                for stale in sourceFrameOrder.prefix(overflow) { sourceFrames[stale] = nil }
+                sourceFrameOrder.removeFirst(overflow)
+            }
+        }
+        sourceFrames[key] = image
+    }
+
+    /// 距 time 最近的已缓存帧（±tolerance 内，最多探 40 个刻度），用作换档时的占位图
+    private func nearestSourceFrame(_ sourceID: UUID, time: Double, tolerance: Double) -> CGImage? {
+        if let exact = cachedSourceFrame(sourceID, time: time) { return exact }
+        let maxProbe = min(40, max(1, Int(tolerance / Self.frameQuantum)))
+        for offset in 1...maxProbe {
+            let delta = Double(offset) * Self.frameQuantum
+            if let image = cachedSourceFrame(sourceID, time: time + delta) { return image }
+            if let image = cachedSourceFrame(sourceID, time: time - delta) { return image }
+        }
+        return nil
+    }
     private var timelineScrollOffset: CGFloat = 0
 
     /// 打开时的现场（load() 里消费）
@@ -409,13 +460,18 @@ final class MacEditorModel: ObservableObject {
     /// 滚动只做防抖补帧，不打断已经在跑的批，避免来回滚动时反复取消重来
     private func requestFilmstrip(resetCache: Bool = false) {
         if resetCache {
-            filmstripGenerationID += 1
+            // V2.8.17：换档不再整块作废缓存——先用已缓存的素材帧（或最近邻帧）把新档位的槽位铺满，
+            // 缺的那几张再异步补，所以缩小时看到的是旧图替换成新图，而不是一片空白闪烁
             filmstripGenerator?.cancelAllCGImageGeneration()
             pendingSlots.removeAll()
+            provisionalSlots.removeAll()
             frameBuffer.removeAll()
             flushTask?.cancel()
             flushTask = nil
-            filmstrip = [:]
+            let step = max(thumbnailInterval, Self.minThumbnailInterval)
+            warmFilmstrip(fromCache: step)
+            pruneFilmstrip(step: step)
+            filmstripGenerationID += 1
         }
         let id = filmstripGenerationID
         filmstripTask?.cancel()
@@ -424,6 +480,40 @@ final class MacEditorModel: ObservableObject {
             guard !Task.isCancelled else { return }
             await self?.generateFilmstrip(generationID: id)
         }
+    }
+
+    /// 换档时把新槽位尽量用缓存帧填满（命中就立刻上屏）
+    private func warmFilmstrip(fromCache step: Double) {
+        guard !clips.isEmpty, !sourceFrames.isEmpty else { return }
+        let token = MacFilmKey.token(step)
+        var merged = filmstrip
+        var filled = 0
+        for clip in clips {
+            guard let sourceID = clip.sourceID else { continue }
+            let slotCount = max(1, Int(ceil(clip.duration / step - 1e-9)))
+            for slot in 0..<slotCount {
+                let key = MacFilmKey(clipID: clip.id, slot: slot, step: token)
+                guard merged[key] == nil else { continue }
+                let time = clip.start + Double(slot) * step
+                if let exact = cachedSourceFrame(sourceID, time: time) {
+                    merged[key] = exact
+                    filled += 1
+                } else if let near = nearestSourceFrame(sourceID, time: time, tolerance: step / 2) {
+                    merged[key] = near
+                    provisionalSlots.insert(key)
+                    filled += 1
+                }
+            }
+        }
+        if filled > 0 { filmstrip = merged }
+    }
+
+    /// 旧档位的键已经没人渲染，条数过多时整批丢掉，只留当前档位
+    private func pruneFilmstrip(step: Double) {
+        let token = MacFilmKey.token(step)
+        guard filmstrip.count > 400 else { return }
+        let kept = filmstrip.filter { $0.key.step == token }
+        if kept.count != filmstrip.count { filmstrip = kept }
     }
 
     /// 只解可视窗口 ± 一屏余量内的槽位；同档位下滚动复用缓存，不重复解码。
@@ -459,23 +549,33 @@ final class MacEditorModel: ObservableObject {
             var group = groups[sourceID] ?? (asset: tracks.asset, keys: [], times: [])
             for slot in first...last {
                 let key = MacFilmKey(clipID: clip.id, slot: slot, step: token)
-                guard filmstrip[key] == nil, !pendingSlots.contains(key) else { continue }
+                guard !pendingSlots.contains(key) else { continue }
+                guard filmstrip[key] == nil || provisionalSlots.contains(key) else { continue }
+                let time = clip.start + Double(slot) * step
+                // 缓存命中就直接上屏，不再走解码
+                if let image = cachedSourceFrame(sourceID, time: time) {
+                    provisionalSlots.remove(key)
+                    frameBuffer[key] = image
+                    continue
+                }
                 group.keys.append(key)
-                group.times.append(clip.start + Double(slot) * step)
+                group.times.append(time)
             }
             groups[sourceID] = group
         }
         guard !groups.isEmpty else { return }
 
-        for (_, group) in groups {
+        for (sourceID, group) in groups {
             guard !group.keys.isEmpty else { continue }
             pendingSlots.formUnion(group.keys)
 
             // 同一素材、同一时间可能被两个片段同时请求（复制成两段），同一次取帧要回填所有键
             var keysByTime: [String: [MacFilmKey]] = [:]
+            var sourcesByKey: [MacFilmKey: (sourceID: UUID, time: Double)] = [:]
             var values: [NSValue] = []
             var seen: Set<String> = []
             for (key, seconds) in zip(group.keys, group.times) {
+                sourcesByKey[key] = (sourceID: sourceID, time: seconds)
                 let time = CMTime(seconds: max(0, seconds), preferredTimescale: 1800)
                 let signature = "\(time.value)-\(time.timescale)"
                 keysByTime[signature, default: []].append(key)
@@ -502,8 +602,18 @@ final class MacEditorModel: ObservableObject {
                         Task { @MainActor [weak self] in
                             guard let self else { return }
                             self.pendingSlots.subtract(keys)
-                            guard self.filmstripGenerationID == generationID, let image else { return }
-                            for key in keys { self.frameBuffer[key] = image }
+                            guard let image else { return }
+                            // 素材帧缓存不受档位作废影响：即便这一批已经过期，解出来的帧也留着给下次换档用
+                            for key in keys {
+                                if let source = sourcesByKey[key] {
+                                    self.storeSourceFrame(image, sourceID: source.sourceID, time: source.time)
+                                }
+                            }
+                            guard self.filmstripGenerationID == generationID else { return }
+                            for key in keys {
+                                self.provisionalSlots.remove(key)
+                                self.frameBuffer[key] = image
+                            }
                             self.scheduleFrameFlush()
                         }
                     }
