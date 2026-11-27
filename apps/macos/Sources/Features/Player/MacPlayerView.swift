@@ -82,10 +82,17 @@ struct MacPlayerView: View {
     @State private var flipH = false
     @State private var flipV = false
 
+    /// 控制面板：鼠标进出淡入淡出 + 自由拖动
+    @State private var controlsVisible = true
+    @State private var panelOffset: CGSize = .zero
+    @State private var dragStartOffset: CGSize?
+    private static let panelSize = CGSize(width: 520, height: 84)
+
     /// 窗口置顶（「在最前」）
     @State private var isPinned = false
     @State private var pinHovering = false
     @State private var window: NSWindow?
+    @State private var hideWork: DispatchWorkItem?
 
     @State private var timeObserver: Any?
     @State private var endObserver: NSObjectProtocol?
@@ -97,55 +104,65 @@ struct MacPlayerView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        GeometryReader { geo in
+            ZStack {
+                Color.black.ignoresSafeArea()
 
-            videoCanvas
+                videoCanvas
 
-            VStack(spacing: 0) {
-                titleBar
-                Spacer(minLength: 0)
-                controlPanel
-                    .padding(.bottom, 28)
-            }
+                // 双击画面：进入/退出全屏（面板、侧边栏盖在上层，不会被误触）
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) { toggleFullscreen() }
 
-            if showPlaylist {
-                Color.black.opacity(0.001)
-                    .ignoresSafeArea()
-                    .onTapGesture { showPlaylist = false }
-                HStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    titleBar
                     Spacer(minLength: 0)
-                    playlistSidebar
-                        .transition(.move(edge: .trailing))
                 }
-                .animation(.easeInOut(duration: 0.22), value: showPlaylist)
-            }
 
-            if showSettings {
-                // 点空白处收起
-                Color.black.opacity(0.001)
-                    .ignoresSafeArea()
-                    .onTapGesture { showSettings = false }
-                settingsPanel
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(.trailing, 26)
-                    .padding(.bottom, 132)
-                    .transition(.opacity)
+                controlPanelLayer(in: geo.size)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 28)
+                    .offset(panelOffset)
+
+                if showPlaylist {
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .onTapGesture { showPlaylist = false }
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        playlistSidebar
+                            .transition(.move(edge: .trailing))
+                    }
+                    .animation(.easeInOut(duration: 0.22), value: showPlaylist)
+                }
+
+                if showSettings {
+                    // 点空白处收起
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .onTapGesture { showSettings = false }
+                    settingsPanel
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .padding(.trailing, 26)
+                        .padding(.bottom, 132)
+                        .transition(.opacity)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if let toast {
+                    Text(toast)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(.black.opacity(0.75), in: Capsule())
+                        .padding(18)
+                        .transition(.opacity)
+                }
             }
         }
         .background(MacPlayerWindowReader { window = $0 })
-        .overlay(alignment: .bottomTrailing) {
-            if let toast {
-                Text(toast)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(.black.opacity(0.75), in: Capsule())
-                    .padding(18)
-                    .transition(.opacity)
-            }
-        }
         .onAppear(perform: start)
         .onDisappear(perform: stop)
         .onChange(of: volume) { newValue in
@@ -218,7 +235,7 @@ struct MacPlayerView: View {
                     Image(systemName: "pin")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(pinHovering || isPinned ? MacTheme.accent : Color.white.opacity(0.85))
-                        .rotationEffect(.degrees(isPinned ? 90 : 0))
+                        .rotationEffect(.degrees(isPinned ? -45 : 0))
                         .animation(.easeInOut(duration: 0.28), value: isPinned)
                         .frame(width: 26, height: 22)
                         .contentShape(Rectangle())
@@ -239,6 +256,68 @@ struct MacPlayerView: View {
     }
 
     // MARK: - 悬浮控制面板
+
+    /// 面板容器：鼠标进入整体淡入、离开整体淡出；空白处按住可拖动面板，限制在窗口内
+    private func controlPanelLayer(in size: CGSize) -> some View {
+        ZStack {
+            // 背景命中层（面板隐形时也保住 hover 与拖动）
+            Color.clear
+                .frame(width: Self.panelSize.width, height: Self.panelSize.height)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.black.opacity(0.001))
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .gesture(
+                    DragGesture(minimumDistance: 2)
+                        .onChanged { drag in
+                            if dragStartOffset == nil { dragStartOffset = panelOffset }
+                            let base = dragStartOffset ?? .zero
+                            panelOffset = clampedPanelOffset(
+                                CGSize(
+                                    width: base.width + drag.translation.width,
+                                    height: base.height + drag.translation.height
+                                ),
+                                in: size
+                            )
+                        }
+                        .onEnded { _ in dragStartOffset = nil }
+                )
+
+            controlPanel
+                .allowsHitTesting(controlsVisible)
+                .opacity(controlsVisible ? 1 : 0)
+        }
+        .onHover { hovering in setControlsVisible(hovering) }
+        .animation(.easeOut(duration: 0.22), value: controlsVisible)
+    }
+
+    private func setControlsVisible(_ visible: Bool) {
+        hideWork?.cancel()
+        guard !visible else {
+            controlsVisible = true
+            return
+        }
+        // 留一点缓冲，鼠标从按钮间空隙划过时不闪
+        let work = DispatchWorkItem {
+            withAnimation(.easeOut(duration: 0.22)) { controlsVisible = false }
+        }
+        hideWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+
+    private func clampedPanelOffset(_ proposed: CGSize, in size: CGSize) -> CGSize {
+        let maxX = max(0, (size.width - Self.panelSize.width) / 2 - 10)
+        let maxY = max(0, size.height - Self.panelSize.height - 40)
+        return CGSize(
+            width: min(max(proposed.width, -maxX), maxX),
+            height: min(max(proposed.height, -maxY), 10)
+        )
+    }
+
+    private func toggleFullscreen() {
+        window?.toggleFullScreen(nil)
+    }
 
     private var controlPanel: some View {
         VStack(spacing: 12) {
@@ -310,7 +389,7 @@ struct MacPlayerView: View {
         .padding(.horizontal, 18)
         .padding(.top, 14)
         .padding(.bottom, 13)
-        .frame(width: 520)
+        .frame(width: Self.panelSize.width)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color(white: 0.14).opacity(0.92))
