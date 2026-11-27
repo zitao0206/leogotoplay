@@ -109,7 +109,7 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 ### Mac-V3.1.16 · Library 卡片缩小一半 + 顶部显示存储路径
 
 - 视频宫格单元格尺寸减半：`LazyVGrid` 自适应列宽由 190–300pt 收到 130–168pt，卡片内边距 8→6、标题 13→11.5pt、meta 10→9.5pt；meta 只留「体积 · 时长」，宽度不够时不再挤三段。列表行同步收窄：缩略图 56→44、竖向内边距 10→8。
-- Library 标题下的小字由「N 个视频 · N 个文件夹 · 体积」换成「文件位置：」+ 素材库视频目录绝对路径（`/Users/<user>/Library/Application Support/LeogotoPlay/Media`，中间省略、可选中），右侧一个复制按钮：点一下写入 `NSPasteboard`，底部弹出「路径已复制」并 1.6 秒自动消失。
+- Library 首页标题下的小字由「N 个视频 · N 个文件夹 · 体积」换成「文件位置：」+ 素材库视频目录绝对路径（`/Users/<user>/Library/Application Support/LeogotoPlay/Media`，中间省略、可选中），右侧一个复制按钮：点一下写入 `NSPasteboard`，底部弹出「路径已复制」并 1.6 秒自动消失；进入子文件夹后这行不再出现，改显示该文件夹的「N 个视频 · 体积」。
 - 验证：截图确认路径与图标显示、卡片宽度约为原来一半；点复制后 `pbpaste` 输出即素材库 `Media` 绝对路径。
 
 ### Mac-V3.1.15 · Library 视频区：宫格/列表切换 + 去箭头 + 长按四项操作

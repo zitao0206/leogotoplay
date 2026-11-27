@@ -144,22 +144,29 @@ struct MacLibraryView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(currentFolder?.name ?? "Library")
                     .font(.title2.weight(.semibold))
-                HStack(spacing: 6) {
-                    Text("文件位置：\(VideoFileStore.shared.mediaDirectory.path)")
+                // 文件位置只在首页（未进入子文件夹）显示
+                if openFolderID == nil {
+                    HStack(spacing: 6) {
+                        Text("文件位置：\(VideoFileStore.shared.mediaDirectory.path)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                        Button {
+                            copyStoragePath()
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 11))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help("复制文件夹路径")
+                    }
+                } else {
+                    Text("\(displayedVideos.count) 个视频 · \(displayedSize)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                    Button {
-                        copyStoragePath()
-                    } label: {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 11))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help("复制文件夹路径")
                 }
             }
             Spacer()
