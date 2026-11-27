@@ -1,5 +1,4 @@
 import AVFoundation
-import AVKit
 import AppKit
 import SwiftUI
 import LeogotoPlayCore
@@ -75,7 +74,6 @@ struct MacPlayerView: View {
     @State private var showSettings = false
     @State private var showPlaylist = false
     @State private var toast: String?
-    @State private var pipController: AVPictureInPictureController?
 
     /// 画面尺寸（素材原始尺寸，读取失败就按 16:9）
     @State private var videoSize = CGSize(width: 16, height: 9)
@@ -109,6 +107,18 @@ struct MacPlayerView: View {
                 Spacer(minLength: 0)
                 controlPanel
                     .padding(.bottom, 28)
+            }
+
+            if showPlaylist {
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .onTapGesture { showPlaylist = false }
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    playlistSidebar
+                        .transition(.move(edge: .trailing))
+                }
+                .animation(.easeInOut(duration: 0.22), value: showPlaylist)
             }
 
             if showSettings {
@@ -152,9 +162,7 @@ struct MacPlayerView: View {
     private var videoCanvas: some View {
         GeometryReader { geo in
             let fitted = fittedVideoSize(in: geo.size)
-            MacPlayerSurface(player: player, onReady: { view in
-                makePiPController(for: view)
-            })
+            MacPlayerSurface(player: player)
             .frame(width: fitted.width, height: fitted.height)
             .rotationEffect(.degrees(Double(rotation)))
             .scaleEffect(x: flipH ? -1 : 1, y: flipV ? -1 : 1)
@@ -191,21 +199,37 @@ struct MacPlayerView: View {
         .padding(.top, 16)
         .padding(.bottom, 10)
         .overlay(alignment: .trailing) {
-            Button {
-                isPinned.toggle()
-                window?.level = isPinned ? .floating : .normal
-            } label: {
-                Image(systemName: "pin")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(pinHovering || isPinned ? MacTheme.accent : Color.white.opacity(0.85))
-                    .rotationEffect(.degrees(isPinned ? 45 : 0))
-                    .animation(.easeInOut(duration: 0.25), value: isPinned)
-                    .frame(width: 26, height: 22)
-                    .contentShape(Rectangle())
+            HStack(spacing: 6) {
+                if pinHovering {
+                    Text(isPinned ? "取消最前" : "在最前")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(0.65), in: Capsule())
+                        .fixedSize()
+                        .transition(.opacity)
+                }
+
+                Button {
+                    isPinned.toggle()
+                    window?.level = isPinned ? .floating : .normal
+                } label: {
+                    Image(systemName: "pin")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(pinHovering || isPinned ? MacTheme.accent : Color.white.opacity(0.85))
+                        .rotationEffect(.degrees(isPinned ? 90 : 0))
+                        .animation(.easeInOut(duration: 0.28), value: isPinned)
+                        .frame(width: 26, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in
+                    withAnimation(.easeInOut(duration: 0.15)) { pinHovering = hovering }
+                }
+                .help(isPinned ? "取消最前" : "在最前")
             }
-            .buttonStyle(.plain)
-            .onHover { pinHovering = $0 }
-            .help(isPinned ? "取消最前" : "在最前")
+            .animation(.easeInOut(duration: 0.15), value: pinHovering)
             .padding(.trailing, 14)
         }
         .background(
@@ -265,9 +289,6 @@ struct MacPlayerView: View {
                 }
                 .buttonStyle(.plain)
                 .help("播放列表")
-                .popover(isPresented: $showPlaylist, arrowEdge: .bottom) {
-                    playlist
-                }
             }
 
             HStack(spacing: 10) {
@@ -382,20 +403,8 @@ struct MacPlayerView: View {
 
             Divider().opacity(0.25)
 
-            HStack(spacing: 8) {
-                Button {
-                    showSettings = false
-                    togglePictureInPicture()
-                } label: {
-                    Label("画中画", systemImage: "pip.enter")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white.opacity(0.85))
-                }
-                .buttonStyle(.plain)
-                .disabled(pipController == nil)
-
+            HStack {
                 Spacer()
-
                 Button {
                     resetTransform()
                 } label: {
@@ -448,49 +457,78 @@ struct MacPlayerView: View {
 
     // MARK: - 播放列表
 
-    private var playlist: some View {
+    /// 右侧侧边栏（从窗口右边缘滑出，占满高度）
+    private var playlistSidebar: some View {
         let items = playlistItems
         return VStack(alignment: .leading, spacing: 0) {
-            Text("播放列表 · \(items.count) 个视频")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.top, 8)
-                .padding(.bottom, 6)
+            HStack(spacing: 8) {
+                Text("播放列表")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text("\(items.count)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.5))
+                Spacer(minLength: 0)
+                Button {
+                    showPlaylist = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 18)
+            .padding(.bottom, 10)
+
+            Divider().opacity(0.15)
 
             ScrollView {
                 VStack(spacing: 2) {
                     ForEach(items) { video in
                         Button {
-                            showPlaylist = false
                             if video.id != current.id { load(video) }
                         } label: {
-                            HStack(spacing: 8) {
+                            HStack(spacing: 10) {
                                 Image(systemName: video.id == current.id ? "speaker.wave.2.fill" : "play.fill")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(video.id == current.id ? MacTheme.accent : .secondary)
-                                    .frame(width: 12)
-                                Text(video.title)
-                                    .lineLimit(1)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(video.id == current.id ? MacTheme.accent : Color.white.opacity(0.4))
+                                    .frame(width: 14)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(video.title)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .lineLimit(1)
+                                    Text(video.duration.timecode)
+                                        .font(.system(size: 10).monospacedDigit())
+                                        .foregroundStyle(.white.opacity(0.45))
+                                }
                                 Spacer(minLength: 0)
-                                Text(video.duration.timecode)
-                                    .foregroundStyle(.secondary)
-                                    .monospacedDigit()
                             }
-                            .font(.system(size: 12))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(video.id == current.id ? Color.white.opacity(0.10) : Color.clear)
+                            )
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 8)
             }
-            .frame(maxHeight: 260)
         }
-        .frame(width: 280)
-        .padding(6)
-        .background(Color(white: 0.10))
+        .frame(width: 300)
+        .frame(maxHeight: .infinity)
+        .background(Color(white: 0.07))
+        .overlay(alignment: .leading) {
+            Rectangle().fill(Color.white.opacity(0.08)).frame(width: 1)
+        }
     }
 
     /// 当前视频所在文件夹里的全部视频，按创建时间倒序（= 列表里看到的顺序）
@@ -574,9 +612,6 @@ struct MacPlayerView: View {
         if let endObserver {
             NotificationCenter.default.removeObserver(endObserver)
             self.endObserver = nil
-        }
-        if pipController?.isPictureInPictureActive == true {
-            pipController?.stopPictureInPicture()
         }
     }
 
@@ -673,21 +708,6 @@ struct MacPlayerView: View {
         }
     }
 
-    private func makePiPController(for view: MacPlayerLayerView) {
-        guard pipController == nil,
-              let layer = view.playerLayer,
-              AVPictureInPictureController.isPictureInPictureSupported() else { return }
-        pipController = AVPictureInPictureController(playerLayer: layer)
-    }
-
-    private func togglePictureInPicture() {
-        guard let pipController else { return }
-        if pipController.isPictureInPictureActive {
-            pipController.stopPictureInPicture()
-        } else {
-            pipController.startPictureInPicture()
-        }
-    }
 }
 
 // MARK: - 细进度条
