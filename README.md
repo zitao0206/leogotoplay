@@ -106,6 +106,12 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - 整段除不尽时，最后一格的取帧时间夹到视频末帧（`assetDuration - 0.04`），尾部不会再留空槽位。
 - 缩放状态从「绝对间隔」改成「档位 `zoomLevel`」，间隔由档位和当前整段时长实时算出来：裁完片段后密度自动按新时长重算，不会留着旧时长的间隔；间隔一变胶片缓存整块作废重建。
 
+### Mac-V3.1.14 · 界面语种改为简体中文
+
+- Info.plist 里 `CFBundleDevelopmentRegion` 改成 `zh-Hans`，并声明 `CFBundleLocalizations = [zh-Hans, en]`，工程 `developmentRegion` / `knownRegions` 同步更新。
+- 新增 `Sources/Resources/zh-Hans.lproj/InfoPlist.strings`（并登记进 Resources 构建阶段）：只有声明还不够，AppKit 需要真实存在的本地化目录，否则仍然按英文去取系统文案。
+- 结果：系统级文案（绿点缩放的「缩放 / 将窗口移到屏幕左侧 / 将窗口移到屏幕右侧」、菜单栏「文件 / 编辑 / 显示 / 窗口 / 帮助」、关于/服务/隐藏等）都变中文，实测 `Bundle.main.preferredLocalizations = zh-Hans`。
+
 ### Mac-V3.1.13 · 关窗即停播
 
 - 点左上角红叉关掉播放窗口后，原来 `AVPlayer` 还活着（窗口只是 `orderOut`，`isReleasedWhenClosed = false`），音频会继续在后台响。

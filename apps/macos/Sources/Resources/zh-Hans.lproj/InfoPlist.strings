@@ -1,0 +1,4 @@
+"CFBundleName" = "LeogotoPlay";
+"CFBundleDisplayName" = "LeogotoPlay";
+"NSPhotoLibraryUsageDescription" = "需要访问相册，以便选择要剪辑的视频";
+"NSPhotoLibraryAddUsageDescription" = "需要写入相册，以便保存剪辑后的视频";

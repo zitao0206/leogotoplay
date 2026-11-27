@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B1A2C3D4E5F60718A9B0C1D3 /* zh-Hans.lproj in Resources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F60718A9B0C1D2 /* zh-Hans.lproj */; };
 		FB60F17F2CBD3F0C8D31F37D /* LeogotoPlayMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 280D7DB431F82160C2C26791 /* LeogotoPlayMacApp.swift */; };
 		8E94A5B34DFFBA18D86B0BFE /* MacComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65467B156477125DD466742 /* MacComponents.swift */; };
 		5F6B5E1FD76A3D5CA7985434 /* MacTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0636332518459CAED2A14EAF /* MacTheme.swift */; };
@@ -26,6 +27,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		B1A2C3D4E5F60718A9B0C1D2 /* zh-Hans.lproj */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "zh-Hans.lproj"; sourceTree = "<group>"; };
 		280D7DB431F82160C2C26791 /* LeogotoPlayMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeogotoPlayMacApp.swift; sourceTree = "<group>"; };
 		B65467B156477125DD466742 /* MacComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacComponents.swift; sourceTree = "<group>"; };
 		0636332518459CAED2A14EAF /* MacTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTheme.swift; sourceTree = "<group>"; };
@@ -170,6 +172,7 @@
 			isa = PBXGroup;
 			children = (
 				C253A81C97159B489983B4A8 /* child */,
+				B1A2C3D4E5F60718A9B0C1D2 /* zh-Hans.lproj */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -225,10 +228,11 @@
 			};
 			buildConfigurationList = 811E240552218C7837B7CCC7 /* Build configuration list for PBXProject "LeogotoPlay" */;
 			compatibilityVersion = "Xcode 14.0";
-			developmentRegion = en;
+			developmentRegion = "zh-Hans";
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				"zh-Hans",
 				Base,
 			);
 			mainGroup = 02809C678AF9608757B8201F;
@@ -249,6 +253,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B1A2C3D4E5F60718A9B0C1D3 /* zh-Hans.lproj in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
