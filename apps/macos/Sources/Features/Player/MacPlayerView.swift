@@ -98,6 +98,8 @@ struct MacPlayerView: View {
     @State private var controlsIdleHidden = false
     @State private var lastActivity = Date()
     @State private var lastPointerPoint = CGPoint(x: -1, y: -1)
+    /// 指针是否已被我们藏起来（hide/unhide 必须成对，否则会漏到整个系统）
+    @State private var cursorHidden = false
     private static let playerSpace = "playerSpace"
 
     /// 窗口置顶（「在最前」）
@@ -358,9 +360,12 @@ struct MacPlayerView: View {
             if idle != controlsIdleHidden {
                 withAnimation(.easeOut(duration: 0.2)) { controlsIdleHidden = idle }
             }
+            setCursorHidden(idle)
         } else if controlsIdleHidden {
             controlsIdleHidden = false
         }
+
+        setCursorHidden(isFullscreen && controlsIdleHidden)
 
         // 拖动过程中冻结 hover 轮询：每 60ms 改状态会打断 SwiftUI 的拖动手势
         if dragStartPoint != nil || dragStartOffset != nil {
@@ -391,6 +396,26 @@ struct MacPlayerView: View {
         if hovering != pinHovering {
             withAnimation(.easeInOut(duration: 0.15)) { pinHovering = hovering }
         }
+    }
+
+    /// 全透明光标：比 NSCursor.hide() 稳，不受窗口光标重设影响，也不会漏到系统
+    private static let invisibleCursor: NSCursor = {
+        let image = NSImage(size: NSSize(width: 1, height: 1))
+        image.lockFocus()
+        NSColor.clear.setFill()
+        NSRect(x: 0, y: 0, width: 1, height: 1).fill()
+        image.unlockFocus()
+        return NSCursor(image: image, hotSpot: .zero)
+    }()
+
+    /// 藏 / 显鼠标指针：隐藏期间每轮询都重设一次（窗口一改光标就被顶回去）
+    private func setCursorHidden(_ hidden: Bool) {
+        if hidden == cursorHidden {
+            if hidden { Self.invisibleCursor.set() }
+            return
+        }
+        cursorHidden = hidden
+        (hidden ? Self.invisibleCursor : NSCursor.arrow).set()
     }
 
     private func setPointerInside(_ inside: Bool) {
@@ -807,6 +832,7 @@ struct MacPlayerView: View {
 
     private func stop() {
         player.pause()
+        setCursorHidden(false)
         if let timeObserver {
             player.removeTimeObserver(timeObserver)
             self.timeObserver = nil
