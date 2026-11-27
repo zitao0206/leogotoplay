@@ -25,7 +25,6 @@ struct MacMineView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 accountCard
-                statsCard
                 featureCard
                 settingsCard
             }
@@ -121,37 +120,6 @@ struct MacMineView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor))
         )
-    }
-
-    // MARK: - 统计
-
-    private var statsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("视频库").font(.headline)
-            HStack(spacing: 0) {
-                stat(value: "\(library.videos.count)", title: "视频")
-                Divider().frame(height: 34)
-                stat(value: "\(library.folders.count)", title: "文件夹")
-                Divider().frame(height: 34)
-                stat(value: library.totalSize.fileSizeText, title: "占用空间")
-                Divider().frame(height: 34)
-                stat(value: library.totalDuration.timecode, title: "总时长")
-            }
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-    }
-
-    private func stat(value: String, title: String) -> some View {
-        VStack(spacing: 3) {
-            Text(value).font(.title3.weight(.semibold).monospacedDigit())
-            Text(title).font(.caption2).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
     }
 
     // MARK: - 设置
