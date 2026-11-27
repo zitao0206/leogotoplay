@@ -1007,7 +1007,10 @@ final class MacEditorModel: ObservableObject {
     /// 以前用 `AVAssetExportPreset1280x720`，那是「固定码率档」：源码率再低也会按
     /// 720p 的高码率重灌一遍，于是 1080p 300MB 的片子导成 720p 反而 800MB。
     /// 现在码率跟着源码率走：目标码率 = 源码率 × (目标像素/源像素)^0.9，并且不超过源码率。
-    func exportPlan(for quality: VideoExporter.Quality) -> VideoExporter.ExportPlan {
+    func exportPlan(for quality: VideoExporter.Quality,
+                    frameRateChoice: MacExportFrameRate = .followSource,
+                    bitrateChoice: MacExportBitrate = .recommended,
+                    customMbps: Double = 0) -> VideoExporter.ExportPlan {
         let tracks = clips.first?.sourceID.flatMap { materialTracks[$0] }
             ?? materialTracks.values.first
         let srcW = max(2, Int(tracks?.pixelSize.width ?? 1920))
@@ -1032,29 +1035,63 @@ final class MacEditorModel: ObservableObject {
         let baseKbps = srcKbps > 0 ? srcKbps : Double(width * height) / 1000.0
         let areaRatio = (Double(width * height)) / (Double(srcW * srcH))
         var kbps = baseKbps * pow(min(1, areaRatio), 0.9)
-        kbps = min(kbps, baseKbps)          // 绝不比源更费
+        kbps = min(kbps, baseKbps)          // 推荐档绝不比源更费
         kbps = max(kbps, 700)               // 太低会糊，兜个底
         if codec == "h264" { kbps = min(kbps, 12_000) }
+
+        // 用户手选的码率档：更低 / 更高 / 自定义（自定义按用户填的来，不再夹源码率）
+        switch bitrateChoice {
+        case .recommended:
+            break
+        case .lower:
+            kbps = max(700, kbps * 0.6)
+        case .higher:
+            kbps = min(codec == "h264" ? 20_000 : 30_000, kbps * 1.6)
+        case .custom:
+            let custom = customMbps > 0 ? customMbps : kbps / 1000
+            kbps = min(codec == "h264" ? 40_000 : 60_000, max(300, custom * 1000))
+        }
+
+        // 帧率只降不升：不插帧，选比源高的没有意义
+        var fps = srcFps
+        if case let .fps(value) = frameRateChoice, value > 0 {
+            fps = min(srcFps, value)
+        }
 
         return VideoExporter.ExportPlan(
             width: width,
             height: height,
-            frameRate: srcFps,
+            frameRate: fps,
             bitrate: Int(kbps * 1000),
             codec: codec
         )
     }
 
+    /// 源帧率（给帧率菜单列选项用）
+    var sourceFrameRate: Double {
+        let tracks = clips.first?.sourceID.flatMap { materialTracks[$0] } ?? materialTracks.values.first
+        return max(24, min(120, tracks?.frameRate ?? 30))
+    }
+
+    /// 推荐档的码率（kbps），给「自定义」输入框做默认值
+    func recommendedBitrateMbps(for quality: VideoExporter.Quality) -> Double {
+        Double(exportPlan(for: quality).bitrate) / 1_000_000
+    }
+
     /// 导出面板的体积预估：直接用上面的码率方案 × 时长 + 128kbps 音轨，和实际产出基本一致
-    func estimatedExportBytes(quality: VideoExporter.Quality, duration: Double) -> Int64 {
+    func estimatedExportBytes(quality: VideoExporter.Quality, duration: Double, options: MacExportOptions) -> Int64 {
         guard duration > 0 else { return 0 }
-        let plan = exportPlan(for: quality)
+        let plan = exportPlan(for: quality,
+                              frameRateChoice: options.frameRate,
+                              bitrateChoice: options.bitrate,
+                              customMbps: options.customMbps)
         let totalKbps = Double(plan.bitrate) / 1000 + 128
         return Int64(totalKbps * 1000 * duration / 8)
     }
 
     func export(quality: VideoExporter.Quality = ExportSettings.quality,
-                fileType: AVFileType = .mp4) async -> URL? {
+                fileType: AVFileType = .mp4,
+                options: MacExportOptions? = nil) async -> URL? {
         guard !clips.isEmpty, outputDuration > 0.1 else {
             errorMessage = "时间轴里没有可导出的片段"
             return nil
@@ -1066,7 +1103,10 @@ final class MacEditorModel: ObservableObject {
         defer { isExporting = false }
 
         let built = makeComposition(includeAudio: !isMuted)
-        let plan = exportPlan(for: quality)
+        let plan = exportPlan(for: quality,
+                              frameRateChoice: options?.frameRate ?? .followSource,
+                              bitrateChoice: options?.bitrate ?? .recommended,
+                              customMbps: options?.customMbps ?? 0)
         let progress: @MainActor (Double) -> Void = { [weak self] value in
             self?.exportProgress = value
         }
@@ -1915,7 +1955,9 @@ struct MacEditorView: View {
     }
 
     private func runExport(options: MacExportOptions) async {
-        guard let exported = await model.export(quality: options.quality, fileType: options.format.fileType) else {
+        guard let exported = await model.export(quality: options.quality,
+                                                fileType: options.format.fileType,
+                                                options: options) else {
             // 失败信息放进弹框里，同时清掉全局 alert 的文案，避免两层弹窗叠一起
             exportErrorText = model.errorMessage ?? "导出失败，请稍后再试"
             model.errorMessage = nil
@@ -1953,11 +1995,49 @@ enum MacExportFormat: String, CaseIterable, Identifiable {
     var fileType: AVFileType { self == .mp4 ? .mp4 : .mov }
 }
 
-/// 一次导出的全部参数（标题、落地目录、分辨率、封装格式）
+/// 导出帧率：跟随源片，或手工降到更低的一档（只降不升，不插帧）
+enum MacExportFrameRate: Equatable {
+    case followSource
+    case fps(Double)
+
+    static let choices: [Double] = [24, 25, 30, 50, 60]
+
+    var value: Double? {
+        if case let .fps(v) = self { return v }
+        return nil
+    }
+
+    static func label(_ value: Double) -> String {
+        value == floor(value) ? String(Int(value)) : String(format: "%.2f", value)
+    }
+}
+
+/// 导出码率：推荐（按源码率折算）/ 更低 / 更高 / 自定义
+enum MacExportBitrate: Equatable {
+    case recommended
+    case lower
+    case higher
+    case custom
+
+    var title: String {
+        switch self {
+        case .recommended: return "推荐"
+        case .lower: return "更低"
+        case .higher: return "更高"
+        case .custom: return "自定义"
+        }
+    }
+}
+
+/// 一次导出的全部参数（标题、落地目录、分辨率、帧率、码率、封装格式）
 struct MacExportOptions: Equatable {
     var title: String
     var directory: URL
     var quality: VideoExporter.Quality
+    var frameRate: MacExportFrameRate = .followSource
+    var bitrate: MacExportBitrate = .recommended
+    /// 「自定义」码率，单位 Mbps；0 表示还没填，按推荐值算
+    var customMbps: Double = 0
     var format: MacExportFormat
 
     /// 上次用过的目录记在 UserDefaults 里，下次打开还停在那儿
@@ -1970,6 +2050,9 @@ struct MacExportOptions: Equatable {
             title: title.isEmpty ? "未命名项目" : title,
             directory: FileManager.default.fileExists(atPath: dir.path) ? dir : MacExportPaths.downloads,
             quality: ExportSettings.quality,
+            frameRate: .followSource,
+            bitrate: .recommended,
+            customMbps: 0,
             format: .mp4
         )
     }
@@ -2003,6 +2086,7 @@ private struct MacExportConfigSheet: View {
     let onSubmit: (MacExportOptions) -> Void
 
     @State private var hoveringFolder = false
+    @State private var helpTopic: ExportHelpTopic?
 
     private var durationText: String {
         let total = Int(model.outputDuration.rounded())
@@ -2015,7 +2099,9 @@ private struct MacExportConfigSheet: View {
     }
 
     private var sizeText: String {
-        let bytes = model.estimatedExportBytes(quality: options.quality, duration: model.outputDuration)
+        let bytes = model.estimatedExportBytes(quality: options.quality,
+                                              duration: model.outputDuration,
+                                              options: options)
         let gb = Double(bytes) / 1_000_000_000
         if gb >= 1 { return String(format: "%.2f GB", gb) }
         let mb = Double(bytes) / 1_000_000
@@ -2066,7 +2152,7 @@ private struct MacExportConfigSheet: View {
                 }
             }
 
-            row("分辨率") {
+            optionRow("分辨率") {
                 menuField(resolutionTitle(options.quality)) {
                     ForEach(VideoExporter.Quality.allCases, id: \.self) { quality in
                         Button(resolutionTitle(quality)) { options.quality = quality }
@@ -2074,7 +2160,66 @@ private struct MacExportConfigSheet: View {
                 }
             }
 
-            row("视频格式") {
+            optionRow("帧率", topic: .frameRate) {
+                menuField(frameRateTitle) {
+                    Button("跟随源（\(MacExportFrameRate.label(model.sourceFrameRate))）") {
+                        options.frameRate = .followSource
+                    }
+                    ForEach(frameRateChoices, id: \.self) { value in
+                        Button(MacExportFrameRate.label(value)) { options.frameRate = .fps(value) }
+                    }
+                }
+                .disabled(isPassthrough)
+                .opacity(isPassthrough ? 0.45 : 1)
+            }
+
+            optionRow("视频码率", topic: .bitrate) {
+                menuField(bitrateTitle) {
+                    Button("推荐（\(formatMbps(model.recommendedBitrateMbps(for: options.quality)))）") {
+                        options.bitrate = .recommended
+                    }
+                    Button("更低") { options.bitrate = .lower }
+                    Button("更高") { options.bitrate = .higher }
+                    Button("自定义…") {
+                        options.bitrate = .custom
+                        if options.customMbps <= 0 {
+                            options.customMbps = (model.recommendedBitrateMbps(for: options.quality) * 10).rounded() / 10
+                        }
+                    }
+                }
+                .disabled(isPassthrough)
+                .opacity(isPassthrough ? 0.45 : 1)
+            }
+
+            if options.bitrate == .custom {
+                row("码率值") {
+                    HStack(spacing: 8) {
+                        TextField("", value: $options.customMbps, format: .number.precision(.fractionLength(0...2)))
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13).monospacedDigit())
+                            .foregroundStyle(.white)
+                            .frame(width: 90)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                            .disabled(isPassthrough)
+                        Text("Mbps")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.45))
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+
+            if isPassthrough {
+                Text("「原始」档不重编码，帧率与码率直接沿用源片，上面两项不生效")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.4))
+                    .padding(.leading, 84)
+                    .padding(.bottom, 12)
+            }
+
+            optionRow("视频格式") {
                 menuField(options.format.title) {
                     ForEach(MacExportFormat.allCases) { format in
                         Button(format.title) { options.format = format }
@@ -2127,6 +2272,33 @@ private struct MacExportConfigSheet: View {
         .background(MacTheme.surface)
     }
 
+    private var isPassthrough: Bool { options.quality == .highest }
+
+    private var frameRateTitle: String {
+        if let value = options.frameRate.value { return MacExportFrameRate.label(value) }
+        return "跟随源（\(MacExportFrameRate.label(model.sourceFrameRate))）"
+    }
+
+    private var bitrateTitle: String {
+        switch options.bitrate {
+        case .recommended: return "推荐（\(formatMbps(model.recommendedBitrateMbps(for: options.quality)))）"
+        case .lower: return "更低"
+        case .higher: return "更高"
+        case .custom:
+            return options.customMbps > 0 ? "自定义（\(formatMbps(options.customMbps))）" : "自定义"
+        }
+    }
+
+    /// 只列比源低（含相同）的档位：不插帧，选更高的没有意义
+    private var frameRateChoices: [Double] {
+        let source = model.sourceFrameRate
+        return MacExportFrameRate.choices.filter { $0 <= source + 0.5 }
+    }
+
+    private func formatMbps(_ value: Double) -> String {
+        value >= 10 ? String(format: "%.1f Mbps", value) : String(format: "%.2f Mbps", value)
+    }
+
     private func resolutionTitle(_ quality: VideoExporter.Quality) -> String {
         switch quality {
         case .highest: return "原始（最高质量）"
@@ -2172,6 +2344,36 @@ private struct MacExportConfigSheet: View {
         .padding(.bottom, 12)
     }
 
+    /// 带「?」说明按钮的一行：点问号弹一段这个参数到底影响什么
+    @ViewBuilder
+    private func optionRow<Content: View>(_ label: String, topic: ExportHelpTopic? = nil,
+                                          @ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            Text(label)
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.75))
+                .frame(width: 72, alignment: .leading)
+            content()
+                .frame(width: 200)
+            if let topic {
+                Button {
+                    helpTopic = topic
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.42))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .popover(item: $helpTopic, arrowEdge: .trailing) { shown in
+                    ExportHelpCard(topic: shown)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.bottom, 12)
+    }
+
     private func chooseDirectory() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -2185,6 +2387,69 @@ private struct MacExportConfigSheet: View {
             options.directory = url
             UserDefaults.standard.set(url.path, forKey: MacExportOptions.directoryKey)
         }
+    }
+}
+
+// MARK: - 导出参数说明（V2.9.2）
+
+private enum ExportHelpTopic: String, Identifiable {
+    case frameRate
+    case bitrate
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .frameRate: return "帧率（fps）"
+        case .bitrate: return "视频码率"
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .frameRate: return "每秒画多少张，影响动作流畅度"
+        case .bitrate: return "每秒给多少数据，影响清晰度和文件大小"
+        }
+    }
+
+    var body: String {
+        switch self {
+        case .frameRate:
+            return """
+            一秒记录多少张画面，管的是动作顺不顺，不管清晰度。
+            · 提高帧率不会直接把文件变大：码率固定时帧率翻倍，每帧分到的数据减半，快速运动处更容易糊。
+            · 只能往下选：不插帧，选比源片更高的档位没有实际意义。
+            · 取舍：社交发布 30 一般够用；运动、游戏、要做慢动作才需要 60。
+            """
+        case .bitrate:
+            return """
+            一秒允许编码器写多少数据，同时决定清晰度和文件大小。
+            · 体积 = 码率 × 时长 ÷ 8，码率翻倍，文件就翻倍。
+            · 推荐档：按源片码率 × 目标像素比例折算，并且不超过源片码率。
+            · 更低（0.6×）更省空间，细节略减；更高（1.6×）细节更足，但超过源片码率也不会真的变清晰；自定义直接填 Mbps。
+            · 码率给太少时，运动段和大面积纹理先出块、发糊。
+            """
+        }
+    }
+}
+
+private struct ExportHelpCard: View {
+    let topic: ExportHelpTopic
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(topic.title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+            Text(topic.body)
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.72))
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(width: 320, alignment: .leading)
+        .background(MacTheme.surface)
     }
 }
 
