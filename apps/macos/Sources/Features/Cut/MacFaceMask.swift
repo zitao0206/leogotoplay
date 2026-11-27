@@ -998,7 +998,7 @@ struct MacFaceMaskView: View {
                 title: "打码完成",
                 trailing: AnyView(
                     HStack(spacing: 10) {
-                        Button(isSaving ? "保存中…" : "存入素材库") {
+                        Button(isSaving ? "保存中…" : "存入视频库") {
                             saveToLibrary(result)
                         }
                         .buttonStyle(MacMaskAccentButtonStyle())
@@ -1123,7 +1123,7 @@ struct MacFaceMaskView: View {
             do {
                 try await library.importExport(fileURL: result.url, title: title)
                 isSaving = false
-                showToast("已存入素材库")
+                showToast("已存入视频库")
             } catch {
                 isSaving = false
                 errorMessage = error.localizedDescription

@@ -1,7 +1,7 @@
 import SwiftUI
 import LeogotoPlayCore
 
-/// V2.0.1：全部视频页面，以列表形式展示素材库中的所有视频。
+/// V2.0.1：全部视频页面，以列表形式展示视频库中的所有视频。
 struct AllVideosView: View {
     @EnvironmentObject private var library: LibraryStore
     @AppStorage(TabPrefs.showCutKey) private var showCut = true
@@ -29,7 +29,7 @@ struct AllVideosView: View {
                 if videos.isEmpty {
                     EmptyStateView(
                         symbol: "film.stack",
-                        title: "素材库还是空的",
+                        title: "视频库还是空的",
                         message: "回到 List 页，点右上角「相册」图标导入第一个视频，或从文件导入。"
                     )
                     .background(

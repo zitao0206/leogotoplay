@@ -133,7 +133,7 @@ struct MacLibraryView: View {
                     } label: {
                         Label("搜索", systemImage: "magnifyingglass")
                     }
-                    .help("搜索素材库视频")
+                    .help("搜索视频库视频")
                     PhotosPicker(selection: $photoPickerItem, matching: .videos) {
                         Label("从相册导入", systemImage: "photo.on.rectangle")
                     }
@@ -220,7 +220,7 @@ struct MacLibraryView: View {
                     Image(systemName: "chevron.left")
                 }
                 .buttonStyle(.bordered)
-                .help("返回素材库")
+                .help("返回视频库")
 
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
@@ -278,7 +278,7 @@ struct MacLibraryView: View {
         if keyword.isEmpty {
             MacEmptyStateView(
                 symbol: "text.magnifyingglass",
-                title: "搜索素材库里的视频",
+                title: "搜索视频库里的视频",
                 message: "输入片名关键词即可，文件夹里的视频也能搜到。"
             )
             .frame(height: 320)
@@ -351,7 +351,7 @@ struct MacLibraryView: View {
                     Image(systemName: "chevron.left")
                 }
                 .buttonStyle(.bordered)
-                .help("返回素材库")
+                .help("返回视频库")
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(currentFolder?.name ?? "Library")
@@ -682,7 +682,7 @@ struct MacLibraryView: View {
         }
     }
 
-    /// 复制素材库视频文件夹路径到剪贴板
+    /// 复制视频库视频文件夹路径到剪贴板
     private func copyStoragePath() {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -753,7 +753,7 @@ struct MacLibraryView: View {
     private func confirmDelete(_ item: VideoItem) {
         guard MacAlerts.confirmDelete(
             title: "删除「\(item.title)」？",
-            message: "视频文件会从素材库中移除，且不可恢复。"
+            message: "视频文件会从视频库中移除，且不可恢复。"
         ) else { return }
         library.deleteVideo(item.id)
     }

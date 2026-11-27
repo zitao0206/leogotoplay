@@ -2,7 +2,7 @@ import SwiftUI
 import LeogotoPlayCore
 
 /// 视频剪辑页：预览 + 播放条 + 工具条 + 分段时间轴 + 导出。
-/// 支持两种入口：相册临时视频、素材库已导入视频。
+/// 支持两种入口：相册临时视频、视频库已导入视频。
 struct VideoEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var library: LibraryStore
@@ -15,7 +15,7 @@ struct VideoEditorView: View {
     @State private var volumeDraft: Double = 1
     @State private var speedDraft: Double = 1
     @Environment(\.scenePhase) private var scenePhase
-    /// List 被关掉就没有素材库页，导出选项里也不再给「存入素材库」
+    /// List 被关掉就没有视频库页，导出选项里也不再给「存入视频库」
     @AppStorage(TabPrefs.showListKey) private var showList = true
 
     init(source: EditorViewModel.Source) {
@@ -99,7 +99,7 @@ struct VideoEditorView: View {
         .confirmationDialog("导出剪辑结果", isPresented: $showExportOptions, titleVisibility: .visible) {
             Button("保存到相册") { Task { await exportToAlbum() } }
             if showList {
-                Button("存入素材库") { Task { await exportToLibrary() } }
+                Button("存入视频库") { Task { await exportToLibrary() } }
             }
             Button("取消", role: .cancel) {}
         } message: {
@@ -422,7 +422,7 @@ struct VideoEditorView: View {
         guard let url = await viewModel.export() else { return }
         do {
             try await library.importExport(fileURL: url, title: "\(viewModel.source.title) 剪辑版")
-            toastMessage = "已存入素材库"
+            toastMessage = "已存入视频库"
         } catch {
             viewModel.errorMessage = error.localizedDescription
         }

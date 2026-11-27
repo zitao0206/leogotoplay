@@ -9,7 +9,7 @@ import LeogotoPlayCore
 @MainActor
 final class EditorViewModel: ObservableObject {
 
-    /// 剪辑来源：素材库已有视频，或从相册 / 文件临时导入的视频。
+    /// 剪辑来源：视频库已有视频，或从相册 / 文件临时导入的视频。
     struct Source {
         enum Kind {
             case library(VideoItem)
@@ -623,7 +623,7 @@ final class EditorViewModel: ObservableObject {
                 }
             )
             // 导出后自检：文件必须能被 AVFoundation 正常读出来；源片有声音时成片也得有音轨，
-            // 否则宁可直接报错，也不要把一条无声的片子存进相册 / 素材库。
+            // 否则宁可直接报错，也不要把一条无声的片子存进相册 / 视频库。
             if let problem = await exportProblem(with: url) {
                 try? FileManager.default.removeItem(at: url)
                 errorMessage = problem

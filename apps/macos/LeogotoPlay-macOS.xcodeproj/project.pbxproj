@@ -28,6 +28,7 @@
 		51C4453E998C36197320414F /* MacPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADDB27F5595ECB074727F72C /* MacPlayerView.swift */; };
 		BDA975E6F245C54B0C89A0EE /* MacRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E94FADB64E27DD2A08ECF1A8 /* MacRootView.swift */; };
 		59CA02C5F872121915116380 /* LeogotoPlayCore in Frameworks */ = {isa = PBXBuildFile; productRef = 27CCA653788515A23BB3A3F6 /* LeogotoPlayCore */; };
+		B3C4D5E6F708192A3B4C5D6E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2B3C4D5E6F708192A3B4C5D /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -53,6 +54,7 @@
 		E94FADB64E27DD2A08ECF1A8 /* MacRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRootView.swift; sourceTree = "<group>"; };
 		C253A81C97159B489983B4A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info.plist"; sourceTree = "<group>"; };
 		1B0ECB3D235CC12F856D13C6 /* LeogotoPlay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LeogotoPlay.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A2B3C4D5E6F708192A3B4C5D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -183,6 +185,7 @@
 		5EBBEE526B11DC67252D741E /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				A2B3C4D5E6F708192A3B4C5D /* Assets.xcassets */,
 				C253A81C97159B489983B4A8 /* child */,
 				B1A2C3D4E5F60718A9B0C1D2 /* zh-Hans.lproj */,
 			);
@@ -266,6 +269,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B1A2C3D4E5F60718A9B0C1D3 /* zh-Hans.lproj in Resources */,
+				B3C4D5E6F708192A3B4C5D6E /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

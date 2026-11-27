@@ -12,9 +12,12 @@ struct MacMineView: View {
     @State private var password = ""
     @State private var nickname = ""
 
-    @AppStorage(ExportSettings.qualityKey) private var qualityRaw = VideoExporter.Quality.p1080.rawValue
-    @AppStorage(ExportSettings.autoLoopKey) private var autoLoop = false
-    @AppStorage(ExportSettings.autoSaveToAlbumKey) private var autoSaveToAlbum = true
+    // V4.0：功能选择（Library / Cut 至少留一个），侧栏按这里实时过滤
+    @AppStorage(MacTabPrefs.showListKey) private var showLibrary = true
+    @AppStorage(MacTabPrefs.showCutKey) private var showCut = true
+
+    /// 本地缓存（缩略图目录）当前占用，进来后每 2 秒刷新一次
+    @State private var cacheBytes: Int64 = 0
 
     private enum Mode: String, CaseIterable { case login, register }
 
@@ -23,12 +26,20 @@ struct MacMineView: View {
             VStack(alignment: .leading, spacing: 22) {
                 accountCard
                 statsCard
+                featureCard
                 settingsCard
             }
             .padding(MacTheme.pagePadding)
         }
         .background(MacTheme.canvas)
         .navigationTitle("我的")
+        .task {
+            // 「实时」显示缓存大小：浏览视频会不断生成缩略图，所以边看边刷
+            while !Task.isCancelled {
+                cacheBytes = Self.thumbnailCacheSize()
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
     }
 
     // MARK: - 账号
@@ -116,7 +127,7 @@ struct MacMineView: View {
 
     private var statsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("素材库").font(.headline)
+            Text("视频库").font(.headline)
             HStack(spacing: 0) {
                 stat(value: "\(library.videos.count)", title: "视频")
                 Divider().frame(height: 34)
@@ -149,45 +160,18 @@ struct MacMineView: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("设置").font(.headline).padding(.bottom, 10)
 
-            settingRow("默认导出清晰度") {
-                Picker("", selection: $qualityRaw) {
-                    ForEach(VideoExporter.Quality.allCases) { quality in
-                        Text(quality.title).tag(quality.rawValue)
+            settingRow("本地缓存") {
+                HStack(spacing: 10) {
+                    Text(cacheBytes.fileSizeText)
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    Button("清理缓存") {
+                        library.clearThumbnailCache()
+                        MacImageCache.clear()
+                        cacheBytes = Self.thumbnailCacheSize()
                     }
+                    .buttonStyle(.link)
                 }
-                .labelsHidden()
-                .frame(width: 150)
-            }
-
-            Divider()
-
-            settingRow("播放时循环") {
-                Toggle("", isOn: $autoLoop).labelsHidden().toggleStyle(.switch)
-            }
-
-            Divider()
-
-            settingRow("iOS 端剪辑后自动存入相册") {
-                Toggle("", isOn: $autoSaveToAlbum).labelsHidden().toggleStyle(.switch)
-            }
-
-            Divider()
-
-            settingRow("本地文件位置") {
-                Button("在 Finder 中显示") {
-                    NSWorkspace.shared.activateFileViewerSelecting([VideoFileStore.shared.root])
-                }
-                .buttonStyle(.link)
-            }
-
-            Divider()
-
-            settingRow("缩略图缓存") {
-                Button("清理缩略图缓存") {
-                    library.clearThumbnailCache()
-                    MacImageCache.clear()
-                }
-                .buttonStyle(.link)
             }
 
             Divider()
@@ -204,6 +188,56 @@ struct MacMineView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor))
         )
+    }
+
+    /// V4.0：功能选择——Library / Cut 至少留一个（仿 iOS 的 TabLayoutView）
+    private var featureCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("功能选择").font(.headline).padding(.bottom, 4)
+            Text("至少保留一个功能；关掉的那个不会出现在左侧栏。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 10)
+
+            settingRow("Library · 视频库") {
+                Toggle("", isOn: $showLibrary)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    // Cut 已经关了就不能再关 Library（否则侧栏空掉）
+                    .disabled(!showCut)
+            }
+
+            Divider()
+
+            settingRow("Cut · 剪辑台") {
+                Toggle("", isOn: $showCut)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(!showLibrary)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+    }
+
+    /// 缩略图目录的磁盘占用（缓存「有多大」就是它 + 少量内存缓存）
+    private static func thumbnailCacheSize() -> Int64 {
+        let fm = FileManager.default
+        guard let files = fm.enumerator(
+            at: VideoFileStore.shared.thumbnailDirectory,
+            includingPropertiesForKeys: [.fileSizeKey]
+        ) else { return 0 }
+        var total: Int64 = 0
+        for case let url as URL in files {
+            if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                total += Int64(size)
+            }
+        }
+        return total
     }
 
     private func settingRow<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

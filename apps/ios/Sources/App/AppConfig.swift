@@ -23,7 +23,7 @@ struct AppConfig {
         var subtitle: String {
             switch self {
             case .cut: return "剪辑"
-            case .list: return "素材库"
+            case .list: return "视频库"
             case .mine: return "我的"
             }
         }

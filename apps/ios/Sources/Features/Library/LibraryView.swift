@@ -2,7 +2,7 @@ import PhotosUI
 import SwiftUI
 import LeogotoPlayCore
 
-/// Library 页：素材库。文件夹管理 + 导入（相册 / 文件）+ 搜索。
+/// Library 页：视频库。文件夹管理 + 导入（相册 / 文件）+ 搜索。
 /// V1.0.4：固定为列表展示（去掉布局切换键与 All 按钮），统计卡改为
 /// 视频总数 / 占用空间 / 总时长，点击进入全部视频页。
 struct LibraryView: View {
@@ -69,7 +69,7 @@ struct LibraryView: View {
                     }
                     // 「＋」圆形图标的实际像素中心比相册图标低 ~2px，上移 0.5pt 让两者严格水平对齐。
                     .offset(y: -0.5)
-                    .accessibilityLabel("在素材库根目录新建文件夹")
+                    .accessibilityLabel("在视频库根目录新建文件夹")
 
                     if config.allowsPhotoImport {
                         PhotosPicker(selection: $photoItem, matching: .videos, photoLibrary: .shared()) {
@@ -414,7 +414,7 @@ struct LibraryView: View {
             let url = try await VideoImporter.prepare(from: item)
             try await library.importVideo(fromTempURL: url, source: .photos)
             VideoImporter.cleanTemporaryFile(at: url)
-            toastMessage = "已导入素材库"
+            toastMessage = "已导入视频库"
         } catch {
             toastMessage = error.localizedDescription
         }

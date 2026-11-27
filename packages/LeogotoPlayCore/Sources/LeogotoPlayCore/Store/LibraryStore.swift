@@ -2,7 +2,7 @@ import AVFoundation
 import Combine
 import Foundation
 
-/// 素材库核心 Store：文件夹 / 视频的增删改查、导入落盘、持久化。
+/// 视频库核心 Store：文件夹 / 视频的增删改查、导入落盘、持久化。
 @MainActor
 public final class LibraryStore: ObservableObject {
     @Published public private(set) var folders: [VideoFolder] = []
@@ -197,7 +197,7 @@ public final class LibraryStore: ObservableObject {
 
     // MARK: - 视频
 
-    /// 导入一个临时文件到素材库，成功后返回入库的 VideoItem。
+    /// 导入一个临时文件到视频库，成功后返回入库的 VideoItem。
     @discardableResult
     public func importVideo(
         fromTempURL tempURL: URL,
@@ -213,7 +213,7 @@ public final class LibraryStore: ObservableObject {
 
         let storedURL = files.videoURL(for: fileName)
         // 入库前先确认文件真能读：没有视频轨 / 时长读不出来的一律拒绝，
-        // 否则素材库里会出现一条点开黑屏、拖进剪辑页也导不出的坏记录。
+        // 否则视频库里会出现一条点开黑屏、拖进剪辑页也导不出的坏记录。
         let hasVideoTrack = ((try? await AVURLAsset(url: storedURL)
             .loadTracks(withMediaType: .video))?.isEmpty == false)
         let duration = await VideoImporter.duration(of: storedURL)
@@ -245,7 +245,7 @@ public final class LibraryStore: ObservableObject {
         return item
     }
 
-    /// 编辑器导出后「存入素材库」。
+    /// 编辑器导出后「存入视频库」。
     @discardableResult
     public func importExport(fileURL: URL, title: String? = nil, folderID: UUID? = nil) async throws -> VideoItem {
         try await importVideo(fromTempURL: fileURL, source: .editor, folderID: folderID, suggestedTitle: title)

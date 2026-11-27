@@ -5,7 +5,7 @@ import LeogotoPlayCore
 ///
 /// 把用户离开剪辑页时的现场（分段区间、每段的倍速/音量、播放头位置）存到本机，
 /// 下次从「最近编辑」点同一个视频回来，就直接还原到那一刻，而不是一条从头开始的完整片段。
-/// 只有素材库里的视频才有草稿（相册/文件的临时视频离开就删，没地方存）。
+/// 只有视频库里的视频才有草稿（相册/文件的临时视频离开就删，没地方存）。
 struct EditorDraft: Codable, Equatable {
     struct ClipData: Codable, Equatable {
         var start: Double

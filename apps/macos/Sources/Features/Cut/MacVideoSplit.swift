@@ -569,7 +569,7 @@ struct MacVideoSplitView: View {
             Label("说明", systemImage: "info.circle")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(Color.white.opacity(0.55))
-            Text("切割按关键帧对齐，个别位置会差一两帧（0.1 秒以内）；每段都会保留原片的画面和声音。切完的文件要「存入素材库」或「导出到文件夹」才会留下来。")
+            Text("切割按关键帧对齐，个别位置会差一两帧（0.1 秒以内）；每段都会保留原片的画面和声音。切完的文件要「存入视频库」或「导出到文件夹」才会留下来。")
                 .font(.caption)
                 .foregroundStyle(Color.white.opacity(0.5))
                 .fixedSize(horizontal: false, vertical: true)
@@ -724,7 +724,7 @@ struct MacVideoSplitView: View {
                 title: "分割结果",
                 trailing: AnyView(
                     HStack(spacing: 10) {
-                        Button("存入素材库") {
+                        Button("存入视频库") {
                             saveToLibrary(result)
                         }
                         .buttonStyle(MacSplitAccentButtonStyle())
@@ -1003,7 +1003,7 @@ struct MacVideoSplitView: View {
             var saved = 0
             for part in result.parts {
                 guard let url = part.url else { continue }
-                await MainActor.run { phaseText = "正在存入素材库 \(part.index) / \(result.parts.count)" }
+                await MainActor.run { phaseText = "正在存入视频库 \(part.index) / \(result.parts.count)" }
                 do {
                     _ = try await library.importExport(fileURL: url, title: "\(result.baseName) \(part.index)")
                     saved += 1
@@ -1015,7 +1015,7 @@ struct MacVideoSplitView: View {
             await MainActor.run {
                 isSaving = false
                 phaseText = ""
-                if saved > 0 { showToast("已存入素材库 \(saved) 段") }
+                if saved > 0 { showToast("已存入视频库 \(saved) 段") }
             }
         }
     }

@@ -4,7 +4,7 @@ import LeogotoPlayCore
 /// 侧栏分区：对应 iOS 的三个 Tab（Cut / Library / Mine），桌面端以侧栏 + 主区域呈现。
 /// V3.0.0：原 List 统一改名 Library（与 iOS 对齐），侧栏底部不再显示登录状态。
 enum MacSection: String, CaseIterable, Identifiable {
-    // V2.8.12：首页分区顺序改为 Library（素材库）→ Cut（剪辑台）→ Mine
+    // V2.8.12：首页分区顺序改为 Library（视频库）→ Cut（剪辑台）→ Mine
     case library
     case cut
     case mine
@@ -22,8 +22,16 @@ enum MacSection: String, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .cut: return "剪辑台"
-        case .library: return "素材库"
+        case .library: return "视频库"
         case .mine: return "我的"
+        }
+    }
+
+    var isVisible: Bool {
+        switch self {
+        case .library: return UserDefaults.standard.object(forKey: MacTabPrefs.showListKey) as? Bool ?? true
+        case .cut: return UserDefaults.standard.object(forKey: MacTabPrefs.showCutKey) as? Bool ?? true
+        case .mine: return true
         }
     }
 
@@ -36,27 +44,41 @@ enum MacSection: String, CaseIterable, Identifiable {
     }
 }
 
+/// V4.0：功能选择偏好（Library / Cut 显隐），存 UserDefaults，Mine 设置页与侧栏共用。
+enum MacTabPrefs {
+    static let showListKey = "tab.list.visible"
+    static let showCutKey = "tab.cut.visible"
+}
+
 struct MacRootView: View {
     @EnvironmentObject private var library: LibraryStore
 
     @State private var selection: MacSection? = MacRootView.initialSection()
 
-    /// 默认进「素材库」；Debug 下可用启动参数 `-startSection cut` 直达某个分区，方便截图与调试。
+    @AppStorage(MacTabPrefs.showListKey) private var showList = true
+    @AppStorage(MacTabPrefs.showCutKey) private var showCut = true
+
+    /// 默认进「视频库」；Debug 下可用启动参数 `-startSection cut` 直达某个分区，方便截图与调试。
     private static func initialSection() -> MacSection {
         #if DEBUG
         if let raw = UserDefaults.standard.string(forKey: "startSection"),
-           let section = MacSection(rawValue: raw) {
+           let section = MacSection(rawValue: raw), section.isVisible {
             return section
         }
         #endif
         return .library
     }
 
+    /// 侧栏实际展示的分区：Mine 恒显，Library / Cut 受「功能选择」控制
+    private var visibleSections: [MacSection] {
+        MacSection.allCases.filter { $0.isVisible }
+    }
+
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
                 Section {
-                    ForEach(MacSection.allCases) { section in
+                    ForEach(visibleSections) { section in
                         Label {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(section.title)
@@ -81,7 +103,7 @@ struct MacRootView: View {
             .scrollContentBackground(.hidden)
             .background(MacTheme.canvas)
             .safeAreaInset(edge: .bottom) {
-                // V1.0：这里原来显示账号名（登录状态），已去掉，只留素材库统计。
+                // V1.0：这里原来显示账号名（登录状态），已去掉，只留视频库统计。
                 Text("\(library.videos.count) 个视频 · \(library.totalSize.fileSizeText)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -94,6 +116,15 @@ struct MacRootView: View {
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onAppear { reconcileSelection() }
+        .onChange(of: showList) { _ in reconcileSelection() }
+        .onChange(of: showCut) { _ in reconcileSelection() }
+    }
+
+    /// 当前分区被用户在「功能选择」里关掉时，自动跳到还留着的那一个
+    private func reconcileSelection() {
+        if let current = selection, current.isVisible { return }
+        selection = visibleSections.first ?? .mine
     }
 
     @ViewBuilder

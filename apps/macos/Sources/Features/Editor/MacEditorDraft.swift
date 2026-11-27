@@ -29,7 +29,7 @@ struct MacFilmKey: Hashable {
     static func token(_ step: Double) -> Int { Int((step * 1000).rounded()) }
 }
 
-/// macOS 剪辑草稿：V2.0~V2.8.5 的单素材现场（按素材库视频 id 存）。
+/// macOS 剪辑草稿：V2.0~V2.8.5 的单素材现场（按视频库视频 id 存）。
 /// V2.8.6 起现场改成整项目的 MacProjectRecord，这份只留着读旧数据做迁移。
 struct MacEditorDraft: Codable, Equatable {
     var clips: [MacClip]
@@ -125,7 +125,7 @@ enum MacEditorDraftStore {
 // MARK: - 项目存档（V2.8.6：多素材时间轴 + 最近编辑保留现场）
 
 /// 项目里的一条素材。`fileName` 相对 `Projects/<项目 id>/`；以 `/` 开头的表示直接引用原路径
-/// （从素材库视频进来的素材不复制文件）。
+/// （从视频库视频进来的素材不复制文件）。
 struct MacProjectMaterialFile: Codable, Equatable, Identifiable {
     var id: UUID
     var fileName: String
@@ -209,7 +209,7 @@ enum MacProjectStore {
         projects().first { $0.id == id }
     }
 
-    /// 已经在剪的素材库视频（同一个文件只开一个项目）
+    /// 已经在剪的视频库视频（同一个文件只开一个项目）
     static func project(referencingFileAt path: String) -> MacProjectRecord? {
         projects().first { $0.materials.contains { $0.fileName == path } }
     }
@@ -293,7 +293,7 @@ enum MacProjectStore {
         )
     }
 
-    /// 素材库视频进剪辑：一条引用原文件的素材；旧单素材草稿迁移成片段表
+    /// 视频库视频进剪辑：一条引用原文件的素材；旧单素材草稿迁移成片段表
     static func newProject(libraryFile url: URL, title: String, videoID: UUID) -> MacProjectRecord {
         let duration = MacEditorDraftStore.draft(for: videoID)?.clips.reduce(0) { $0 + $1.duration } ?? 0
         let material = MacProjectMaterialFile(

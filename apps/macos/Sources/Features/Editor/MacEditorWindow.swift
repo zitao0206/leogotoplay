@@ -7,7 +7,7 @@ extension Notification.Name {
     static let macEditorWindowClosed = Notification.Name("leogotoplay.mac.editorWindowClosed")
 }
 
-/// 剪辑页独立开窗（V2.3）：从 Cut 首页或素材库进剪辑时都新开一个窗口，不再挤在主窗口里。
+/// 剪辑页独立开窗（V2.3）：从 Cut 首页或视频库进剪辑时都新开一个窗口，不再挤在主窗口里。
 /// V2.8.6 起窗口的单位是「项目」（MacProjectRecord）：同一个项目已有窗口就把它提到前面。
 @MainActor
 final class MacEditorWindowManager: NSObject, NSWindowDelegate {
@@ -21,7 +21,7 @@ final class MacEditorWindowManager: NSObject, NSWindowDelegate {
     private var entries: [Entry] = []
 
 
-    /// 首页 / 素材库入口：source 为 nil 就是全新空白项目；带素材库视频时复用它已有的项目。
+    /// 首页 / 视频库入口：source 为 nil 就是全新空白项目；带视频库视频时复用它已有的项目。
     func open(source: MacEditorSource?, library: LibraryStore) {
         let project: MacProjectRecord
         if let source {

@@ -4,7 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import LeogotoPlayCore
 
-/// 编辑器数据源（macOS）：素材库视频，或从文件导入的视频。
+/// 编辑器数据源（macOS）：视频库视频，或从文件导入的视频。
 struct MacEditorSource: Identifiable {
     let id: UUID
     let url: URL
@@ -19,7 +19,7 @@ struct MacEditorSource: Identifiable {
     }
 }
 
-/// 编辑页里的项目素材（V2.8.5）：只属于当前项目，独立于素材库
+/// 编辑页里的项目素材（V2.8.5）：只属于当前项目，独立于视频库
 struct MacProjectMaterial: Identifiable, Equatable {
     let id: UUID
     let url: URL
@@ -33,7 +33,7 @@ final class MacEditorModel: ObservableObject {
     /// 项目 id / 标题（V2.8.6：编辑页的代表从「一条素材」变成「一个项目」）
     @Published private(set) var projectID: UUID
     @Published private(set) var title: String
-    /// 项目素材（V2.8.5 起只属于本项目，独立于素材库）
+    /// 项目素材（V2.8.5 起只属于本项目，独立于视频库）
     @Published private(set) var materials: [MacProjectMaterial] = []
     /// 素材首帧缩略图
     @Published private(set) var materialThumbnails: [UUID: CGImage] = [:]

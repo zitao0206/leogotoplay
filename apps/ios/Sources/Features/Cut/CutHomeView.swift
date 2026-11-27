@@ -9,7 +9,7 @@ struct TextExtractRequest: Identifiable {
     let url: URL?
 }
 
-/// Cut 页：剪辑入口。可以从相册或素材库选视频直接进入编辑器。
+/// Cut 页：剪辑入口。可以从相册或视频库选视频直接进入编辑器。
 struct CutHomeView: View {
     @EnvironmentObject private var library: LibraryStore
     private let config = AppConfig.current
@@ -63,11 +63,11 @@ struct CutHomeView: View {
             }
             Button("取消", role: .cancel) { pendingDeleteVideo = nil }
         } message: {
-            Text("会连同素材库里的文件、缩略图和草稿一起删掉，相册里的原片不受影响。")
+            Text("会连同视频库里的文件、缩略图和草稿一起删掉，相册里的原片不受影响。")
         }
         #if DEBUG
         .onAppear {
-            // 截图钩子：直接打开「一键提取文字」，并带一个素材库视频进去
+            // 截图钩子：直接打开「一键提取文字」，并带一个视频库视频进去
             if UserDefaults.standard.bool(forKey: "openTextExtract") {
                 let url = library.videos.first?.fileURL
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
@@ -369,7 +369,7 @@ struct CutHomeView: View {
 
 }
 
-// MARK: - 素材库选择器
+// MARK: - 视频库选择器
 
 private struct LibraryPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -382,7 +382,7 @@ private struct LibraryPickerSheet: View {
                 if library.videos.isEmpty {
                     EmptyStateView(
                         symbol: "film",
-                        title: "素材库是空的",
+                        title: "视频库是空的",
                         message: "先在 List 页导入视频，再回来剪辑。"
                     )
                 } else {

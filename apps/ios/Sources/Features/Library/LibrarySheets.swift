@@ -69,7 +69,7 @@ struct TextEditRequest: Identifiable {
 
     let id = UUID()
     let kind: Kind
-    /// 新建文件夹时的上级目录；nil 表示建在素材库根目录。
+    /// 新建文件夹时的上级目录；nil 表示建在视频库根目录。
     var parentID: UUID?
 
     init(kind: Kind, parentID: UUID? = nil) {
@@ -179,7 +179,7 @@ struct DeleteRequest: Identifiable {
 
     var message: String {
         switch kind {
-        case .video: return "视频文件会从 App 素材库中移除，操作不可撤销。"
+        case .video: return "视频文件会从 App 视频库中移除，操作不可撤销。"
         case .folder: return "文件夹内的视频会回到「未分类」，视频文件不会被删除。"
         }
     }
@@ -187,7 +187,7 @@ struct DeleteRequest: Identifiable {
 
 // MARK: - 页面路由
 
-/// 素材库页面里可能弹出的全屏页面。
+/// 视频库页面里可能弹出的全屏页面。
 enum LibraryRoute: Identifiable {
     case player(VideoItem)
     case editor(EditorViewModel.Source)

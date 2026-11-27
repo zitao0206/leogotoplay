@@ -55,7 +55,7 @@ struct MineView: View {
             }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("退出后素材库仍保留在本机，重新登录可继续使用。")
+            Text("退出后视频库仍保留在本机，重新登录可继续使用。")
         }
     }
 
