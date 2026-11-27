@@ -10,6 +10,22 @@ struct LeogotoPlayMacApp: App {
     init() {
         // V2.0：整个 App 走深色外观（黑底 + 暖红点缀），和 Cut 页的黑红主视觉一致
         NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+
+        // V4.1.0：退出 App 时兜底清掉 Cut 各功能留在临时目录的成品（窗口没关就直接退出的情况）
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            let fm = FileManager.default
+            let temp = fm.temporaryDirectory
+            guard let items = try? fm.contentsOfDirectory(at: temp, includingPropertiesForKeys: nil) else { return }
+            for url in items {
+                let name = url.lastPathComponent
+                guard name.hasPrefix("mac-split-") || name.hasPrefix("mac-face-mask") else { continue }
+                try? fm.removeItem(at: url)
+            }
+        }
     }
 
     var body: some Scene {

@@ -689,6 +689,10 @@ struct MacFaceMaskView: View {
             }
         }
         .task { await autoStartIfNeeded() }
+        // 关窗（含窗口红点）自动删掉临时打码视频，只有用户主动存入视频库 / 导出才留文件
+        .onDisappear {
+            if let result { try? FileManager.default.removeItem(at: result.url) }
+        }
         .alert("打码失败", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -1020,6 +1024,8 @@ struct MacFaceMaskView: View {
                 infoChip(icon: "paintbrush", text: result.style.title)
                 Spacer()
                 Button("再打一次") {
+                    // 先把上一轮临时成片删掉，再回到选片页
+                    try? FileManager.default.removeItem(at: result.url)
                     self.result = nil
                     sourceURL = nil
                 }

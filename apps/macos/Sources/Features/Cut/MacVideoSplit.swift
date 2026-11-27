@@ -295,6 +295,8 @@ struct MacVideoSplitView: View {
             }
         }
         .task { await autoStartIfNeeded() }
+        // 不管用「关闭」按钮还是窗口红点关，临时分段文件都清掉：除非用户导出，本地不留任何成品
+        .onDisappear { MacVideoSplitter.cleanUp(result) }
         .alert("分割失败", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -819,16 +821,6 @@ struct MacVideoSplitView: View {
             }
             .buttonStyle(.plain)
             .help("预览这一段")
-
-            Button {
-                revealInFinder(part)
-            } label: {
-                Image(systemName: "folder")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.white.opacity(0.45))
-            }
-            .buttonStyle(.plain)
-            .help("在 Finder 里定位")
         }
         .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -989,11 +981,6 @@ struct MacVideoSplitView: View {
         closePreview()
         MacVideoSplitter.cleanUp(result)
         onClose()
-    }
-
-    private func revealInFinder(_ part: MacSplitPart) {
-        guard let url = part.url else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     private func saveToLibrary(_ result: MacSplitResult) {
