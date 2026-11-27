@@ -85,7 +85,6 @@ struct MacPlayerView: View {
     @State private var flipV = false
 
     /// 控制面板：鼠标进出淡入淡出 + 自由拖动
-    @State private var panelHovering = true
     @State private var pointerInside = true
     @State private var panelOffset: CGSize = .zero
     @State private var containerSize: CGSize = .zero
@@ -158,6 +157,10 @@ struct MacPlayerView: View {
                         .transition(.opacity)
                 }
             }
+            .overlay(alignment: .topTrailing) {
+                pinButton
+                    .ignoresSafeArea(edges: .top)
+            }
             .coordinateSpace(name: Self.playerSpace)
             .overlay(alignment: .bottomTrailing) {
                 if let toast {
@@ -227,37 +230,8 @@ struct MacPlayerView: View {
         .padding(.top, 16)
         .padding(.bottom, 10)
         .overlay(alignment: .trailing) {
-            HStack(spacing: 6) {
-                if pinHovering && pinVisible {
-                    Text(isPinned ? "取消最前" : "在最前")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.65), in: Capsule())
-                        .fixedSize()
-                        .transition(.opacity)
-                }
-
-                Button {
-                    isPinned.toggle()
-                    window?.level = isPinned ? .floating : .normal
-                } label: {
-                    Image(systemName: "pin")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(pinHovering || isPinned ? MacTheme.accent : Color.white.opacity(0.85))
-                        .rotationEffect(.degrees(isPinned ? 0 : 90))
-                        .animation(.easeInOut(duration: 0.28), value: isPinned)
-                        .frame(width: 26, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-            .opacity(pinVisible ? 1 : 0)
-            .allowsHitTesting(pinVisible)
-            .animation(.easeInOut(duration: 0.2), value: pinVisible)
-            .animation(.easeInOut(duration: 0.15), value: pinHovering)
-            .padding(.trailing, 14)
+            // 钉子单独放在整窗顶部（见 pinButton），这里只留标题文字
+            Color.clear.frame(width: 0, height: 0)
         }
         .background(
             LinearGradient(colors: [.black.opacity(0.55), .clear], startPoint: .top, endPoint: .bottom)
@@ -265,11 +239,47 @@ struct MacPlayerView: View {
         )
     }
 
+    /// 右上角「在最前」钉子：贴窗口顶部 28pt 的标题条，垂直居中，上下留白一致
+    private var pinButton: some View {
+        HStack(spacing: 6) {
+            if pinHovering && pinVisible {
+                Text(isPinned ? "取消最前" : "在最前")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(Color.black.opacity(0.65), in: Capsule())
+                    .fixedSize()
+                    .transition(.opacity)
+            }
+
+            Button {
+                isPinned.toggle()
+                window?.level = isPinned ? .floating : .normal
+            } label: {
+                Image(systemName: "pin")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(pinHovering || isPinned ? MacTheme.accent : Color.white.opacity(0.85))
+                    .rotationEffect(.degrees(isPinned ? 0 : 90))
+                    .animation(.easeInOut(duration: 0.28), value: isPinned)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(height: 28)
+        .padding(.trailing, 14)
+        .opacity(pinVisible ? 1 : 0)
+        .allowsHitTesting(pinVisible)
+        .animation(.easeInOut(duration: 0.2), value: pinVisible)
+        .animation(.easeInOut(duration: 0.15), value: pinHovering)
+    }
+
     // MARK: - 悬浮控制面板
 
-    /// 面板显示条件：鼠标在面板上；或「在最前」时鼠标进入播放器区域
+    /// 面板显隐：鼠标在播放器区域就出现，移出窗口就消失（拖动中保持）
     private var showControls: Bool {
-        panelHovering || dragStartPoint != nil || dragStartOffset != nil || (isPinned && pointerInside)
+        pointerInside || dragStartPoint != nil || dragStartOffset != nil
     }
 
     /// 面板容器：鼠标进入整体淡入、离开整体淡出；面板底色可按住拖动，限制在窗口内
@@ -291,17 +301,7 @@ struct MacPlayerView: View {
         .animation(.easeOut(duration: 0.2), value: showControls)
     }
 
-    /// 面板在窗口内的矩形（留 10pt 宽容区，鼠标擦边也算在里面）
-    private func panelRect(in size: CGSize) -> CGRect {
-        let width = Self.panelSize.width
-        let height = Self.panelSize.height
-        let originX = (size.width - width) / 2 + panelOffset.width
-        let originY = size.height - 28 - height + panelOffset.height
-        return CGRect(x: originX, y: originY, width: width, height: height)
-            .insetBy(dx: -10, dy: -10)
-    }
-
-    /// 每 60ms 读一次鼠标位置：窗口内 / 面板上分别驱动「操作面板」和「钉子」的显隐
+    /// 每 60ms 读一次鼠标位置：是否在播放器区域内，决定「操作面板 + 钉子」的显隐
     private func pollPointer() {
         guard let window, let content = window.contentView else { return }
         let bounds = content.bounds.size
@@ -322,11 +322,9 @@ struct MacPlayerView: View {
         }
         if inside != pointerInside { setPointerInside(inside) }
         guard inside else {
-            if panelHovering { setPanelHovering(false) }
             if pinHovering { withAnimation(.easeOut(duration: 0.15)) { pinHovering = false } }
             return
         }
-        updatePanelHover(at: point)
         updatePinHover(at: point)
     }
 
@@ -337,10 +335,10 @@ struct MacPlayerView: View {
             return
         }
         let rect = CGRect(
-            x: containerSize.width - 80,
+            x: containerSize.width - 56,
             y: 0,
-            width: 76,
-            height: 62
+            width: 52,
+            height: 34
         )
         let hovering = rect.contains(point)
         if hovering != pinHovering {
@@ -348,20 +346,9 @@ struct MacPlayerView: View {
         }
     }
 
-    private func updatePanelHover(at point: CGPoint?) {
-        guard let point, containerSize.width > 0 else { return }
-        let hovering = panelRect(in: containerSize).contains(point)
-        if hovering != panelHovering { setPanelHovering(hovering) }
-    }
-
     private func setPointerInside(_ inside: Bool) {
         guard inside != pointerInside else { return }
         withAnimation(.easeOut(duration: 0.18)) { pointerInside = inside }
-    }
-
-    private func setPanelHovering(_ hovering: Bool) {
-        guard hovering != panelHovering else { return }
-        withAnimation(.easeOut(duration: 0.18)) { panelHovering = hovering }
     }
 
     /// 面板拖动：只挂在底部圆角底色上，按钮 / 滑杆照常点击
@@ -384,7 +371,6 @@ struct MacPlayerView: View {
             .onEnded { _ in
                 dragStartPoint = nil
                 dragStartOffset = nil
-                panelHovering = true
             }
     }
 
