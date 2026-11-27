@@ -233,7 +233,7 @@ struct MacCutView: View {
                 )
             } else {
                 // V3.0.3：格子固定正方形 128pt，只有列数随窗口宽度变
-                MacSquareGrid(fixedSide: 128, minSide: 128, maxSide: 128, spacing: 10) {
+                MacSquareGrid(fixedSide: MacRecentProjectCard.side, minSide: 128, maxSide: 128, spacing: 10) {
                     ForEach(projects) { project in
                         MacRecentProjectCard(
                             project: project,
@@ -369,6 +369,9 @@ private struct MacRecentProjectCard: View {
     let onDelete: () -> Void
     let onRename: () -> Void
 
+    /// 卡片边长（正方形，改这一个数就能整体缩放）
+    static let side: CGFloat = 128
+
     @State private var hovering = false
     /// 右下角「…」的小菜单
     @State private var showMenu = false
@@ -440,7 +443,9 @@ private struct MacRecentProjectCard: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .padding(5)
         }
-        // 尺寸由外面的 MacSquareGrid 直接给成正方形，这里不要再用 aspectRatio（.fit 会按内容比例算高）
+        // V3.0.4：显式写死 128×128，内容再怎么撑也不会变成长方形
+        .frame(width: MacRecentProjectCard.side, height: MacRecentProjectCard.side)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(Color.white.opacity(hovering ? 0.18 : 0.06), lineWidth: 1)
