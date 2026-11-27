@@ -27,7 +27,7 @@ struct MacMineView: View {
             }
             .padding(MacTheme.pagePadding)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(MacTheme.canvas)
         .navigationTitle("我的")
     }
 

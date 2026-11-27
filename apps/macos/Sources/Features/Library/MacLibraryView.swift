@@ -120,7 +120,7 @@ struct MacLibraryView: View {
     /// 页面主体 + 工具栏 / 搜索 / 导入事件（拆出来单纯是为了让类型推断能过）
     private var decorated: some View {
         content
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(MacTheme.canvas)
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
                     // 右侧与内容区的 pagePadding 对齐，整组因此左移（V3.1.24）
