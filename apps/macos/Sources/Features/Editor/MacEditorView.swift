@@ -1079,6 +1079,17 @@ final class MacEditorModel: ObservableObject {
         return tracks?.pixelSize ?? CGSize(width: 1920, height: 1080)
     }
 
+    /// 源片编码（h264 / hevc）
+    var sourceCodec: String {
+        let tracks = clips.first?.sourceID.flatMap { materialTracks[$0] } ?? materialTracks.values.first
+        return tracks?.codec ?? "h264"
+    }
+
+    /// 源片编码的展示名
+    var sourceCodecLabel: String {
+        sourceCodec == "hevc" ? "HEVC" : "H.264"
+    }
+
     /// 源片码率（Mbps）
     var sourceBitrateMbps: Double {
         let tracks = clips.first?.sourceID.flatMap { materialTracks[$0] } ?? materialTracks.values.first
@@ -2341,7 +2352,8 @@ private struct MacExportConfigSheet: View {
         let resolution = "\(Int(size.width))×\(Int(size.height))"
         let fps = "\(MacExportFrameRate.label(model.sourceFrameRate))fps"
         let mbps = String(format: "%.2f Mbps", model.sourceBitrateMbps)
-        return "分辨率：\(resolution)，帧率：\(fps)，码率：\(mbps)"
+        let format = "\(model.sourceFormat.shortTitle)（\(model.sourceCodecLabel)）"
+        return "分辨率：\(resolution)，帧率：\(fps)，码率：\(mbps)，格式：\(format)"
     }
 
     private var frameRateTitle: String {
