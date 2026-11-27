@@ -1079,6 +1079,11 @@ final class MacEditorModel: ObservableObject {
         return tracks?.pixelSize ?? CGSize(width: 1920, height: 1080)
     }
 
+    /// 首页重命名后同步编辑页顶部标题
+    func applyRenamedTitle(_ newTitle: String) {
+        title = newTitle
+    }
+
     /// 源片编码（h264 / hevc）
     var sourceCodec: String {
         let tracks = clips.first?.sourceID.flatMap { materialTracks[$0] } ?? materialTracks.values.first
@@ -1269,6 +1274,11 @@ struct MacEditorView: View {
         .background(MacTheme.canvas)
         .modifier(DeleteKeyMonitor { handleDeleteKey() })
         .modifier(SpaceKeyMonitor { model.togglePlay() })
+        .onReceive(NotificationCenter.default.publisher(for: .macProjectRenamed)) { note in
+            guard let id = note.userInfo?["id"] as? UUID, id == model.projectID,
+                  let title = note.userInfo?["title"] as? String else { return }
+            model.applyRenamedTitle(title)
+        }
         .onChange(of: model.scrollToStartToken) { _ in
             // 向左分割后剩下一段从 00:00 开始，把时间轴滚回最左跟着走
             timelineOffset = timelineInset

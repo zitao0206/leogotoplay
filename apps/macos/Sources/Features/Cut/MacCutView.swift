@@ -10,6 +10,9 @@ struct MacCutView: View {
     @State private var toast: String?
     /// 最近编辑的项目（V2.8.6：来自项目存档，每条都是动过时间轴的现场）
     @State private var projects: [MacProjectRecord] = []
+    /// 正在改名的项目（V2.9.5：格子右下角「…」里的重命名）
+    @State private var renamingProject: MacProjectRecord?
+    @State private var renameDraft = ""
 
     /// 热门工具：macOS 端先把入口摆齐，能力后续逐个接（点只提示）。
     private let tools: [(icon: String, title: String)] = [
@@ -56,6 +59,21 @@ struct MacCutView: View {
             }
         }
         .animation(.easeOut(duration: 0.18), value: toast)
+        .alert("重命名项目", isPresented: Binding(
+            get: { renamingProject != nil },
+            set: { if !$0 { renamingProject = nil } }
+        )) {
+            TextField("项目名称", text: $renameDraft)
+            Button("取消", role: .cancel) { renamingProject = nil }
+            Button("确定") {
+                if let project = renamingProject, !renameDraft.trimmingCharacters(in: .whitespaces).isEmpty {
+                    MacProjectStore.rename(project.id, to: renameDraft)
+                    reloadProjects()
+                    toast = "已重命名"
+                }
+                renamingProject = nil
+            }
+        }
         .task {
             reloadProjects()
             openFirstVideoIfNeeded()
@@ -81,6 +99,11 @@ struct MacCutView: View {
 
     private func reloadProjects() {
         projects = MacProjectStore.recentProjects()
+    }
+
+    private func beginRename(_ project: MacProjectRecord) {
+        renameDraft = project.title
+        renamingProject = project
     }
 
     // MARK: - 热门工具
@@ -209,20 +232,24 @@ struct MacCutView: View {
                         .stroke(MacTheme.inkStroke, lineWidth: 1)
                 )
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(projects) { project in
-                            MacRecentProjectCard(
-                                project: project,
-                                onOpen: {
-                                    MacEditorWindowManager.shared.open(projectID: project.id, library: library)
-                                },
-                                onDelete: { delete(project) }
-                            )
-                        }
+                // V2.9.5：宫格自适应 —— 窗口变宽多排一列，变窄自动回收，纵向滚动到底
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 208, maximum: 320), spacing: 12, alignment: .top)],
+                    alignment: .leading,
+                    spacing: 12
+                ) {
+                    ForEach(projects) { project in
+                        MacRecentProjectCard(
+                            project: project,
+                            onOpen: {
+                                MacEditorWindowManager.shared.open(projectID: project.id, library: library)
+                            },
+                            onDelete: { delete(project) },
+                            onRename: { beginRename(project) }
+                        )
                     }
-                    .padding(.vertical, 2)
                 }
+                .padding(.vertical, 2)
             }
         }
     }
@@ -287,8 +314,11 @@ private struct MacRecentProjectCard: View {
     let project: MacProjectRecord
     let onOpen: () -> Void
     let onDelete: () -> Void
+    let onRename: () -> Void
 
     @State private var hovering = false
+    /// 右下角「…」的小菜单
+    @State private var showMenu = false
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
@@ -298,65 +328,105 @@ private struct MacRecentProjectCard: View {
     }()
 
     var body: some View {
-        Button(action: onOpen) {
-            VStack(alignment: .leading, spacing: 8) {
-                ZStack(alignment: .bottomTrailing) {
-                    cover
-                        .frame(width: 200, height: 112)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .clipped()
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack(alignment: .bottomTrailing) {
+                cover
+                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .clipped()
 
-                    Text(project.outputDuration.timecode)
-                        .font(.caption2.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.black.opacity(0.72), in: Capsule())
-                        .padding(6)
-                }
-                .overlay(alignment: .topLeading) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "square.and.pencil")
-                            .font(.system(size: 9, weight: .bold))
-                        Text("\(project.clips.count) 段")
-                            .font(.caption2.weight(.bold))
-                    }
+                Text(project.outputDuration.timecode)
+                    .font(.caption2.monospacedDigit().weight(.semibold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(MacTheme.accent, in: Capsule())
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.black.opacity(0.72), in: Capsule())
                     .padding(6)
-                }
-
-                Text(project.title)
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .frame(width: 200, alignment: .leading)
-
-                Text("现场 · \(Self.relativeFormatter.localizedString(for: project.updatedAt, relativeTo: Date()))")
-                    .font(.caption2)
-                    .foregroundStyle(Color.white.opacity(0.45))
-                    .lineLimit(1)
             }
-            .padding(8)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(MacTheme.surface)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.white.opacity(hovering ? 0.18 : 0.06), lineWidth: 1)
-            )
-            .contentShape(Rectangle())
+            .overlay(alignment: .topLeading) {
+                HStack(spacing: 3) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("\(project.clips.count) 段")
+                        .font(.caption2.weight(.bold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(MacTheme.accent, in: Capsule())
+                .padding(6)
+            }
+
+            Text(project.title)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 22)
+
+            Text("现场 · \(Self.relativeFormatter.localizedString(for: project.updatedAt, relativeTo: Date()))")
+                .font(.caption2)
+                .foregroundStyle(Color.white.opacity(0.45))
+                .lineLimit(1)
         }
-        .buttonStyle(.plain)
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(MacTheme.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(hovering ? 0.18 : 0.06), lineWidth: 1)
+        )
+        .overlay(alignment: .bottomTrailing) {
+            Button {
+                showMenu.toggle()
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white.opacity(hovering ? 0.9 : 0.5))
+                    .frame(width: 20, height: 18)
+                    .background(Color.white.opacity(hovering ? 0.12 : 0.04),
+                                in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .frame(width: 20, height: 18)
+            .padding(6)
+            .help("重命名 / 删除")
+            .popover(isPresented: $showMenu, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Button {
+                        showMenu = false
+                        onRename()
+                    } label: {
+                        Label("重命名", systemImage: "pencil")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+
+                    Button {
+                        showMenu = false
+                        onDelete()
+                    } label: {
+                        Label("删除", systemImage: "trash")
+                            .foregroundStyle(.red)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                }
+                .font(.system(size: 12))
+                .padding(6)
+                .frame(width: 120)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
         .onHover { hovering = $0 }
         .help("继续上次的时间轴现场")
-        .contextMenu {
-            Button("继续编辑", action: onOpen)
-            Button("删除", role: .destructive, action: onDelete)
-        }
     }
 
     @ViewBuilder

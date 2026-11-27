@@ -133,6 +133,11 @@ struct MacProjectMaterialFile: Codable, Equatable, Identifiable {
     var duration: Double
 }
 
+extension Notification.Name {
+    /// 项目重命名：首页改名后，已经开着的编辑窗口跟着更新标题
+    static let macProjectRenamed = Notification.Name("leogotoplay.mac.projectRenamed")
+}
+
 /// 一个剪辑项目的完整现场：素材清单 + 时间轴片段 + 播放状态。
 struct MacProjectRecord: Codable, Equatable, Identifiable {
     var id: UUID
@@ -236,12 +241,48 @@ enum MacProjectStore {
         }
     }
 
+    /// 重命名（不刷新 updatedAt，避免首页按时间重排）
+    static func rename(_ projectID: UUID, to newTitle: String) {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        var list = projects()
+        guard let index = list.firstIndex(where: { $0.id == projectID }) else { return }
+        list[index].title = trimmed
+        guard let data = try? JSONEncoder().encode(list) else { return }
+        try? data.write(to: indexURL)
+        NotificationCenter.default.post(
+            name: .macProjectRenamed,
+            object: nil,
+            userInfo: ["id": projectID, "title": trimmed]
+        )
+    }
+
     // MARK: 新建
+
+    /// 新项目默认标题：`11-27 (01)` —— 「月-日」+ 当天第几个项目（两位，从 01 起）
+    static func defaultTitle(for date: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "M-d"
+        let prefix = formatter.string(from: date)
+
+        // 已经用掉的最大编号（改名过的项目也保留它的号，避免和还叫旧名的撞号）
+        var maxIndex = 0
+        for record in projects() where record.title.hasPrefix(prefix + " (") && record.title.hasSuffix(")") {
+            let digits = record.title.dropFirst(prefix.count + 2).dropLast()
+            if let number = Int(digits) { maxIndex = max(maxIndex, number) }
+        }
+        // 当天新建过几个（含已改名的），编号从它的下一个开始
+        let calendar = Calendar.current
+        let todayCount = projects().filter { calendar.isDate($0.createdAt, inSameDayAs: date) }.count
+        let next = max(maxIndex, todayCount) + 1
+        return "\(prefix) (\(String(format: "%02d", next)))"
+    }
 
     static func newBlankProject() -> MacProjectRecord {
         MacProjectRecord(
             id: UUID(),
-            title: "未命名项目",
+            title: defaultTitle(),
             createdAt: Date(),
             updatedAt: Date(),
             materials: [],
@@ -269,7 +310,7 @@ enum MacProjectStore {
         }
         return MacProjectRecord(
             id: UUID(),
-            title: title,
+            title: defaultTitle(),
             createdAt: Date(),
             updatedAt: Date(),
             materials: [material],
