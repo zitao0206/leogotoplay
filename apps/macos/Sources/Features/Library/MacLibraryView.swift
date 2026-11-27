@@ -144,9 +144,23 @@ struct MacLibraryView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(currentFolder?.name ?? "Library")
                     .font(.title2.weight(.semibold))
-                Text("\(displayedVideos.count) 个视频 · \(library.folders.count) 个文件夹 · \(library.totalSize.fileSizeText)")
-                    .font(.caption)
+                HStack(spacing: 6) {
+                    Text(VideoFileStore.shared.mediaDirectory.path)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                    Button {
+                        copyStoragePath()
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
+                    .help("复制文件夹路径")
+                }
             }
             Spacer()
         }
@@ -301,9 +315,9 @@ struct MacLibraryView: View {
                 }
             } else {
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 190, maximum: 300), spacing: 12)],
+                    columns: [GridItem(.adaptive(minimum: 130, maximum: 168), spacing: 10)],
                     alignment: .leading,
-                    spacing: 12
+                    spacing: 10
                 ) {
                     ForEach(displayedVideos) { item in
                         MacVideoCard(
@@ -332,6 +346,22 @@ struct MacLibraryView: View {
 
     private func dismissActions() {
         showVideoActions = false
+    }
+
+    private func showToast(_ text: String) {
+        toast = text
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            if toast == text { toast = nil }
+        }
+    }
+
+    /// 复制素材库视频文件夹路径到剪贴板
+    private func copyStoragePath() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(VideoFileStore.shared.mediaDirectory.path, forType: .string)
+        showToast("路径已复制")
     }
 
     /// 长按 / 右键弹出的四项操作面板

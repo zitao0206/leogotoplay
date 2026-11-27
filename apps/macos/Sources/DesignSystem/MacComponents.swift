@@ -112,15 +112,15 @@ struct MacVideoCard<MenuContent: View>: View {
             }
 
             Text(item.title)
-                .font(.callout.weight(.medium))
+                .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(.white)
                 .lineLimit(1)
-            Text("\(item.fileSize.fileSizeText) · \(item.duration.timecode) · \(item.source == .editor ? "剪辑导出" : "本地导入")")
-                .font(.caption2)
+            Text("\(item.fileSize.fileSizeText) · \(item.duration.timecode)")
+                .font(.system(size: 9.5))
                 .foregroundStyle(Color.white.opacity(0.5))
                 .lineLimit(1)
         }
-        .padding(8)
+        .padding(6)
         .background(
             RoundedRectangle(cornerRadius: MacTheme.cardRadius, style: .continuous)
                 .fill(hovering ? Color.white.opacity(0.06) : MacTheme.surface)
@@ -351,7 +351,7 @@ struct MacVideoRow<MenuContent: View>: View {
     var body: some View {
         HStack(spacing: 12) {
             MacThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 8)
-                .frame(width: 56, height: 56)
+                .frame(width: 44, height: 44)
                 .clipped()
 
             VStack(alignment: .leading, spacing: 3) {
@@ -375,7 +375,7 @@ struct MacVideoRow<MenuContent: View>: View {
             Spacer(minLength: 8)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: MacTheme.cardRadius, style: .continuous)
                 .fill(hovering ? Color.white.opacity(0.06) : MacTheme.surface)
