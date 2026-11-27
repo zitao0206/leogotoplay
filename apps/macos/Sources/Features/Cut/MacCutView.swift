@@ -125,6 +125,8 @@ struct MacCutView: View {
                         switch tool.title {
                         case "一键提取人脸":
                             MacFaceExtractWindowManager.shared.open()
+                        case "一键人脸打码":
+                            MacFaceMaskWindowManager.shared.open(library: library)
                         default:
                             toast = "\(tool.title) · macOS 端开发中"
                         }

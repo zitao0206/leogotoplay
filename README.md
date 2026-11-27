@@ -117,6 +117,16 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - `MacFaceExtractor` 与 iOS 版唯一的结构差异：`UIImage` 换 `NSImage`、相册写入换文件写入；其余常量（`maxFaces 80`、`minFacePixels 48`、估时 clamp 2…900 秒）保持一致。
 - 调试钩子：`-faceExtractTestURL /path/x.mp4`（开窗直接载入该视频，省掉驱动 `NSOpenPanel`）、`-faceExtractSkipConfirm YES`（跳过确认框直接跑）、`-faceExtractExportDir /tmp/face_out`（跑完自动导出到该目录）。
 
+### Mac-V4.0.0（2）· Cut 一键人脸打码
+
+- 参考 iOS 端 `FaceMaskService` / `FaceMaskView` 落地 macOS 版：Cut 页第二颗「一键人脸打码」开独立窗口（`MacFaceMaskWindowManager`，1060×828，深色、可缩放、关窗即释放），结构照搬「选片 → 方式 → 确认 → 进度 → 结果预览」。
+- 处理链与 iOS 同源：`AVAssetReader` 逐帧解 BGRA → 每 2 帧一次 Vision 人脸检测（720 长边缩放，失败退 Core Image）→ `MaskFaceTracker` 按 uuid + 中心距离串轨迹、框按 0.28 外扩、同帧重叠 > 0.6 的只留一条 → 四种遮挡（马赛克块 = 脸宽/12、高斯半径 = 脸宽 0.09、纯色 `#0D0D0F`、模糊 + 35% 噪点）→ `AVAssetWriter` H.264 重编码（码率 = 像素×帧率×0.10，下限 2 Mbps）。
+- 音频单独走一遍 `AVMutableComposition` + `AVAssetExportPresetPassthrough` 封装，因为 `AVAssetWriter` 的音频透传输入在 mp4 上 `canAdd` 会返回 false（iOS 端踩过的坑，macOS 一样）。
+- 打码方式四选一（马赛克 / 高斯模糊 / 纯色黑块 / 模糊+轻噪点），选中即写 `UserDefaults`（key `face.mask.style`），下次进来还是上次那个；确认框给「时长 · 方式」和本机估时（macOS 按 1.0 + 时长×0.30 秒估，实测 20 秒片子约 5–8 秒跑完，比 iOS 估时公式快约 3 倍）。
+- 结果页：`检测到 N 个人 / 时长 / 方式` 三颗胶囊 + 内嵌播放器（`MacPlayerSurface` + 播放键 + 可拖动进度条，一拖就暂停，方便停下来检查某一帧有没有漏打）。
+- 保存两条路：**存入素材库**走 `library.importExport(fileURL:title:)`（跟编辑器导出同一条链路，落进 `Media/`、自动生成封面）；**另存为…** 走 `NSSavePanel`（默认文件名「原片名-打码.mp4」），导出后直接在 Finder 定位。
+- 调试钩子：`-faceMaskTestURL /path/x.mp4`（开窗直接载入）、`-faceMaskSkipConfirm YES`（跳过确认框）、`-faceMaskStyle pixelate|blur|solid|blurNoise`（指定打码方式）。
+
 ### Mac-V3.1.25 · 视频卡片 / 列表行末尾加播放图标
 
 - 宫格卡片：在「体积 · 时长」这行尾部加 `play.circle`（11pt，白 35% 透明度），与左侧信息行同一基线。
