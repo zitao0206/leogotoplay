@@ -20,7 +20,10 @@ struct MacTimelineView: View {
     let currentTime: Double
     let pixelsPerSecond: Double
     @Binding var scrollOffset: CGFloat
+    /// 空白处定位：不选中任何片段
     let onSeek: (Double) -> Void
+    /// 点在片段上定位：同时把这一段选中
+    let onSelectClip: (Double) -> Void
     /// 缩放（捏合手势），参数为新的缩略图间隔（已按区间夹好）
     let onSetThumbnailInterval: (Double) -> Void
     /// 上报可视宽度，供模型计算缩放下限
@@ -211,9 +214,11 @@ struct MacTimelineView: View {
     /// 刻度标签：<1s 补一位小数；<1h 用 mm:ss；≥1h 用 h:mm:ss（`01:00:00` 这种，和参考图一致）
     private func tickLabel(_ t: Double, interval: Double) -> String {
         if interval < 1 {
-            let minutes = Int(t) / 60
-            let seconds = Int(t.truncatingRemainder(dividingBy: 60))
-            return String(format: "%02d:%02d.%d", minutes, seconds, Int((t - Double(Int(t))) * 10 + 0.0001))
+            // 先按「十分之一秒」整体取整，再做进位，避免 1.9999 → 「00:01.10」这种错误标签
+            let tenths = Int((max(0, t) * 10).rounded())
+            let minutes = tenths / 600
+            let seconds = (tenths / 10) % 60
+            return String(format: "%02d:%02d.%d", minutes, seconds, tenths % 10)
         }
         let total = Int(max(0, t).rounded())
         let hours = total / 3600
@@ -246,9 +251,12 @@ struct MacTimelineView: View {
             }
     }
 
+    /// 刻度尺、轨道空白、上下空白带：点一下先取消所有片段的选中态，再定位播放头；
+    /// 只有点在片段本身上才会重新选中（片段用的是 SpatialTapGesture，不走这里）
     private func seekGesture(offset: CGFloat, inset: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                onDeselect()
                 onSeek(Double(max(0, value.location.x + offset - inset)) / pixelsPerSecond)
             }
     }
@@ -424,7 +432,7 @@ struct MacTimelineView: View {
         .simultaneousGesture(
             SpatialTapGesture()
                 .onEnded { value in
-                    onSeek(timelineStart + Double(max(0, value.location.x)) / pixelsPerSecond)
+                    onSelectClip(timelineStart + Double(max(0, value.location.x)) / pixelsPerSecond)
                 }
         )
         .help("拖动可调整这段在时间轴上的顺序")

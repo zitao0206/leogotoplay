@@ -1237,6 +1237,12 @@ struct MacEditorView: View {
                     pixelsPerSecond: Double(model.pixelsPerSecond),
                     scrollOffset: $timelineOffset,
                     onSeek: { time in
+                        // V2.8.16：点时间轴空白 = 取消所有片段选中，再定位播放头
+                        selectedMaterialIDs.removeAll()
+                        model.isClipSelected = false
+                        model.seek(to: time)
+                    },
+                    onSelectClip: { time in
                         selectedMaterialIDs.removeAll()
                         model.isClipSelected = true
                         model.seek(to: time)
