@@ -117,6 +117,17 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - `MacFaceExtractor` 与 iOS 版唯一的结构差异：`UIImage` 换 `NSImage`、相册写入换文件写入；其余常量（`maxFaces 80`、`minFacePixels 48`、估时 clamp 2…900 秒）保持一致。
 - 调试钩子：`-faceExtractTestURL /path/x.mp4`（开窗直接载入该视频，省掉驱动 `NSOpenPanel`）、`-faceExtractSkipConfirm YES`（跳过确认框直接跑）、`-faceExtractExportDir /tmp/face_out`（跑完自动导出到该目录）。
 
+### Mac-V4.0.0（4）· Cut 一键分割视频
+
+- 热门工具第四格「一键视频增强」改成「一键分割视频」（图标 `scissors`），点开独立窗口（`MacVideoSplitWindowManager`，1000×828，深色、可缩放）。
+- 交互：选片 → 「分成几份」（2/3/4/5/6 五颗胶囊快捷选择 + 手动加减号，范围 2–20，选中值记在 `UserDefaults` key `split.parts`）→ 分段预览列表（每段「序号 · 起止时间码 · 时长」）→ 确认框给「时长 · 每段约 X 秒 · 预计用时」→ 进度蒙版可停 → 结果页。
+- **太短的拦截**：任意一份分不到 1 秒时（`时长 / 份数 < 1.0`），分段预览里直接出红字「视频长度太短：00:01.2 分成 2 份，每段不到 1 秒。建议去剪辑页面手动编辑」，底部「开始分割」置灰不可点。
+- 切割方式：`AVAssetExportSession` 走 `AVAssetExportPresetPassthrough` 纯转封装（不重编码，实测 22 分半 333MB 的片子切 4 份不到 12 秒，每份时长精确到 337.48 秒、首尾总和与原片一致），透传失败才退回 `HighestQuality` 重编码兜底。
+- 结果页：每段「序号 / 第 N 段 / 起止时间码 + 时长 + 体积」一行，行内可「预览」（内嵌 `MacPlayerSurface` 浮层）和「在 Finder 里定位」；顶栏两个出口——**存入素材库**（逐段 `library.importExport`，标题「原片名 N」）和**导出到文件夹…**（`NSOpenPanel` 选目录，按「原片名-N.mp4」拷出去）。
+- 临时分段落在 `FileManager.temporaryDirectory/mac-split-<uuid>/`，关窗时（含点「关闭」）一并清掉，不会留垃圾。
+- 时间码用带一位小数的 `splitStamp`（`00:03.3`），整秒会让「每段 3.3 秒」看起来对不上。
+- 调试钩子：`-videoSplitTestURL /path/x.mp4`、`-videoSplitSkipConfirm YES`、`-videoSplitParts 3`（注意走的是启动参数，会覆盖界面上的份数）。
+
 ### Mac-V4.0.0（3）· Cut 一键提取文字
 
 - 参考 iOS 端 `TextExtractor` / `TextExtractView` 落地 macOS 版：Cut 页第三颗「一键提取文字」开独立窗口（`MacTextExtractWindowManager`，1000×808，深色、可缩放），结构照搬「选片 → 两项开关 → 确认 → 进度 → 结果」。

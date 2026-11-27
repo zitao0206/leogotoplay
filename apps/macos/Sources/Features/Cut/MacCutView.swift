@@ -17,7 +17,7 @@ struct MacCutView: View {
     private let tools: [(icon: String, title: String)] = [
         ("person.crop.rectangle", "一键提取人脸"),
         ("face.dashed", "一键人脸打码"),
-        ("sparkles", "一键视频增强"),
+        ("scissors", "一键分割视频"),
         ("text.viewfinder", "一键提取文字")
     ]
 
@@ -129,6 +129,8 @@ struct MacCutView: View {
                             MacFaceMaskWindowManager.shared.open(library: library)
                         case "一键提取文字":
                             MacTextExtractWindowManager.shared.open()
+                        case "一键分割视频":
+                            MacVideoSplitWindowManager.shared.open(library: library)
                         default:
                             toast = "\(tool.title) · macOS 端开发中"
                         }
