@@ -18,6 +18,7 @@ struct MacLibraryView: View {
     @State private var photoPickerItem: PhotosPickerItem?
     @State private var isImporting = false
     @State private var toast: String?
+    @State private var toastToken = 0
 
     /// 视频区布局：宫格 / 列表（V3.1.15）
     @AppStorage("libraryVideoLayout") private var videoLayout = "grid"
@@ -498,10 +499,13 @@ struct MacLibraryView: View {
     }
 
     private func showToast(_ text: String) {
+        toastToken += 1
+        let token = toastToken
         toast = text
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_600_000_000)
-            if toast == text { toast = nil }
+            // 用自增 token 判定，避免「同一句文案连续弹两次」时先到的计时器把新提示提前抹掉
+            if toastToken == token { toast = nil }
         }
     }
 
@@ -615,7 +619,7 @@ struct MacLibraryView: View {
             suggestedTitle: suggestedTitle
         )
         VideoImporter.cleanTemporaryFile(at: temp)
-        toast = "已导入「\(item.title)」"
+        showToast("已导入「\(item.title)」")
     }
 }
 
