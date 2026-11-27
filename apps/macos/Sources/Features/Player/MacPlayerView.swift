@@ -7,6 +7,11 @@ import LeogotoPlayCore
 
 /// 播放器独立开窗：黑底、画面按原比例自适应铺满、底部悬浮控制面板（对齐参考稿）。
 @MainActor
+extension Notification.Name {
+    /// 播放窗口即将关闭（点左上角红叉时发出），播放页据此停播
+    static let macPlayerWindowWillClose = Notification.Name("MacPlayerWindowWillClose")
+}
+
 final class MacPlayerWindowManager: NSObject, NSWindowDelegate {
     static let shared = MacPlayerWindowManager()
 
@@ -56,6 +61,8 @@ final class MacPlayerWindowManager: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        // 关窗必须停播：窗口只是 orderOut，AVPlayer 还活着会在后台继续出声
+        NotificationCenter.default.post(name: .macPlayerWindowWillClose, object: window)
         entries.removeAll { $0.window === window }
     }
 }
@@ -196,6 +203,10 @@ struct MacPlayerView: View {
         .ignoresSafeArea()
         .background(MacPlayerWindowReader { window = $0 })
         .onReceive(pointerTimer) { _ in pollPointer() }
+        .onReceive(NotificationCenter.default.publisher(for: .macPlayerWindowWillClose)) { note in
+            guard let closing = note.object as? NSWindow, closing === window else { return }
+            pause()
+        }
         .onAppear(perform: start)
         .onDisappear(perform: stop)
         .onChange(of: volume) { newValue in

@@ -106,6 +106,11 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - 整段除不尽时，最后一格的取帧时间夹到视频末帧（`assetDuration - 0.04`），尾部不会再留空槽位。
 - 缩放状态从「绝对间隔」改成「档位 `zoomLevel`」，间隔由档位和当前整段时长实时算出来：裁完片段后密度自动按新时长重算，不会留着旧时长的间隔；间隔一变胶片缓存整块作废重建。
 
+### Mac-V3.1.13 · 关窗即停播
+
+- 点左上角红叉关掉播放窗口后，原来 `AVPlayer` 还活着（窗口只是 `orderOut`，`isReleasedWhenClosed = false`），音频会继续在后台响。
+- 现在 `MacPlayerWindowManager.windowWillClose` 发一条 `MacPlayerWindowWillClose` 通知（携带窗口），播放页比对是自己的窗口就 `pause()`，实测关窗瞬间 `rate 1.0 → 0.0`、`isPlaying` 同步为 false。
+
 ### Mac-V3.1.11 · 空闲 3 秒自动隐藏（不再区分全屏）
 
 - 无论全屏还是窗口模式，鼠标 / 点击静置满 3 秒，「操作面板 + 钉子」一起收起；鼠标一动或单击立刻回来。
