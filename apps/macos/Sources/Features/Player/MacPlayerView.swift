@@ -175,6 +175,7 @@ struct MacPlayerView: View {
                 }
             }
         }
+        .ignoresSafeArea()
         .background(MacPlayerWindowReader { window = $0 })
         .onReceive(pointerTimer) { _ in pollPointer() }
         .onAppear(perform: start)
@@ -192,24 +193,27 @@ struct MacPlayerView: View {
     /// 画面按素材原始比例缩放；旋转 90°/270° 时按旋转后的宽高来算，避免被裁掉
     private var videoCanvas: some View {
         GeometryReader { geo in
-            let fitted = fittedVideoSize(in: geo.size)
+            let filled = filledVideoSize(in: geo.size)
             MacPlayerSurface(player: player)
-            .frame(width: fitted.width, height: fitted.height)
-            .rotationEffect(.degrees(Double(rotation)))
-            .scaleEffect(x: flipH ? -1 : 1, y: flipV ? -1 : 1)
-            .frame(width: geo.size.width, height: geo.size.height)
+                .frame(width: filled.width, height: filled.height)
+                .rotationEffect(.degrees(Double(rotation)))
+                .scaleEffect(x: flipH ? -1 : 1, y: flipV ? -1 : 1)
+                .frame(width: geo.size.width, height: geo.size.height)
         }
+        .ignoresSafeArea()
+        .clipped()
         .allowsHitTesting(false)
     }
 
-    private func fittedVideoSize(in container: CGSize) -> CGSize {
+    private func filledVideoSize(in container: CGSize) -> CGSize {
         let source = videoSize.width > 0 && videoSize.height > 0
             ? videoSize
             : CGSize(width: 16, height: 9)
         let swapped = rotation == 90 || rotation == 270
         let visualWidth = swapped ? source.height : source.width
         let visualHeight = swapped ? source.width : source.height
-        let scale = min(container.width / visualWidth, container.height / visualHeight)
+        // 铺满窗口：取较大的缩放比例，多出来的部分裁掉，不再留上下黑边
+        let scale = max(container.width / visualWidth, container.height / visualHeight)
         return CGSize(width: source.width * scale, height: source.height * scale)
     }
 
@@ -268,7 +272,8 @@ struct MacPlayerView: View {
             .buttonStyle(.plain)
         }
         .frame(height: 28)
-        .padding(.trailing, 14)
+        .padding(.top, 7)
+        .padding(.trailing, 10)
         .opacity(pinVisible ? 1 : 0)
         .allowsHitTesting(pinVisible)
         .animation(.easeInOut(duration: 0.2), value: pinVisible)
@@ -336,9 +341,9 @@ struct MacPlayerView: View {
         }
         let rect = CGRect(
             x: containerSize.width - 56,
-            y: 0,
+            y: 4,
             width: 52,
-            height: 34
+            height: 44
         )
         let hovering = rect.contains(point)
         if hovering != pinHovering {
