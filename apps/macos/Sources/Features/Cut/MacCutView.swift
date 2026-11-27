@@ -232,12 +232,8 @@ struct MacCutView: View {
                         .stroke(MacTheme.inkStroke, lineWidth: 1)
                 )
             } else {
-                // V2.9.5：宫格自适应 —— 窗口变宽多排一列，变窄自动回收，纵向滚动到底
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 208, maximum: 320), spacing: 12, alignment: .top)],
-                    alignment: .leading,
-                    spacing: 12
-                ) {
+                // V3.0.2：正方形宫格布局 —— 列数随窗口宽度自适应，每格边长恒等于列宽，永远是正方形
+                MacSquareGrid(minSide: 208, maxSide: 320, spacing: 12) {
                     ForEach(projects) { project in
                         MacRecentProjectCard(
                             project: project,
@@ -305,6 +301,57 @@ private struct MacToolTile: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+    }
+}
+
+// MARK: - 正方形宫格布局（V3.0.2）
+
+/// 按可用宽度算列数，每格边长 = 该列宽度，因此永远是正方形；窗口拖宽多排一列，拖窄自动回收。
+private struct MacSquareGrid: Layout {
+    var minSide: CGFloat = 208
+    var maxSide: CGFloat = 320
+    var spacing: CGFloat = 12
+
+    private struct Metrics {
+        let columns: Int
+        let side: CGFloat
+    }
+
+    /// 同尺寸格子：先按最小边长定列数，边长超过上限再增加列数
+    private func metrics(for width: CGFloat) -> Metrics {
+        guard width > 0 else { return Metrics(columns: 1, side: minSide) }
+        func side(forColumns columns: Int) -> CGFloat {
+            (width - CGFloat(columns - 1) * spacing) / CGFloat(columns)
+        }
+        var columns = max(1, Int((width + spacing) / (minSide + spacing)))
+        var s = side(forColumns: columns)
+        if s > maxSide {
+            columns = max(1, Int((width + spacing) / (maxSide + spacing)))
+            s = side(forColumns: columns)
+        }
+        return Metrics(columns: columns, side: floor(s * 2) / 2)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? minSide
+        let m = metrics(for: width)
+        let rows = Int(ceil(Double(subviews.count) / Double(m.columns)))
+        let height = CGFloat(rows) * m.side + CGFloat(max(0, rows - 1)) * spacing
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let m = metrics(for: bounds.width)
+        let size = ProposedViewSize(width: m.side, height: m.side)
+        for (index, subview) in subviews.enumerated() {
+            let row = index / m.columns
+            let column = index % m.columns
+            let origin = CGPoint(
+                x: bounds.minX + CGFloat(column) * (m.side + spacing),
+                y: bounds.minY + CGFloat(row) * (m.side + spacing)
+            )
+            subview.place(at: origin, proposal: size)
+        }
     }
 }
 
@@ -385,7 +432,7 @@ private struct MacRecentProjectCard: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .padding(8)
         }
-        .aspectRatio(1, contentMode: .fit)
+        // 尺寸由外面的 MacSquareGrid 直接给成正方形，这里不要再用 aspectRatio（.fit 会按内容比例算高）
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.white.opacity(hovering ? 0.18 : 0.06), lineWidth: 1)
