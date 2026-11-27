@@ -353,9 +353,8 @@ struct MacPlayerView: View {
             lastPointerPoint = CGPoint(x: -1, y: -1)
         }
 
-        // 全屏时空闲满 3 秒就收起；非全屏或正在拖动则立刻恢复
-        if isFullscreen, inside,
-           dragStartPoint == nil, dragStartOffset == nil {
+        // 不分全屏与否：空闲满 3 秒就收起；鼠标不在窗口内或正在拖动则立刻恢复
+        if inside, dragStartPoint == nil, dragStartOffset == nil {
             let idle = Date().timeIntervalSince(lastActivity) >= 3
             if idle != controlsIdleHidden {
                 withAnimation(.easeOut(duration: 0.2)) { controlsIdleHidden = idle }
