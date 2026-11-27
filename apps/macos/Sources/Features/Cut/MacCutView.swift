@@ -15,9 +15,9 @@ struct MacCutView: View {
 
     /// 热门工具：macOS 端先把入口摆齐，能力后续逐个接（点只提示）。
     private let tools: [(icon: String, title: String)] = [
+        ("scissors", "一键分割视频"),
         ("person.crop.rectangle", "一键提取人脸"),
         ("face.dashed", "一键人脸打码"),
-        ("scissors", "一键分割视频"),
         ("text.viewfinder", "一键提取文字")
     ]
 
@@ -31,7 +31,7 @@ struct MacCutView: View {
 
     private var home: some View {
         ScrollView {
-            VStack(spacing: 18) {
+            VStack(spacing: 33) {
                 hotTools
                 startEditCard
                 recentSection
@@ -139,6 +139,8 @@ struct MacCutView: View {
             }
         }
         .padding(18)
+        // 热门工具卡片：底部再多留 10pt，让四颗按钮离卡片下沿松一点
+        .padding(.bottom, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
