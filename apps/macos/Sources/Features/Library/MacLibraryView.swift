@@ -123,6 +123,8 @@ struct MacLibraryView: View {
             .background(Color(nsColor: .windowBackgroundColor))
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
+                    // 右侧与内容区的 pagePadding 对齐，整组因此左移（V3.1.24）
+                    HStack(spacing: 8) {
                     if isImporting {
                         ProgressView().controlSize(.small)
                     }
@@ -150,6 +152,9 @@ struct MacLibraryView: View {
                         Label("新建文件夹", systemImage: "folder.badge.plus")
                     }
                     .buttonStyle(MacAccentToolbarButtonStyle())
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                    .padding(.trailing, 10)
                 }
             }
             .onExitCommand { if showSearch { closeSearch() } }
@@ -828,7 +833,7 @@ private struct MacAccentToolbarButtonStyle: ButtonStyle {
             .labelStyle(.titleAndIcon)
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(Color.white)
-            .padding(.horizontal, 9)
+            .padding(.horizontal, 7)
             .padding(.vertical, 4)
             .background(
                 Capsule(style: .continuous)
