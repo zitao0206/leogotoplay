@@ -145,7 +145,7 @@ struct MacLibraryView: View {
                 Text(currentFolder?.name ?? "Library")
                     .font(.title2.weight(.semibold))
                 HStack(spacing: 6) {
-                    Text(VideoFileStore.shared.mediaDirectory.path)
+                    Text("文件位置：\(VideoFileStore.shared.mediaDirectory.path)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -293,7 +293,7 @@ struct MacLibraryView: View {
                     symbol: "film.stack",
                     title: openFolderID == nil ? "还没有视频" : "这个文件夹还是空的",
                     message: "支持从本地文件、系统相册导入；导入后即可播放、剪辑、分文件夹管理。",
-                    actionTitle: "从文件导入",
+                    actionTitle: "从本地导入",
                     action: {
                         if let url = MacAlerts.chooseVideoFile() {
                             Task { await importFile(url) }
