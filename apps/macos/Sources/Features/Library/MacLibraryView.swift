@@ -57,7 +57,9 @@ struct MacLibraryView: View {
             }
             .sheet(isPresented: $showNewFolder) {
                 MacNewFolderSheet { name in
-                    library.createFolder(named: name)
+                    // 在子文件夹里新建 → 建在当前文件夹下；首页新建 → 建在根目录
+                    _ = library.createFolder(named: name, parentID: openFolderID)
+                    showToast("已创建文件夹「\(name)」")
                 }
             }
             .overlay { videoActionsPanel }
@@ -120,6 +122,8 @@ struct MacLibraryView: View {
                 if openFolderID == nil {
                     statsBar
                     folderSection
+                } else {
+                    subfolderSection
                 }
 
                 videoSection
@@ -205,6 +209,69 @@ struct MacLibraryView: View {
                 .foregroundStyle(Color.white.opacity(0.5))
         }
         .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - 子文件夹（进入文件夹后展示它自己的下级文件夹）
+
+    private var subfolderSection: some View {
+        let children = library.subfolders(in: openFolderID)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("文件夹").font(.system(size: 17, weight: .semibold))
+                Text("\(children.count) 个文件夹")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("新建") { showNewFolder = true }
+                    .buttonStyle(.link)
+            }
+
+            if children.isEmpty {
+                Button {
+                    showNewFolder = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "folder.badge.plus").foregroundStyle(MacTheme.accent)
+                        Text("在当前文件夹下新建一个子文件夹")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: MacTheme.cardRadius, style: .continuous)
+                            .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(children) { folder in
+                        MacFolderRow(
+                            folder: folder,
+                            videoCount: library.videoCount(in: folder.id),
+                            subfolderCount: library.subfolderCount(in: folder.id),
+                            onOpen: { openFolderID = folder.id }
+                        )
+                        .contextMenu {
+                            Button("打开") { openFolderID = folder.id }
+                            Button("重命名") { renameFolderTarget = folder }
+                            Divider()
+                            Button("删除（视频保留）") {
+                                library.deleteFolder(folder.id, deleteVideos: false)
+                            }
+                            Button("删除（连同视频）", role: .destructive) {
+                                guard MacAlerts.confirmDelete(
+                                    title: "删除文件夹「\(folder.name)」？",
+                                    message: "该文件夹内的 \(library.videoCount(in: folder.id)) 个视频会被一并删除，且不可恢复。"
+                                ) else { return }
+                                library.deleteFolder(folder.id, deleteVideos: true)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - 文件夹
