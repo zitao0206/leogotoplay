@@ -489,7 +489,7 @@ struct MacPlayerView: View {
 
     /// 钉子显隐：未置顶时常显；置顶（在最前）时鼠标进入播放器区域才出现
     private var pinVisible: Bool {
-        !isPinned || pointerInside
+        showControls
     }
 
     private var volumeIcon: String {
