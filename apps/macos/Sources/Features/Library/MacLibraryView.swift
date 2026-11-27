@@ -655,7 +655,7 @@ private struct MacAccentToolbarButtonStyle: ButtonStyle {
         configuration.label
             .labelStyle(.titleAndIcon)
             .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(MacTheme.accent)
+            .foregroundStyle(Color.white)
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
             .background(
