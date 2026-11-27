@@ -37,6 +37,8 @@ final class MacPlayerWindowManager: NSObject, NSWindowDelegate {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.backgroundColor = .black
+        // 让窗口接收 mouseMoved，否则 hover / 面板显隐在独立窗口里收不到事件
+        window.acceptsMouseMovedEvents = true
         window.appearance = NSAppearance(named: .darkAqua)
         window.minSize = NSSize(width: 880, height: 520)
         window.center()
@@ -83,8 +85,11 @@ struct MacPlayerView: View {
     @State private var flipV = false
 
     /// 控制面板：鼠标进出淡入淡出 + 自由拖动
-    @State private var controlsVisible = true
+    @State private var panelHovering = true
+    @State private var pointerInside = true
     @State private var panelOffset: CGSize = .zero
+    @State private var containerSize: CGSize = .zero
+    private let pointerTimer = Timer.publish(every: 0.06, on: .main, in: .common).autoconnect()
     @State private var dragStartOffset: CGSize?
     private static let panelSize = CGSize(width: 520, height: 84)
 
@@ -92,7 +97,6 @@ struct MacPlayerView: View {
     @State private var isPinned = false
     @State private var pinHovering = false
     @State private var window: NSWindow?
-    @State private var hideWork: DispatchWorkItem?
 
     @State private var timeObserver: Any?
     @State private var endObserver: NSObjectProtocol?
@@ -110,10 +114,13 @@ struct MacPlayerView: View {
 
                 videoCanvas
 
-                // 双击画面：进入/退出全屏（面板、侧边栏盖在上层，不会被误触）
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) { toggleFullscreen() }
+                // 单击播放/暂停，双击进入或退出全屏（面板、侧边栏盖在上层，不会被误触）
+                MacPlayerClickCatcher(
+                    onSingleClick: {
+                        isPlaying ? pause() : play()
+                    },
+                    onDoubleClick: { toggleFullscreen() }
+                )
 
                 VStack(spacing: 0) {
                     titleBar
@@ -163,6 +170,7 @@ struct MacPlayerView: View {
             }
         }
         .background(MacPlayerWindowReader { window = $0 })
+        .onReceive(pointerTimer) { _ in pollPointer() }
         .onAppear(perform: start)
         .onDisappear(perform: stop)
         .onChange(of: volume) { newValue in
@@ -217,7 +225,7 @@ struct MacPlayerView: View {
         .padding(.bottom, 10)
         .overlay(alignment: .trailing) {
             HStack(spacing: 6) {
-                if pinHovering {
+                if pinHovering && pinVisible {
                     Text(isPinned ? "取消最前" : "在最前")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white)
@@ -235,17 +243,16 @@ struct MacPlayerView: View {
                     Image(systemName: "pin")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(pinHovering || isPinned ? MacTheme.accent : Color.white.opacity(0.85))
-                        .rotationEffect(.degrees(isPinned ? -45 : 0))
+                        .rotationEffect(.degrees(isPinned ? 0 : -45))
                         .animation(.easeInOut(duration: 0.28), value: isPinned)
                         .frame(width: 26, height: 22)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .onHover { hovering in
-                    withAnimation(.easeInOut(duration: 0.15)) { pinHovering = hovering }
-                }
-                .help(isPinned ? "取消最前" : "在最前")
             }
+            .opacity(pinVisible ? 1 : 0)
+            .allowsHitTesting(pinVisible)
+            .animation(.easeInOut(duration: 0.2), value: pinVisible)
             .animation(.easeInOut(duration: 0.15), value: pinHovering)
             .padding(.trailing, 14)
         }
@@ -257,10 +264,15 @@ struct MacPlayerView: View {
 
     // MARK: - 悬浮控制面板
 
-    /// 面板容器：鼠标进入整体淡入、离开整体淡出；空白处按住可拖动面板，限制在窗口内
+    /// 面板显示条件：鼠标在面板上；或「在最前」时鼠标进入播放器区域
+    private var showControls: Bool {
+        panelHovering || dragStartOffset != nil || (isPinned && pointerInside)
+    }
+
+    /// 面板容器：鼠标进入整体淡入、离开整体淡出；面板底色可按住拖动，限制在窗口内
     private func controlPanelLayer(in size: CGSize) -> some View {
         ZStack {
-            // 背景命中层（面板隐形时也保住 hover 与拖动）
+            // 隐形命中层：面板淡出后仍然保留 hover 区域，鼠标回来能重新唤起
             Color.clear
                 .frame(width: Self.panelSize.width, height: Self.panelSize.height)
                 .background(
@@ -268,42 +280,97 @@ struct MacPlayerView: View {
                         .fill(Color.black.opacity(0.001))
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .gesture(
-                    DragGesture(minimumDistance: 2)
-                        .onChanged { drag in
-                            if dragStartOffset == nil { dragStartOffset = panelOffset }
-                            let base = dragStartOffset ?? .zero
-                            panelOffset = clampedPanelOffset(
-                                CGSize(
-                                    width: base.width + drag.translation.width,
-                                    height: base.height + drag.translation.height
-                                ),
-                                in: size
-                            )
-                        }
-                        .onEnded { _ in dragStartOffset = nil }
-                )
 
-            controlPanel
-                .allowsHitTesting(controlsVisible)
-                .opacity(controlsVisible ? 1 : 0)
+            controlPanel(in: size)
+                .allowsHitTesting(showControls)
+                .opacity(showControls ? 1 : 0)
         }
-        .onHover { hovering in setControlsVisible(hovering) }
-        .animation(.easeOut(duration: 0.22), value: controlsVisible)
+        .animation(.easeOut(duration: 0.2), value: showControls)
     }
 
-    private func setControlsVisible(_ visible: Bool) {
-        hideWork?.cancel()
-        guard !visible else {
-            controlsVisible = true
+    /// 面板在窗口内的矩形（留 10pt 宽容区，鼠标擦边也算在里面）
+    private func panelRect(in size: CGSize) -> CGRect {
+        let width = Self.panelSize.width
+        let height = Self.panelSize.height
+        let originX = (size.width - width) / 2 + panelOffset.width
+        let originY = size.height - 28 - height + panelOffset.height
+        return CGRect(x: originX, y: originY, width: width, height: height)
+            .insetBy(dx: -10, dy: -10)
+    }
+
+    /// 每 60ms 读一次鼠标位置：窗口内 / 面板上分别驱动「操作面板」和「钉子」的显隐
+    private func pollPointer() {
+        guard let window, let content = window.contentView else { return }
+        let screen = NSEvent.mouseLocation          // 屏幕坐标，原点在左下
+        let frame = window.frame
+        containerSize = content.bounds.size
+        // 换成「窗口左上角为原点、y 朝下」的界面坐标
+        let point = CGPoint(x: screen.x - frame.minX, y: frame.maxY - screen.y)
+        let inside = point.x >= 0 && point.y >= 0
+            && point.x <= frame.width && point.y <= frame.height
+
+        if inside != pointerInside { setPointerInside(inside) }
+        guard inside else {
+            if panelHovering { setPanelHovering(false) }
+            if pinHovering { withAnimation(.easeOut(duration: 0.15)) { pinHovering = false } }
             return
         }
-        // 留一点缓冲，鼠标从按钮间空隙划过时不闪
-        let work = DispatchWorkItem {
-            withAnimation(.easeOut(duration: 0.22)) { controlsVisible = false }
+        updatePanelHover(at: point)
+        updatePinHover(at: point)
+    }
+
+    /// 钉子悬停（同样不依赖 SwiftUI hover）
+    private func updatePinHover(at point: CGPoint) {
+        guard pinVisible, containerSize.width > 0 else {
+            if pinHovering { withAnimation(.easeOut(duration: 0.15)) { pinHovering = false } }
+            return
         }
-        hideWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+        let rect = CGRect(
+            x: containerSize.width - 80,
+            y: 0,
+            width: 76,
+            height: 62
+        )
+        let hovering = rect.contains(point)
+        if hovering != pinHovering {
+            withAnimation(.easeInOut(duration: 0.15)) { pinHovering = hovering }
+        }
+    }
+
+    private func updatePanelHover(at point: CGPoint?) {
+        guard let point, containerSize.width > 0 else { return }
+        let hovering = panelRect(in: containerSize).contains(point)
+        if hovering != panelHovering { setPanelHovering(hovering) }
+    }
+
+    private func setPointerInside(_ inside: Bool) {
+        guard inside != pointerInside else { return }
+        withAnimation(.easeOut(duration: 0.18)) { pointerInside = inside }
+    }
+
+    private func setPanelHovering(_ hovering: Bool) {
+        guard hovering != panelHovering else { return }
+        withAnimation(.easeOut(duration: 0.18)) { panelHovering = hovering }
+    }
+
+    /// 面板拖动：只挂在底部圆角底色上，按钮 / 滑杆照常点击
+    private func panelDragGesture(in size: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 2)
+            .onChanged { drag in
+                if dragStartOffset == nil { dragStartOffset = panelOffset }
+                let base = dragStartOffset ?? .zero
+                panelOffset = clampedPanelOffset(
+                    CGSize(
+                        width: base.width + drag.translation.width,
+                        height: base.height + drag.translation.height
+                    ),
+                    in: size
+                )
+            }
+            .onEnded { _ in
+                dragStartOffset = nil
+                panelHovering = true
+            }
     }
 
     private func clampedPanelOffset(_ proposed: CGSize, in size: CGSize) -> CGSize {
@@ -319,7 +386,7 @@ struct MacPlayerView: View {
         window?.toggleFullScreen(nil)
     }
 
-    private var controlPanel: some View {
+    private func controlPanel(in size: CGSize) -> some View {
         VStack(spacing: 12) {
             HStack(spacing: 14) {
                 Button {
@@ -393,6 +460,8 @@ struct MacPlayerView: View {
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color(white: 0.14).opacity(0.92))
+                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .gesture(panelDragGesture(in: size))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -400,6 +469,11 @@ struct MacPlayerView: View {
         )
         .shadow(color: .black.opacity(0.5), radius: 18, y: 8)
         .foregroundStyle(.white)
+    }
+
+    /// 钉子显隐：未置顶时常显；置顶（在最前）时鼠标进入播放器区域才出现
+    private var pinVisible: Bool {
+        !isPinned || pointerInside
     }
 
     private var volumeIcon: String {
@@ -823,6 +897,48 @@ private struct MacPlayerProgressBar: View {
             )
         }
         .frame(height: 18)
+    }
+}
+
+// MARK: - 单击 / 双击捕获
+
+/// 用一个 AppKit 视图区分单击与双击：单击播/暂停，双击全屏。
+/// 单击动作延迟 0.25 秒执行，期间来了第二次点击就取消，避免双击顺带把播放切了两次。
+private struct MacPlayerClickCatcher: NSViewRepresentable {
+    var onSingleClick: () -> Void
+    var onDoubleClick: () -> Void
+
+    func makeNSView(context: Context) -> MacPlayerClickView {
+        let view = MacPlayerClickView()
+        view.onSingleClick = onSingleClick
+        view.onDoubleClick = onDoubleClick
+        return view
+    }
+
+    func updateNSView(_ nsView: MacPlayerClickView, context: Context) {
+        nsView.onSingleClick = onSingleClick
+        nsView.onDoubleClick = onDoubleClick
+    }
+}
+
+final class MacPlayerClickView: NSView {
+    var onSingleClick: (() -> Void)?
+    var onDoubleClick: (() -> Void)?
+    private var pendingSingle: DispatchWorkItem?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount >= 2 {
+            pendingSingle?.cancel()
+            pendingSingle = nil
+            onDoubleClick?()
+        } else {
+            pendingSingle?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.onSingleClick?() }
+            pendingSingle = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+        }
     }
 }
 
