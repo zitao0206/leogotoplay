@@ -35,6 +35,8 @@
 	<string>需要访问相册，以便选择要剪辑的视频</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>需要写入相册，以便保存剪辑后的视频</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>需要语音识别，把视频里的说话内容转成文字</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSSupportsAutomaticTermination</key>

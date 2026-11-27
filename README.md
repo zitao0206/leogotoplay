@@ -117,6 +117,16 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - `MacFaceExtractor` 与 iOS 版唯一的结构差异：`UIImage` 换 `NSImage`、相册写入换文件写入；其余常量（`maxFaces 80`、`minFacePixels 48`、估时 clamp 2…900 秒）保持一致。
 - 调试钩子：`-faceExtractTestURL /path/x.mp4`（开窗直接载入该视频，省掉驱动 `NSOpenPanel`）、`-faceExtractSkipConfirm YES`（跳过确认框直接跑）、`-faceExtractExportDir /tmp/face_out`（跑完自动导出到该目录）。
 
+### Mac-V4.0.0（3）· Cut 一键提取文字
+
+- 参考 iOS 端 `TextExtractor` / `TextExtractView` 落地 macOS 版：Cut 页第三颗「一键提取文字」开独立窗口（`MacTextExtractWindowManager`，1000×808，深色、可缩放），结构照搬「选片 → 两项开关 → 确认 → 进度 → 结果」。
+- 两条链路：**画面文字**用 `AVAssetReader` 每 0.5 秒抽一帧走 Vision OCR（accurate、zh-Hans + en-US、开语言纠错），连续相同字幕按归一化 + 编辑距离合并；**声音转文字**先 `AVAssetPresetAppleM4A` 导出音轨，按 30 秒切片灌进 `SFSpeechAudioBufferRecognitionRequest`，片段按 0.7 秒停顿并句后还原成时间码。
+- macOS 特有的坑：语音识别要在 `Info.plist` 里带 `NSSpeechRecognitionUsageDescription`（已加，含 zh-Hans 本地化文案）。**未签名的裸二进制启动会被 TCC 直接 SIGABRT**，必须用 `open -n <app>`（或 Xcode 运行）才会正常弹权限框；用户拒绝授权时结果页只提示「语音识别不可用」，不崩。
+- 语言自动判定：先拿前 10 秒分别喂 zh-CN 和 en-US 两个识别器，谁认出来的字数多用谁（实测英语片子用中文模型只会出「放屁」这种两字乱码，切到 en-US 后整段准确率就正常了）；在线识别优先（准确度高），没网再退回端上识别。
+- 合并优化（比 iOS 多一步）：字幕逐字浮现时，短句整段落在长句里也判为同一句（归一化后 `contains`），避免同一句反复出一串递增的条目。
+- 结果页：`共 N 条 / 画面 N / 语音 N` 三颗胶囊、每行时间码 + 来源徽标（画面文字 / 语音转写）+ 单条复制、全选复制、导出 txt。
+- 调试钩子：`-textExtractTestURL /path/x.mp4`、`-textExtractSkipConfirm YES`、`-textExtractScreenOnly YES`（只跑画面，注意会写死 `text.extract.speech=false` 到 UserDefaults，需 `defaults delete com.leogotoplay.mac text.extract.speech` 恢复）、`-textExtractLocale en-US`（跳过语言探测强行指定）。
+
 ### Mac-V4.0.0（2）· Cut 一键人脸打码
 
 - 参考 iOS 端 `FaceMaskService` / `FaceMaskView` 落地 macOS 版：Cut 页第二颗「一键人脸打码」开独立窗口（`MacFaceMaskWindowManager`，1060×828，深色、可缩放、关窗即释放），结构照搬「选片 → 方式 → 确认 → 进度 → 结果预览」。

@@ -14,6 +14,7 @@
 		2A8ED1C618EA9CC1A627F78E /* MacCutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FCBB293AC1B2365543E5BE /* MacCutView.swift */; };
 		3A5C7E9B2D4F60718293A4B6 /* MacFaceExtract.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A69788796A5B4C /* MacFaceExtract.swift */; };
 		4B6D8E0C3F5A71829304B5C7 /* MacFaceMask.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2F3A4B5C6D708192A3B4C5D /* MacFaceMask.swift */; };
+		5C7E9F1D4A6B82930415C6D8 /* MacTextExtract.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E4F5A6B7C8192031425364 /* MacTextExtract.swift */; };
 		1D22EE923CB26B5B6E4CF857 /* MacEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1560606A3D0E1CEB03204FAA /* MacEditorView.swift */; };
 		9D2E4F6A8B0C1D3E5F7A9B2C /* MacTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F3A5B7C9D0246E8A0C2D4F /* MacTimelineView.swift */; };
 		7A3B5C9D1E2F40618293A4B5 /* MacEditorWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4D8E2F60A1B3C5D7E9F0A1B /* MacEditorWindow.swift */; };
@@ -36,6 +37,7 @@
 		37FCBB293AC1B2365543E5BE /* MacCutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCutView.swift; sourceTree = "<group>"; };
 		F1E2D3C4B5A69788796A5B4C /* MacFaceExtract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFaceExtract.swift; sourceTree = "<group>"; };
 		E2F3A4B5C6D708192A3B4C5D /* MacFaceMask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFaceMask.swift; sourceTree = "<group>"; };
+		D3E4F5A6B7C8192031425364 /* MacTextExtract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTextExtract.swift; sourceTree = "<group>"; };
 		1560606A3D0E1CEB03204FAA /* MacEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacEditorView.swift; sourceTree = "<group>"; };
 		E1F3A5B7C9D0246E8A0C2D4F /* MacTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTimelineView.swift; sourceTree = "<group>"; };
 		C4D8E2F60A1B3C5D7E9F0A1B /* MacEditorWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacEditorWindow.swift; sourceTree = "<group>"; };
@@ -111,6 +113,7 @@
 				37FCBB293AC1B2365543E5BE /* child */,
 				F1E2D3C4B5A69788796A5B4C /* child */,
 				E2F3A4B5C6D708192A3B4C5D /* child */,
+				D3E4F5A6B7C8192031425364 /* child */,
 			);
 			path = Cut;
 			sourceTree = "<group>";
@@ -276,6 +279,7 @@
 				2A8ED1C618EA9CC1A627F78E /* MacCutView.swift in Sources */,
 				3A5C7E9B2D4F60718293A4B6 /* MacFaceExtract.swift in Sources */,
 				4B6D8E0C3F5A71829304B5C7 /* MacFaceMask.swift in Sources */,
+				5C7E9F1D4A6B82930415C6D8 /* MacTextExtract.swift in Sources */,
 				1D22EE923CB26B5B6E4CF857 /* MacEditorView.swift in Sources */,
 				9D2E4F6A8B0C1D3E5F7A9B2C /* MacTimelineView.swift in Sources */,
 				7A3B5C9D1E2F40618293A4B5 /* MacEditorWindow.swift in Sources */,
