@@ -140,3 +140,107 @@ struct MacNewFolderSheet: View {
         dismiss()
     }
 }
+
+/// 删除文件夹：二选一（连带视频一起删 / 只删文件夹、视频留在根目录）。
+struct MacFolderDeleteSheet: View {
+    let folder: VideoFolder
+    let videoCount: Int
+    let onDeleteAll: () -> Void
+    let onKeepVideos: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("删除文件夹「\(folder.name)」")
+                .font(.headline)
+
+            Text(videoCount == 0
+                 ? "这个文件夹里没有视频，删除后不可恢复。"
+                 : "这个文件夹里有 \(videoCount) 个视频，选择怎么处理：")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if videoCount > 0 {
+                VStack(spacing: 8) {
+                    actionRow(
+                        title: "删除文件夹和里面的视频",
+                        detail: "\(videoCount) 个视频文件会一并从磁盘删除，不可恢复",
+                        symbol: "trash.fill",
+                        tint: Color(red: 0.95, green: 0.32, blue: 0.28)
+                    ) {
+                        dismiss()
+                        onDeleteAll()
+                    }
+                    actionRow(
+                        title: "只删文件夹，视频移到根目录",
+                        detail: "文件夹删掉，\(videoCount) 个视频保留在未分类里",
+                        symbol: "arrow.up.right.square",
+                        tint: MacTheme.accent
+                    ) {
+                        dismiss()
+                        onKeepVideos()
+                    }
+                }
+            } else {
+                actionRow(
+                    title: "删除文件夹",
+                    detail: "文件夹本身删除，不可恢复",
+                    symbol: "trash.fill",
+                    tint: Color(red: 0.95, green: 0.32, blue: 0.28)
+                ) {
+                    dismiss()
+                    onDeleteAll()
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+    }
+
+    private func actionRow(
+        title: String,
+        detail: String,
+        symbol: String,
+        tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white)
+                    Text(detail)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.white.opacity(0.55))
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(tint.opacity(0.12))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(tint.opacity(0.3), lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}

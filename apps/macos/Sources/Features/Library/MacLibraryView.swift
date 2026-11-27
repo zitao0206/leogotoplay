@@ -29,6 +29,8 @@ struct MacLibraryView: View {
     @State private var showFolderActions = false
     /// 正在移动的文件夹
     @State private var moveFolderTarget: VideoFolder?
+    /// 正在删除的文件夹（弹二选一确认）
+    @State private var deleteFolderTarget: VideoFolder?
 
     private var currentFolder: VideoFolder? { library.folder(with: openFolderID) }
 
@@ -71,6 +73,18 @@ struct MacLibraryView: View {
                     showToast("已移动文件夹「\(folder.name)」")
                 }
             }
+            .sheet(item: $deleteFolderTarget) { folder in
+                MacFolderDeleteSheet(
+                    folder: folder,
+                    videoCount: library.videoCount(in: folder.id)
+                ) {
+                    library.deleteFolder(folder.id, deleteVideos: true)
+                    showToast("已删除文件夹「\(folder.name)」及其中的视频")
+                } onKeepVideos: {
+                    library.deleteFolder(folder.id, deleteVideos: false)
+                    showToast("已删除文件夹「\(folder.name)」，视频已移到根目录")
+                }
+            }
             .sheet(isPresented: $showNewFolder) {
                 MacNewFolderSheet { name in
                     // 在子文件夹里新建 → 建在当前文件夹下；首页新建 → 建在根目录
@@ -105,6 +119,7 @@ struct MacLibraryView: View {
                     PhotosPicker(selection: $photoPickerItem, matching: .videos) {
                         Label("从相册导入", systemImage: "photo.on.rectangle")
                     }
+                    .buttonStyle(MacAccentToolbarButtonStyle())
                     Button {
                         if let url = MacAlerts.chooseVideoFile() {
                             Task { await importFile(url) }
@@ -112,11 +127,13 @@ struct MacLibraryView: View {
                     } label: {
                         Label("导入视频", systemImage: "plus")
                     }
+                    .buttonStyle(MacAccentToolbarButtonStyle())
                     Button {
                         showNewFolder = true
                     } label: {
                         Label("新建文件夹", systemImage: "folder.badge.plus")
                     }
+                    .buttonStyle(MacAccentToolbarButtonStyle())
                 }
             }
             .searchable(text: $searchText, prompt: "搜索视频标题")
@@ -139,7 +156,7 @@ struct MacLibraryView: View {
                 if openFolderID == nil {
                     statsBar
                     folderSection
-                } else {
+                } else if !(library.subfolders(in: openFolderID).isEmpty) {
                     subfolderSection
                 }
 
@@ -275,16 +292,7 @@ struct MacLibraryView: View {
                             Button("打开") { openFolderID = folder.id }
                             Button("重命名") { renameFolderTarget = folder }
                             Divider()
-                            Button("删除（视频保留）") {
-                                library.deleteFolder(folder.id, deleteVideos: false)
-                            }
-                            Button("删除（连同视频）", role: .destructive) {
-                                guard MacAlerts.confirmDelete(
-                                    title: "删除文件夹「\(folder.name)」？",
-                                    message: "该文件夹内的 \(library.videoCount(in: folder.id)) 个视频会被一并删除，且不可恢复。"
-                                ) else { return }
-                                library.deleteFolder(folder.id, deleteVideos: true)
-                            }
+                            Button("删除…") { deleteFolderTarget = folder }
                         }
                     }
                 }
@@ -339,16 +347,7 @@ struct MacLibraryView: View {
                             Button("打开") { openFolderID = folder.id }
                             Button("重命名") { renameFolderTarget = folder }
                             Divider()
-                            Button("删除（视频保留）") {
-                                library.deleteFolder(folder.id, deleteVideos: false)
-                            }
-                            Button("删除（连同视频）", role: .destructive) {
-                                guard MacAlerts.confirmDelete(
-                                    title: "删除文件夹「\(folder.name)」？",
-                                    message: "该文件夹内的 \(library.videoCount(in: folder.id)) 个视频会被一并删除，且不可恢复。"
-                                ) else { return }
-                                library.deleteFolder(folder.id, deleteVideos: true)
-                            }
+                            Button("删除…") { deleteFolderTarget = folder }
                         }
                     }
                 }
@@ -472,7 +471,7 @@ struct MacLibraryView: View {
                     }
                     MacActionPanelRow(title: "删除", systemImage: "trash", isDestructive: true) {
                         dismissFolderActions()
-                        deleteFolderWithConfirm(folder)
+                        deleteFolderTarget = folder
                     }
                 }
                 .frame(width: 268)
@@ -487,15 +486,6 @@ struct MacLibraryView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .transition(.opacity)
         }
-    }
-
-    private func deleteFolderWithConfirm(_ folder: VideoFolder) {
-        guard MacAlerts.confirmDelete(
-            title: "删除文件夹「\(folder.name)」？",
-            message: "文件夹会被删掉，里面的 \(library.videoCount(in: folder.id)) 个视频会保留在「未分类」里；文件夹本身不可恢复。"
-        ) else { return }
-        library.deleteFolder(folder.id, deleteVideos: false)
-        showToast("已删除文件夹「\(folder.name)」")
     }
 
     private func showActions(for item: VideoItem) {
@@ -656,5 +646,26 @@ private struct MacActionPanelRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+    }
+}
+
+/// 工具栏按钮：App 主题色描边 + 半透明填充，hover / 按下变亮
+private struct MacAccentToolbarButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .labelStyle(.titleAndIcon)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(MacTheme.accent)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(MacTheme.accent.opacity(configuration.isPressed ? 0.32 : 0.16))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(MacTheme.accent.opacity(0.45), lineWidth: 1)
+            )
+            .contentShape(Capsule(style: .continuous))
     }
 }
