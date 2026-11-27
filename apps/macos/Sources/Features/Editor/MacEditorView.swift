@@ -1073,6 +1073,39 @@ final class MacEditorModel: ObservableObject {
         return max(24, min(120, tracks?.frameRate ?? 30))
     }
 
+    /// 源片的短边（默认分辨率档按它挑）
+    var sourceShortSide: Double {
+        let tracks = clips.first?.sourceID.flatMap { materialTracks[$0] } ?? materialTracks.values.first
+        let size = tracks?.pixelSize ?? CGSize(width: 1920, height: 1080)
+        return min(size.width, size.height)
+    }
+
+    /// 「默认配置成源片参数」用的分辨率档：1080 附近→1080p、720 附近→720p，其它（含竖屏/方形）→原始
+    var sourceMatchingQuality: VideoExporter.Quality {
+        let short = sourceShortSide
+        if abs(short - 1080) <= 60 { return .p1080 }
+        if abs(short - 720) <= 60 { return .p720 }
+        return .highest
+    }
+
+    /// 源片容器：.mov 就默认 MOV，其余默认 MP4
+    var sourceFormat: MacExportFormat {
+        let path = clips.first?.sourceID
+            .flatMap { id in materials.first(where: { $0.id == id }) }?
+            .url.path.lowercased() ?? ""
+        return path.hasSuffix(".mov") ? .mov : .mp4
+    }
+
+    /// 打开导出面板时的默认配置 = 源片参数（分辨率/帧率/码率/格式）
+    func defaultExportOptions(title: String) -> MacExportOptions {
+        var options = MacExportOptions.defaultOptions(title: title)
+        options.quality = sourceMatchingQuality
+        options.frameRate = .followSource
+        options.bitrate = .recommended
+        options.format = sourceFormat
+        return options
+    }
+
     /// 推荐档的码率（kbps），给「自定义」输入框做默认值
     func recommendedBitrateMbps(for quality: VideoExporter.Quality) -> Double {
         Double(exportPlan(for: quality).bitrate) / 1_000_000
@@ -1940,7 +1973,7 @@ struct MacEditorView: View {
     /// 点导出：先弹配置面板（标题 / 目录 / 分辨率 / 格式）
     private func presentExportConfig() {
         guard !model.clips.isEmpty, !model.isExporting else { return }
-        exportDraft = MacExportOptions.defaultOptions(title: model.title)
+        exportDraft = model.defaultExportOptions(title: model.title)
         isExportConfigPresented = true
     }
 
@@ -2086,7 +2119,6 @@ private struct MacExportConfigSheet: View {
     let onSubmit: (MacExportOptions) -> Void
 
     @State private var hoveringFolder = false
-    @State private var helpTopic: ExportHelpTopic?
 
     private var durationText: String {
         let total = Int(model.outputDuration.rounded())
@@ -2152,7 +2184,19 @@ private struct MacExportConfigSheet: View {
                 }
             }
 
-            optionRow("分辨率") {
+            HStack(spacing: 8) {
+                Text("当前视频配置：")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.45))
+                Text(configSummary)
+                    .font(.system(size: 12).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.8))
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 84)
+            .padding(.bottom, 12)
+
+            optionRow("分辨率", topic: .resolution) {
                 menuField(resolutionTitle(options.quality)) {
                     ForEach(VideoExporter.Quality.allCases, id: \.self) { quality in
                         Button(resolutionTitle(quality)) { options.quality = quality }
@@ -2219,7 +2263,7 @@ private struct MacExportConfigSheet: View {
                     .padding(.bottom, 12)
             }
 
-            optionRow("视频格式") {
+            optionRow("视频格式", topic: .format) {
                 menuField(options.format.title) {
                     ForEach(MacExportFormat.allCases) { format in
                         Button(format.title) { options.format = format }
@@ -2274,6 +2318,18 @@ private struct MacExportConfigSheet: View {
 
     private var isPassthrough: Bool { options.quality == .highest }
 
+    /// 「当前视频配置：分辨率 · 帧率 · 码率 · 格式」，随下面四项实时变
+    private var configSummary: String {
+        let plan = model.exportPlan(for: options.quality,
+                                    frameRateChoice: options.frameRate,
+                                    bitrateChoice: options.bitrate,
+                                    customMbps: options.customMbps)
+        let resolution = "\(plan.width)×\(plan.height)"
+        let fps = "\(MacExportFrameRate.label(plan.frameRate)) fps"
+        let mbps = String(format: "%.2f Mbps", Double(plan.bitrate) / 1_000_000)
+        return "\(resolution) · \(fps) · \(mbps) · \(options.format.title)"
+    }
+
     private var frameRateTitle: String {
         if let value = options.frameRate.value { return MacExportFrameRate.label(value) }
         return "跟随源（\(MacExportFrameRate.label(model.sourceFrameRate))）"
@@ -2301,7 +2357,9 @@ private struct MacExportConfigSheet: View {
 
     private func resolutionTitle(_ quality: VideoExporter.Quality) -> String {
         switch quality {
-        case .highest: return "原始（最高质量）"
+        case .highest:
+            let plan = model.exportPlan(for: .highest)
+            return "原始（\(plan.width)×\(plan.height)）"
         case .p1080: return "1080p"
         case .p720: return "720p"
         }
@@ -2356,18 +2414,7 @@ private struct MacExportConfigSheet: View {
             content()
                 .frame(width: 200)
             if let topic {
-                Button {
-                    helpTopic = topic
-                } label: {
-                    Image(systemName: "questionmark.circle")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.42))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .popover(item: $helpTopic, arrowEdge: .trailing) { shown in
-                    ExportHelpCard(topic: shown)
-                }
+                ExportHelpButton(topic: topic)
             }
             Spacer(minLength: 0)
         }
@@ -2393,33 +2440,53 @@ private struct MacExportConfigSheet: View {
 // MARK: - 导出参数说明（V2.9.2）
 
 private enum ExportHelpTopic: String, Identifiable {
+    case resolution
     case frameRate
     case bitrate
+    case format
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .resolution: return "分辨率"
         case .frameRate: return "帧率（fps）"
         case .bitrate: return "视频码率"
+        case .format: return "视频格式"
         }
     }
 
     var summary: String {
         switch self {
+        case .resolution: return "画面尺寸，决定清晰度的上限和文件大小"
         case .frameRate: return "每秒画多少张，影响动作流畅度"
         case .bitrate: return "每秒给多少数据，影响清晰度和文件大小"
+        case .format: return "封装容器，决定哪些平台和软件认它"
         }
     }
 
     var body: String {
         switch self {
+        case .resolution:
+            return """
+            输出画面的像素尺寸（宽×高），是清晰度的天花板。
+            · 只能缩不能提：放大会靠插值补像素，画面只会更软，不会更清晰；选比源大的档位没有意义。
+            · 体积大致随像素数线性涨：1080p 的面积是 720p 的 2.25 倍。
+            · 取舍：要存档或留剪辑余量选「原始」或 1080p；只发社交平台，720p 也够。
+            """
         case .frameRate:
             return """
             一秒记录多少张画面，管的是动作顺不顺，不管清晰度。
             · 提高帧率不会直接把文件变大：码率固定时帧率翻倍，每帧分到的数据减半，快速运动处更容易糊。
             · 只能往下选：不插帧，选比源片更高的档位没有实际意义。
             · 取舍：社交发布 30 一般够用；运动、游戏、要做慢动作才需要 60。
+            """
+        case .format:
+            return """
+            封装容器，画面编码都是 H.264，两者画质与体积基本一致，差别在"外壳"。
+            · MP4：通用性最好，微信、抖音、B 站、网页、Windows 播放器都直接认。
+            · MOV：苹果生态顺手，Final Cut / QuickTime 更友好，但部分平台或网页不认。
+            · 需要上传或发给别人，选 MP4；只在 Mac 上留着继续剪，MOV 更顺。
             """
         case .bitrate:
             return """
@@ -2429,6 +2496,28 @@ private enum ExportHelpTopic: String, Identifiable {
             · 更低（0.6×）更省空间，细节略减；更高（1.6×）细节更足，但超过源片码率也不会真的变清晰；自定义直接填 Mbps。
             · 码率给太少时，运动段和大面积纹理先出块、发糊。
             """
+        }
+    }
+}
+
+/// 每行一个问号按钮，自己持有 popover 状态：
+/// 早前四个按钮共用同一个 `helpTopic`，SwiftUI 会同时弹出四个 popover（三个错位的小窗叠在卡片上）
+private struct ExportHelpButton: View {
+    let topic: ExportHelpTopic
+    @State private var isPresented = false
+
+    var body: some View {
+        Button {
+            isPresented = true
+        } label: {
+            Image(systemName: "questionmark.circle")
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.42))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $isPresented, arrowEdge: .trailing) {
+            ExportHelpCard(topic: topic)
         }
     }
 }
