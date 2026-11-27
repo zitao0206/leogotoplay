@@ -11,6 +11,7 @@
 		FB60F17F2CBD3F0C8D31F37D /* LeogotoPlayMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 280D7DB431F82160C2C26791 /* LeogotoPlayMacApp.swift */; };
 		8E94A5B34DFFBA18D86B0BFE /* MacComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65467B156477125DD466742 /* MacComponents.swift */; };
 		5F6B5E1FD76A3D5CA7985434 /* MacTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0636332518459CAED2A14EAF /* MacTheme.swift */; };
+		A4C7D1E29B3F60857C2D9E11 /* MacStrings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4C7D1E29B3F60857C2D9E12 /* MacStrings.swift */; };
 		2A8ED1C618EA9CC1A627F78E /* MacCutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FCBB293AC1B2365543E5BE /* MacCutView.swift */; };
 		3A5C7E9B2D4F60718293A4B6 /* MacFaceExtract.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A69788796A5B4C /* MacFaceExtract.swift */; };
 		4B6D8E0C3F5A71829304B5C7 /* MacFaceMask.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2F3A4B5C6D708192A3B4C5D /* MacFaceMask.swift */; };
@@ -36,6 +37,7 @@
 		280D7DB431F82160C2C26791 /* LeogotoPlayMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeogotoPlayMacApp.swift; sourceTree = "<group>"; };
 		B65467B156477125DD466742 /* MacComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacComponents.swift; sourceTree = "<group>"; };
 		0636332518459CAED2A14EAF /* MacTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTheme.swift; sourceTree = "<group>"; };
+		A4C7D1E29B3F60857C2D9E12 /* MacStrings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacStrings.swift; sourceTree = "<group>"; };
 		37FCBB293AC1B2365543E5BE /* MacCutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCutView.swift; sourceTree = "<group>"; };
 		F1E2D3C4B5A69788796A5B4C /* MacFaceExtract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFaceExtract.swift; sourceTree = "<group>"; };
 		E2F3A4B5C6D708192A3B4C5D /* MacFaceMask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFaceMask.swift; sourceTree = "<group>"; };
@@ -107,6 +109,7 @@
 			children = (
 				B65467B156477125DD466742 /* child */,
 				0636332518459CAED2A14EAF /* child */,
+				A4C7D1E29B3F60857C2D9E12 /* MacStrings.swift */,
 			);
 			path = DesignSystem;
 			sourceTree = "<group>";
@@ -283,6 +286,7 @@
 				FB60F17F2CBD3F0C8D31F37D /* LeogotoPlayMacApp.swift in Sources */,
 				8E94A5B34DFFBA18D86B0BFE /* MacComponents.swift in Sources */,
 				5F6B5E1FD76A3D5CA7985434 /* MacTheme.swift in Sources */,
+				A4C7D1E29B3F60857C2D9E11 /* MacStrings.swift in Sources */,
 				2A8ED1C618EA9CC1A627F78E /* MacCutView.swift in Sources */,
 				3A5C7E9B2D4F60718293A4B6 /* MacFaceExtract.swift in Sources */,
 				4B6D8E0C3F5A71829304B5C7 /* MacFaceMask.swift in Sources */,

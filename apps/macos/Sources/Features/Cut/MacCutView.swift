@@ -14,11 +14,15 @@ struct MacCutView: View {
     @State private var renameDraft = ""
 
     /// 热门工具：macOS 端先把入口摆齐，能力后续逐个接（点只提示）。
-    private let tools: [(icon: String, title: String)] = [
-        ("scissors", "一键分割视频"),
-        ("person.crop.rectangle", "一键提取人脸"),
-        ("face.dashed", "一键人脸打码"),
-        ("text.viewfinder", "一键提取文字")
+    private enum ToolKind: String {
+        case split, faceExtract, faceMask, textExtract
+    }
+
+    private let tools: [(icon: String, title: String, kind: ToolKind)] = [
+        ("scissors", T("一键分割视频"), .split),
+        ("person.crop.rectangle", T("一键提取人脸"), .faceExtract),
+        ("face.dashed", T("一键人脸打码"), .faceMask),
+        ("text.viewfinder", T("一键提取文字"), .textExtract)
     ]
 
     var body: some View {
@@ -55,17 +59,17 @@ struct MacCutView: View {
             }
         }
         .animation(.easeOut(duration: 0.18), value: toast)
-        .alert("重命名项目", isPresented: Binding(
+        .alert(T("重命名项目"), isPresented: Binding(
             get: { renamingProject != nil },
             set: { if !$0 { renamingProject = nil } }
         )) {
-            TextField("项目名称", text: $renameDraft)
-            Button("取消", role: .cancel) { renamingProject = nil }
-            Button("确定") {
+            TextField(T("项目名称"), text: $renameDraft)
+            Button(T("取消"), role: .cancel) { renamingProject = nil }
+            Button(T("确定")) {
                 if let project = renamingProject, !renameDraft.trimmingCharacters(in: .whitespaces).isEmpty {
                     MacProjectStore.rename(project.id, to: renameDraft)
                     reloadProjects()
-                    toast = "已重命名"
+                    toast = T("已重命名")
                 }
                 renamingProject = nil
             }
@@ -107,7 +111,7 @@ struct MacCutView: View {
     private var hotTools: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 6) {
-                Text("热门工具")
+                Text(T("热门工具"))
                     .font(.footnote.weight(.bold))
                     .foregroundStyle(.white)
                 Spacer()
@@ -122,17 +126,15 @@ struct MacCutView: View {
             ) {
                 ForEach(tools, id: \.title) { tool in
                     MacToolTile(icon: tool.icon, title: tool.title) {
-                        switch tool.title {
-                        case "一键提取人脸":
+                        switch tool.kind {
+                        case .faceExtract:
                             MacFaceExtractWindowManager.shared.open()
-                        case "一键人脸打码":
+                        case .faceMask:
                             MacFaceMaskWindowManager.shared.open(library: library)
-                        case "一键提取文字":
+                        case .textExtract:
                             MacTextExtractWindowManager.shared.open()
-                        case "一键分割视频":
+                        case .split:
                             MacVideoSplitWindowManager.shared.open(library: library)
-                        default:
-                            toast = "\(tool.title) · macOS 端开发中"
                         }
                     }
                 }
@@ -180,7 +182,7 @@ struct MacCutView: View {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .fill(MacTheme.accent.opacity(0.18))
                     )
-                Text("开始编辑")
+                Text(T("开始编辑"))
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(.white)
                 Spacer(minLength: 0)
@@ -216,11 +218,11 @@ struct MacCutView: View {
     private var recentSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("最近编辑")
+                Text(T("最近编辑"))
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
                 Spacer()
-                Text("\(projects.count) 个项目")
+                Text(T("{1} 个项目", projects.count))
                     .font(.caption)
                     .foregroundStyle(Color.white.opacity(0.45))
             }
@@ -228,8 +230,8 @@ struct MacCutView: View {
             if projects.isEmpty {
                 MacEmptyStateView(
                     symbol: "film",
-                    title: "还没有编辑过的项目",
-                    message: "点上面的「开始编辑」，把素材拖进时间轴，剪完就会留在这里。"
+                    title: T("还没有编辑过的项目"),
+                    message: T("点上面的「开始编辑」，把素材拖进时间轴，剪完就会留在这里。")
                 )
                 .frame(height: 200)
                 .background(
@@ -263,12 +265,12 @@ struct MacCutView: View {
 
     private func delete(_ project: MacProjectRecord) {
         guard MacAlerts.confirmDelete(
-            title: "删除「\(project.title)」？",
-            message: "会连同项目里导入的素材文件、缩略图和整条时间轴现场一起删掉。"
+            title: T("删除「{1}」？", project.title),
+            message: T("会连同项目里导入的素材文件、缩略图和整条时间轴现场一起删掉。")
         ) else { return }
         MacProjectStore.remove(project.id)
         reloadProjects()
-        toast = "项目已删除"
+        toast = T("项目已删除")
     }
 }
 
@@ -434,7 +436,7 @@ private struct MacRecentProjectCard: View {
             HStack(spacing: 2) {
                 Image(systemName: "square.and.pencil")
                     .font(.system(size: 7, weight: .bold))
-                Text("\(project.clips.count) 段")
+                Text(T("{1} 段", project.clips.count))
                     .font(.system(size: 9, weight: .bold))
             }
             .foregroundStyle(.white)
@@ -473,14 +475,14 @@ private struct MacRecentProjectCard: View {
             .buttonStyle(.plain)
             .frame(width: 15, height: 13)
             .padding(5)
-            .help("重命名 / 删除")
+            .help(T("重命名 / 删除"))
             .popover(isPresented: $showMenu, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 2) {
                     Button {
                         showMenu = false
                         onRename()
                     } label: {
-                        Label("重命名", systemImage: "pencil")
+                        Label(T("重命名"), systemImage: "pencil")
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.plain)
@@ -491,7 +493,7 @@ private struct MacRecentProjectCard: View {
                         showMenu = false
                         onDelete()
                     } label: {
-                        Label("删除", systemImage: "trash")
+                        Label(T("删除"), systemImage: "trash")
                             .foregroundStyle(.red)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -507,7 +509,7 @@ private struct MacRecentProjectCard: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)
         .onHover { hovering = $0 }
-        .help("继续上次的时间轴现场")
+        .help(T("继续上次的时间轴现场"))
     }
 
     @ViewBuilder

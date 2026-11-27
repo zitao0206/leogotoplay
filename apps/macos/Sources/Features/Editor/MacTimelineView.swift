@@ -378,9 +378,9 @@ struct MacTimelineView: View {
     /// 片段角标文案：组内标「段 k/n」，独立片段仍是「片段 i」
     private func label(for index: Int, clip: MacClip) -> String {
         if let g = groupSlot(index) {
-            return "段 \(g.slot)/\(g.total) · \(clip.duration.timecode)"
+            return T("段 {1}/{2} · {3}", g.slot, g.total, clip.duration.timecode)
         }
-        return "片段 \(index + 1) · \(clip.duration.timecode)"
+        return T("片段 {1} · {2}", index + 1, clip.duration.timecode)
     }
 
     private func clipBlock(
@@ -435,7 +435,7 @@ struct MacTimelineView: View {
                     onSelectClip(timelineStart + Double(max(0, value.location.x)) / pixelsPerSecond)
                 }
         )
-        .help("拖动可调整这段在时间轴上的顺序")
+        .help(T("拖动可调整这段在时间轴上的顺序"))
     }
 
     // MARK: - 逐帧胶片（V2.7.16：整条胶片按「素材时间 → 像素」绝对定位，切割只是换个裁剪窗口）

@@ -17,23 +17,23 @@ enum MacFaceMaskStyle: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .pixelate: return "马赛克"
-        case .blur: return "高斯模糊"
-        case .solid: return "纯色 / 黑块"
-        case .blurNoise: return "模糊 + 轻噪点"
+        case .pixelate: return T("马赛克")
+        case .blur: return T("高斯模糊")
+        case .solid: return T("纯色 / 黑块")
+        case .blurNoise: return T("模糊 + 轻噪点")
         }
     }
 
     var detail: String {
         switch self {
         case .pixelate:
-            return "块大小跟着脸宽走（约脸宽 1/12），大脸不会糊成一片，小脸也不会等于没打。"
+            return T("块大小跟着脸宽走（约脸宽 1/12），大脸不会糊成一片，小脸也不会等于没打。")
         case .blur:
-            return "半径同样跟脸宽走，观感更像新闻里的处理方式。"
+            return T("半径同样跟脸宽走，观感更像新闻里的处理方式。")
         case .solid:
-            return "最保险，但不好看，适合正式场合。"
+            return T("最保险，但不好看，适合正式场合。")
         case .blurNoise:
-            return "模糊再叠一层轻噪点，抗「人脸还原」工具的效果稍好一点。"
+            return T("模糊再叠一层轻噪点，抗「人脸还原」工具的效果稍好一点。")
         }
     }
 
@@ -69,11 +69,11 @@ enum MacFaceMaskError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noVideoTrack: return "这个文件里没有视频画面"
-        case .noFaceFound: return "整段视频没有检测到人脸"
-        case .readerFailed(let reason): return "读取视频失败：\(reason)"
-        case .writerFailed(let reason): return "写出视频失败：\(reason)"
-        case .cancelled: return "已取消"
+        case .noVideoTrack: return T("这个文件里没有视频画面")
+        case .noFaceFound: return T("整段视频没有检测到人脸")
+        case .readerFailed(let reason): return T("读取视频失败：{1}", reason)
+        case .writerFailed(let reason): return T("写出视频失败：{1}", reason)
+        case .cancelled: return T("已取消")
         }
     }
 }
@@ -89,11 +89,11 @@ enum MacFaceMasker {
     }
 
     static func estimateLabel(_ seconds: Double) -> String {
-        if seconds < 60 { return "约 \(Int(seconds.rounded(.up))) 秒" }
+        if seconds < 60 { return T("约 {1} 秒", Int(seconds.rounded(.up))) }
         let minutes = Int(seconds) / 60
         let rest = Int(seconds) % 60
-        if rest == 0 { return "约 \(minutes) 分钟" }
-        return "约 \(minutes) 分 \(rest) 秒"
+        if rest == 0 { return T("约 {1} 分钟", minutes) }
+        return T("约 {1} 分 {2} 秒", minutes, rest)
     }
 
     static func run(
@@ -121,7 +121,7 @@ enum MacFaceMasker {
         ])
         videoOutput.alwaysCopiesSampleData = false
         guard reader.canAdd(videoOutput) else {
-            throw MacFaceMaskError.readerFailed("无法读取视频轨道")
+            throw MacFaceMaskError.readerFailed(T("无法读取视频轨道"))
         }
         reader.add(videoOutput)
 
@@ -154,13 +154,13 @@ enum MacFaceMasker {
             ]
         )
         guard writer.canAdd(videoInput) else {
-            throw MacFaceMaskError.writerFailed("无法写入视频轨道")
+            throw MacFaceMaskError.writerFailed(T("无法写入视频轨道"))
         }
         writer.add(videoInput)
 
         guard writer.startWriting(), reader.startReading() else {
             throw MacFaceMaskError.writerFailed(
-                writer.error?.localizedDescription ?? reader.error?.localizedDescription ?? "无法开始"
+                writer.error?.localizedDescription ?? reader.error?.localizedDescription ?? T("无法开始")
             )
         }
         writer.startSession(atSourceTime: .zero)
@@ -230,7 +230,7 @@ enum MacFaceMasker {
 
         if writer.status != .completed {
             try? FileManager.default.removeItem(at: outputURL)
-            throw MacFaceMaskError.writerFailed(writer.error?.localizedDescription ?? "写入未完成")
+            throw MacFaceMaskError.writerFailed(writer.error?.localizedDescription ?? T("写入未完成"))
         }
         if tracker.totalFaces == 0 {
             try? FileManager.default.removeItem(at: outputURL)
@@ -263,7 +263,7 @@ enum MacFaceMasker {
                 withMediaType: .video,
                 preferredTrackID: kCMPersistentTrackID_Invalid
               ) else {
-            throw MacFaceMaskError.writerFailed("无法封装视频轨")
+            throw MacFaceMaskError.writerFailed(T("无法封装视频轨"))
         }
         let videoDuration = (try? await videoAsset.load(.duration)) ?? .zero
         let videoRange = (try? await sourceVideo.load(.timeRange))
@@ -293,7 +293,7 @@ enum MacFaceMasker {
             asset: composition,
             presetName: AVAssetExportPresetPassthrough
         ) else {
-            throw MacFaceMaskError.writerFailed("无法创建封装会话")
+            throw MacFaceMaskError.writerFailed(T("无法创建封装会话"))
         }
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("mac-face-mask-mux-\(UUID().uuidString).mp4")
@@ -306,7 +306,7 @@ enum MacFaceMasker {
         }
         guard session.status == .completed else {
             try? FileManager.default.removeItem(at: url)
-            throw MacFaceMaskError.writerFailed(session.error?.localizedDescription ?? "音频封装失败")
+            throw MacFaceMaskError.writerFailed(session.error?.localizedDescription ?? T("音频封装失败"))
         }
         return url
     }
@@ -603,7 +603,7 @@ final class MacFaceMaskWindowManager: NSObject, NSWindowDelegate {
         )
         window.isReleasedWhenClosed = false
         window.isRestorable = false
-        window.title = "一键人脸打码"
+        window.title = T("一键人脸打码")
         window.subtitle = "LeogotoPlay"
         window.minSize = NSSize(width: 860, height: 640)
         window.appearance = NSAppearance(named: .darkAqua)
@@ -644,7 +644,7 @@ struct MacFaceMaskView: View {
     @State private var estimateText = ""
     @State private var isProcessing = false
     @State private var progress: Double = 0
-    @State private var phaseText = "正在定位人脸"
+    @State private var phaseText = T("正在定位人脸")
     @State private var result: MacFaceMaskResult?
     @State private var showCancelAlert = false
     @State private var toast: String?
@@ -693,19 +693,19 @@ struct MacFaceMaskView: View {
         .onDisappear {
             if let result { try? FileManager.default.removeItem(at: result.url) }
         }
-        .alert("打码失败", isPresented: Binding(
+        .alert(T("打码失败"), isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
-            Button("知道了", role: .cancel) { errorMessage = nil }
+            Button(T("知道了"), role: .cancel) { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
         }
-        .alert("停止打码？", isPresented: $showCancelAlert) {
-            Button("停止打码", role: .destructive) { cancelProcessing() }
-            Button("继续", role: .cancel) {}
+        .alert(T("停止打码？"), isPresented: $showCancelAlert) {
+            Button(T("停止打码"), role: .destructive) { cancelProcessing() }
+            Button(T("继续"), role: .cancel) {}
         } message: {
-            Text("这一段处理进度会丢弃，原视频不受影响。")
+            Text(T("这一段处理进度会丢弃，原视频不受影响。"))
         }
     }
 
@@ -713,7 +713,7 @@ struct MacFaceMaskView: View {
 
     private var setupScreen: some View {
         VStack(spacing: 0) {
-            header(title: "一键人脸打码", trailing: nil)
+            header(title: T("一键人脸打码"), trailing: nil)
 
             ScrollView {
                 VStack(spacing: 16) {
@@ -753,10 +753,10 @@ struct MacFaceMaskView: View {
                     .frame(width: 38, height: 38)
                     .background(MacTheme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("自动把画面里的人脸遮住")
+                    Text(T("自动把画面里的人脸遮住"))
                         .font(.headline)
                         .foregroundStyle(.white)
-                    Text("逐帧找人脸，整段重新编码，出一个打码新片")
+                    Text(T("逐帧找人脸，整段重新编码，出一个打码新片"))
                         .font(.caption)
                         .foregroundStyle(Color.white.opacity(0.55))
                 }
@@ -764,9 +764,9 @@ struct MacFaceMaskView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                bullet("逐帧检测人脸位置，整段视频里的人都会被遮住")
-                bullet("四种遮挡方式，块大小和模糊半径都跟着脸宽走")
-                bullet("全程在本机处理，原视频不动，也不会上传")
+                bullet(T("逐帧检测人脸位置，整段视频里的人都会被遮住"))
+                bullet(T("四种遮挡方式，块大小和模糊半径都跟着脸宽走"))
+                bullet(T("全程在本机处理，原视频不动，也不会上传"))
             }
         }
         .padding(16)
@@ -797,10 +797,10 @@ struct MacFaceMaskView: View {
                     .foregroundStyle(MacTheme.accent)
                     .frame(width: 54, height: 54)
                     .background(MacTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                Text(isPreparing ? "读取视频中…" : "选择一个视频文件")
+                Text(isPreparing ? T("读取视频中…") : T("选择一个视频文件"))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
-                Text("选本地视频，处理好后生成一个打了码的新片")
+                Text(T("选本地视频，处理好后生成一个打了码的新片"))
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.5))
             }
@@ -819,11 +819,11 @@ struct MacFaceMaskView: View {
     private var styleCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Label("打码方式", systemImage: "paintbrush")
+                Label(T("打码方式"), systemImage: "paintbrush")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(Color.white.opacity(0.55))
                 Spacer()
-                Text("会记住上次的选择")
+                Text(T("会记住上次的选择"))
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.4))
             }
@@ -881,10 +881,10 @@ struct MacFaceMaskView: View {
 
     private var noteCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label("说明", systemImage: "info.circle")
+            Label(T("说明"), systemImage: "info.circle")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(Color.white.opacity(0.55))
-            Text("打码要重新编码整段视频，画质会有轻微损失。侧脸、被手挡住的脸、画面里很小的人脸可能漏检，重要素材建议先看一遍结果。处理期间窗口不要关，关了会中断。")
+            Text(T("打码要重新编码整段视频，画质会有轻微损失。侧脸、被手挡住的脸、画面里很小的人脸可能漏检，重要素材建议先看一遍结果。处理期间窗口不要关，关了会中断。"))
                 .font(.caption)
                 .foregroundStyle(Color.white.opacity(0.5))
                 .fixedSize(horizontal: false, vertical: true)
@@ -903,26 +903,26 @@ struct MacFaceMaskView: View {
                 .onTapGesture {}
 
             VStack(spacing: 14) {
-                Text("开始打码？")
+                Text(T("开始打码？"))
                     .font(.headline)
                     .foregroundStyle(.white)
 
-                Text("时长 \(sourceDuration.timecode) · \(style.title)")
+                Text(T("时长 {1} · {2}", sourceDuration.timecode, style.title))
                     .font(.footnote)
                     .foregroundStyle(Color.white.opacity(0.55))
 
                 VStack(spacing: 2) {
-                    Text("预计需要")
+                    Text(T("预计需要"))
                         .font(.caption)
                         .foregroundStyle(Color.white.opacity(0.5))
-                    Text(estimateText.isEmpty ? "几秒" : estimateText)
+                    Text(estimateText.isEmpty ? T("几秒") : estimateText)
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(MacTheme.accent)
                         .monospacedDigit()
                 }
                 .frame(maxWidth: .infinity)
 
-                Text("要重新编码整段视频，越长的片子越久。")
+                Text(T("要重新编码整段视频，越长的片子越久。"))
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.42))
 
@@ -931,7 +931,7 @@ struct MacFaceMaskView: View {
                         showConfirm = false
                         sourceURL = nil
                     } label: {
-                        Text("取消")
+                        Text(T("取消"))
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -944,7 +944,7 @@ struct MacFaceMaskView: View {
                         showConfirm = false
                         start()
                     } label: {
-                        Text("开始打码")
+                        Text(T("开始打码"))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -973,7 +973,7 @@ struct MacFaceMaskView: View {
                 ProgressView()
                     .controlSize(.large)
                     .tint(MacTheme.accent)
-                Text("人脸打码中 \(Int(progress * 100))%")
+                Text(T("人脸打码中 {1}%", Int(progress * 100)))
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(.white)
                     .monospacedDigit()
@@ -985,7 +985,7 @@ struct MacFaceMaskView: View {
                     .frame(width: 280)
                     .tint(MacTheme.accent)
 
-                Button("停止打码") { showCancelAlert = true }
+                Button(T("停止打码")) { showCancelAlert = true }
                     .buttonStyle(.plain)
                     .font(.footnote)
                     .foregroundStyle(Color.white.opacity(0.6))
@@ -999,31 +999,31 @@ struct MacFaceMaskView: View {
     private func resultScreen(_ result: MacFaceMaskResult) -> some View {
         VStack(spacing: 0) {
             header(
-                title: "打码完成",
+                title: T("打码完成"),
                 trailing: AnyView(
                     HStack(spacing: 10) {
-                        Button(isSaving ? "保存中…" : "存入视频库") {
+                        Button(isSaving ? T("保存中…") : T("存入视频库")) {
                             saveToLibrary(result)
                         }
                         .buttonStyle(MacMaskAccentButtonStyle())
                         .disabled(isSaving || isExporting)
-                        Button(isExporting ? "导出中…" : "另存为…") {
+                        Button(isExporting ? T("导出中…") : T("另存为…")) {
                             exportCopy(result)
                         }
                         .buttonStyle(.bordered)
                         .disabled(isSaving || isExporting)
-                        Button("关闭") { closeCleanup(result) }
+                        Button(T("关闭")) { closeCleanup(result) }
                             .buttonStyle(.bordered)
                     }
                 )
             )
 
             HStack(spacing: 10) {
-                infoChip(icon: "person.crop.circle", text: "检测到 \(result.faceCount) 个人")
-                infoChip(icon: "clock", text: "时长 \(result.duration.timecode)")
+                infoChip(icon: "person.crop.circle", text: T("检测到 {1} 个人", result.faceCount))
+                infoChip(icon: "clock", text: T("时长 {1}", result.duration.timecode))
                 infoChip(icon: "paintbrush", text: result.style.title)
                 Spacer()
-                Button("再打一次") {
+                Button(T("再打一次")) {
                     // 先把上一轮临时成片删掉，再回到选片页
                     try? FileManager.default.removeItem(at: result.url)
                     self.result = nil
@@ -1092,13 +1092,13 @@ struct MacFaceMaskView: View {
         guard let url = sourceURL else { return }
         isProcessing = true
         progress = 0
-        phaseText = "正在定位并遮挡人脸"
+        phaseText = T("正在定位并遮挡人脸")
         runTask = Task {
             do {
                 let res = try await MacFaceMasker.run(url: url, style: style) { value in
                     Task { @MainActor in
                         progress = value
-                        phaseText = value > 0.55 ? "正在重新编码画面" : "正在定位并遮挡人脸"
+                        phaseText = value > 0.55 ? T("正在重新编码画面") : T("正在定位并遮挡人脸")
                     }
                 }
                 await MainActor.run {
@@ -1124,12 +1124,12 @@ struct MacFaceMaskView: View {
 
     private func saveToLibrary(_ result: MacFaceMaskResult) {
         isSaving = true
-        let title = "\(result.sourceTitle)-打码"
+        let title = T("{1}-打码", result.sourceTitle)
         Task { @MainActor in
             do {
                 try await library.importExport(fileURL: result.url, title: title)
                 isSaving = false
-                showToast("已存入视频库")
+                showToast(T("已存入视频库"))
             } catch {
                 isSaving = false
                 errorMessage = error.localizedDescription
@@ -1139,17 +1139,17 @@ struct MacFaceMaskView: View {
 
     private func exportCopy(_ result: MacFaceMaskResult) {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "\(result.sourceTitle)-打码.mp4"
+        panel.nameFieldStringValue = T("{1}-打码.mp4", result.sourceTitle)
         panel.canCreateDirectories = true
-        panel.title = "导出打码视频"
-        panel.prompt = "导出"
+        panel.title = T("导出打码视频")
+        panel.prompt = T("导出")
         guard panel.runModal() == .OK, let dest = panel.url else { return }
         isExporting = true
         do {
             try? FileManager.default.removeItem(at: dest)
             try FileManager.default.copyItem(at: result.url, to: dest)
             isExporting = false
-            showToast("已导出到 \(dest.lastPathComponent)")
+            showToast(T("已导出到 {1}", dest.lastPathComponent))
             NSWorkspace.shared.activateFileViewerSelecting([dest])
         } catch {
             isExporting = false

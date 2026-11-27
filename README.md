@@ -106,6 +106,16 @@ iOS 首页是 `Cut / List / Mine` 三个 Tab，结构由 `AppConfig` 驱动，�
 - 整段除不尽时，最后一格的取帧时间夹到视频末帧（`assetDuration - 0.04`），尾部不会再留空槽位。
 - 缩放状态从「绝对间隔」改成「档位 `zoomLevel`」，间隔由档位和当前整段时长实时算出来：裁完片段后密度自动按新时长重算，不会留着旧时长的间隔；间隔一变胶片缓存整块作废重建。
 
+### Mac-V4.3 · 中英双语（默认英文，一键切换）
+
+- Mine「设置」卡最上面新增「语言 / Language」分段选择：`English` / `中文`，默认 **English**，存在 `UserDefaults`（`app.language`），下次启动沿用上次的选择。
+- 全站文案改成 key 直译：新增 `DesignSystem/MacStrings.swift`（`MacLanguage` / `MacLang` / `MacLanguageStore` / `T(_:_:)` + 421 条中文 → 英文对照表）。所有中文字面量统一包一层 `T("中文模板")`，插值换成 `{1}`、`{2}` 占位，英文查表替换、中文原样回填，避免 `String(format:)` 的 `%@`/`%lld` 类型坑。
+- 切换即时生效：`MacRootView` 监听 `MacLanguageStore`，侧栏随 body 重算；详情区 `.id(language.current)` 重建，所有页面（视频库 / 剪辑台 / 我的 / 各工具页）当场换语言，不用重启。当前分区存进 `tab.selected`，重建后仍停在原分区。
+- 工具窗口（一键分割 / 提取人脸 / 人脸打码 / 提取文字）在打开时按当前语言取值，中英文窗口标题、按钮、说明、进度、toast 全量一致；`NSOpenPanel` 的标题也走同一个 `T()`。
+- 隐私政策 / 用户协议升级为双语文案（`MacLegal` 里中英各一份常量，按当前语言取）；「关于」「联系我们」「评分」「版本号」等 V4.2 行同样跟着语言走。
+- 英文细节：`1 videos` 这类直接按单复数改写（`macSingularize`），`1 folder` / `1 video` / `1 part` 不再别扭。
+- 受影响面：`T()` 覆盖了 555 处调用点、15 个文件；`MacCutView` 的热门工具从「按中文标题 switch」改成按 `ToolKind` 枚举分发，文案改动不再影响点击逻辑。
+
 ### Mac-V4.2 · 设置页补齐合规与支持入口
 
 - Mine「设置」卡新增五块，按上架审核的实际要求排列：隐私政策、用户协议、联系我们、给 App 评分、版本号 + 检查更新。

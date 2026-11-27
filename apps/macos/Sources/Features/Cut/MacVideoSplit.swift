@@ -43,9 +43,9 @@ enum MacVideoSplitError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .tooShort: return "视频太短，分出来每段不到 1 秒了"
-        case .noVideoTrack: return "这个视频没有可分割的画面轨道"
-        case .exportFailed(let reason): return "分割失败：\(reason)"
+        case .tooShort: return T("视频太短，分出来每段不到 1 秒了")
+        case .noVideoTrack: return T("这个视频没有可分割的画面轨道")
+        case .exportFailed(let reason): return T("分割失败：{1}", reason)
         }
     }
 }
@@ -113,7 +113,7 @@ enum MacVideoSplitter {
             }
             let part = planned[index]
             let output = tempDir.appendingPathComponent("\(baseName)-\(part.index).mp4")
-            onProgress(Double(index) / Double(parts), "正在切第 \(part.index) / \(parts) 段")
+            onProgress(Double(index) / Double(parts), T("正在切第 {1} / {2} 段", part.index, parts))
 
             let range = CMTimeRange(
                 start: CMTime(seconds: part.start, preferredTimescale: 600),
@@ -131,7 +131,7 @@ enum MacVideoSplitter {
             planned[index].fileSize = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
         }
 
-        onProgress(1.0, "分割完成")
+        onProgress(1.0, T("分割完成"))
         return MacSplitResult(parts: planned, tempDir: tempDir, baseName: baseName)
     }
 
@@ -150,14 +150,14 @@ enum MacVideoSplitter {
         }
 
         guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
-            throw lastError ?? MacVideoSplitError.exportFailed("这台机器不支持这种编码")
+            throw lastError ?? MacVideoSplitError.exportFailed(T("这台机器不支持这种编码"))
         }
         session.outputURL = url
         session.outputFileType = .mp4
         session.timeRange = range
         await session.export()
         guard session.status == .completed, fileExists(url) else {
-            throw session.error ?? lastError ?? MacVideoSplitError.exportFailed("导出没有完成")
+            throw session.error ?? lastError ?? MacVideoSplitError.exportFailed(T("导出没有完成"))
         }
     }
 
@@ -179,10 +179,10 @@ enum MacVideoSplitter {
 
     static func estimateLabel(_ seconds: TimeInterval) -> String {
         let total = Int(seconds.rounded())
-        if total < 60 { return "约 \(total) 秒" }
+        if total < 60 { return T("约 {1} 秒", total) }
         let m = total / 60
         let r = total % 60
-        return r == 0 ? "约 \(m) 分钟" : "约 \(m) 分 \(r) 秒"
+        return r == 0 ? T("约 {1} 分钟", m) : T("约 {1} 分 {2} 秒", m, r)
     }
 }
 
@@ -209,7 +209,7 @@ final class MacVideoSplitWindowManager: NSObject, NSWindowDelegate {
         )
         window.isReleasedWhenClosed = false
         window.isRestorable = false
-        window.title = "一键分割视频"
+        window.title = T("一键分割视频")
         window.subtitle = "LeogotoPlay"
         window.minSize = NSSize(width: 840, height: 640)
         window.appearance = NSAppearance(named: .darkAqua)
@@ -250,7 +250,7 @@ struct MacVideoSplitView: View {
     @State private var estimateText = ""
     @State private var isProcessing = false
     @State private var progress: Double = 0
-    @State private var phaseText = "准备中…"
+    @State private var phaseText = T("准备中…")
     @State private var result: MacSplitResult?
     @State private var previewPart: MacSplitPart?
     @State private var player: AVPlayer?
@@ -297,19 +297,19 @@ struct MacVideoSplitView: View {
         .task { await autoStartIfNeeded() }
         // 不管用「关闭」按钮还是窗口红点关，临时分段文件都清掉：除非用户导出，本地不留任何成品
         .onDisappear { MacVideoSplitter.cleanUp(result) }
-        .alert("分割失败", isPresented: Binding(
+        .alert(T("分割失败"), isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
-            Button("知道了", role: .cancel) { errorMessage = nil }
+            Button(T("知道了"), role: .cancel) { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
         }
-        .alert("停止分割？", isPresented: $showCancelAlert) {
-            Button("停止分割", role: .destructive) { cancelProcessing() }
-            Button("继续", role: .cancel) {}
+        .alert(T("停止分割？"), isPresented: $showCancelAlert) {
+            Button(T("停止分割"), role: .destructive) { cancelProcessing() }
+            Button(T("继续"), role: .cancel) {}
         } message: {
-            Text("已经切好的片段会一并丢掉，原视频不受影响。")
+            Text(T("已经切好的片段会一并丢掉，原视频不受影响。"))
         }
     }
 
@@ -317,7 +317,7 @@ struct MacVideoSplitView: View {
 
     private var setupScreen: some View {
         VStack(spacing: 0) {
-            header(title: "一键分割视频", trailing: nil)
+            header(title: T("一键分割视频"), trailing: nil)
 
             ScrollView {
                 VStack(spacing: 16) {
@@ -361,10 +361,10 @@ struct MacVideoSplitView: View {
                     .frame(width: 38, height: 38)
                     .background(MacTheme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("把一条长视频切成几段")
+                    Text(T("把一条长视频切成几段"))
                         .font(.headline)
                         .foregroundStyle(.white)
-                    Text("按时长均分，每段都是能单独播放的文件")
+                    Text(T("按时长均分，每段都是能单独播放的文件"))
                         .font(.caption)
                         .foregroundStyle(Color.white.opacity(0.55))
                 }
@@ -372,9 +372,9 @@ struct MacVideoSplitView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                bullet("默认切 2–6 份，也可以手动分到 20 份")
-                bullet("原样切割：不重新编码，画质和清晰度不变")
-                bullet("每段不到 1 秒时会拦住，建议去剪辑页面手动改")
+                bullet(T("默认切 2–6 份，也可以手动分到 20 份"))
+                bullet(T("原样切割：不重新编码，画质和清晰度不变"))
+                bullet(T("每段不到 1 秒时会拦住，建议去剪辑页面手动改"))
             }
         }
         .padding(16)
@@ -412,14 +412,14 @@ struct MacVideoSplitView: View {
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Text("时长 \(splitStamp(sourceDuration)) · 点一下换别的视频")
+                    Text(T("时长 {1} · 点一下换别的视频", splitStamp(sourceDuration)))
                         .font(.caption2)
                         .foregroundStyle(Color.white.opacity(0.5))
                 } else {
-                    Text(isPreparing ? "读取视频中…" : "选择一个视频文件")
+                    Text(isPreparing ? T("读取视频中…") : T("选择一个视频文件"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
-                    Text("只读取，不改动原视频")
+                    Text(T("只读取，不改动原视频"))
                         .font(.caption2)
                         .foregroundStyle(Color.white.opacity(0.5))
                 }
@@ -439,11 +439,11 @@ struct MacVideoSplitView: View {
     private var partsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Label("分成几份", systemImage: "square.split.2x1")
+                Label(T("分成几份"), systemImage: "square.split.2x1")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(Color.white.opacity(0.55))
                 Spacer()
-                Text("最多 \(MacVideoSplitter.maxParts) 份")
+                Text(T("最多 {1} 份", MacVideoSplitter.maxParts))
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.4))
             }
@@ -453,7 +453,7 @@ struct MacVideoSplitView: View {
                     Button {
                         parts = value
                     } label: {
-                        Text("\(value) 份")
+                        Text(T("{1} 份", value))
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(parts == value ? .white : Color.white.opacity(0.7))
                             .frame(maxWidth: .infinity)
@@ -470,12 +470,12 @@ struct MacVideoSplitView: View {
             Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
 
             HStack(spacing: 10) {
-                Text("手动份数")
+                Text(T("手动份数"))
                     .font(.footnote)
                     .foregroundStyle(Color.white.opacity(0.6))
                 Spacer()
                 stepperButton("minus") { parts = max(MacVideoSplitter.minParts, parts - 1) }
-                Text("\(parts) 份")
+                Text(T("{1} 份", parts))
                     .font(.system(size: 14, weight: .semibold).monospacedDigit())
                     .foregroundStyle(.white)
                     .frame(minWidth: 46)
@@ -505,19 +505,19 @@ struct MacVideoSplitView: View {
     private var planCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Label("分段预览", systemImage: "list.number")
+                Label(T("分段预览"), systemImage: "list.number")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(Color.white.opacity(0.55))
                 Spacer()
                 if sourceDuration > 0 {
-                    Text("每段约 \(partDurationText)")
+                    Text(T("每段约 {1}", partDurationText))
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(Color.white.opacity(0.45))
                 }
             }
 
             if sourceURL == nil {
-                Text("先选一个视频，这里会列出切完的每一段。")
+                Text(T("先选一个视频，这里会列出切完的每一段。"))
                     .font(.caption)
                     .foregroundStyle(Color.white.opacity(0.4))
             } else {
@@ -526,7 +526,7 @@ struct MacVideoSplitView: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.caption)
                             .foregroundStyle(MacTheme.accent)
-                        Text("视频长度太短：\(splitStamp(sourceDuration)) 分成 \(parts) 份，每段不到 1 秒。建议去剪辑页面手动编辑。")
+                        Text(T("视频长度太短：{1} 分成 {2} 份，每段不到 1 秒。建议去剪辑页面手动编辑。", splitStamp(sourceDuration), parts))
                             .font(.caption)
                             .foregroundStyle(Color.white.opacity(0.72))
                             .fixedSize(horizontal: false, vertical: true)
@@ -568,10 +568,10 @@ struct MacVideoSplitView: View {
 
     private var noteCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label("说明", systemImage: "info.circle")
+            Label(T("说明"), systemImage: "info.circle")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(Color.white.opacity(0.55))
-            Text("切割按关键帧对齐，个别位置会差一两帧（0.1 秒以内）；每段都会保留原片的画面和声音。切完的文件要「存入视频库」或「导出到文件夹」才会留下来。")
+            Text(T("切割按关键帧对齐，个别位置会差一两帧（0.1 秒以内）；每段都会保留原片的画面和声音。切完的文件要「存入视频库」或「导出到文件夹」才会留下来。"))
                 .font(.caption)
                 .foregroundStyle(Color.white.opacity(0.5))
                 .fixedSize(horizontal: false, vertical: true)
@@ -584,12 +584,12 @@ struct MacVideoSplitView: View {
     private var bottomBar: some View {
         HStack(spacing: 12) {
             if isTooShort {
-                Label("视频太短，不能这么分", systemImage: "exclamationmark.triangle.fill")
+                Label(T("视频太短，不能这么分"), systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(Color.white.opacity(0.6))
             }
             Spacer()
-            Button("开始分割") {
+            Button(T("开始分割")) {
                 begin()
             }
             .buttonStyle(MacSplitAccentButtonStyle())
@@ -628,26 +628,26 @@ struct MacVideoSplitView: View {
                 .onTapGesture {}
 
             VStack(spacing: 14) {
-                Text("分成 \(parts) 段？")
+                Text(T("分成 {1} 段？", parts))
                     .font(.headline)
                     .foregroundStyle(.white)
 
-                Text("时长 \(splitStamp(sourceDuration)) · 每段约 \(partDurationText)")
+                Text(T("时长 {1} · 每段约 {2}", splitStamp(sourceDuration), partDurationText))
                     .font(.footnote)
                     .foregroundStyle(Color.white.opacity(0.55))
 
                 VStack(spacing: 2) {
-                    Text("预计需要")
+                    Text(T("预计需要"))
                         .font(.caption)
                         .foregroundStyle(Color.white.opacity(0.5))
-                    Text(estimateText.isEmpty ? "几秒" : estimateText)
+                    Text(estimateText.isEmpty ? T("几秒") : estimateText)
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(MacTheme.accent)
                         .monospacedDigit()
                 }
                 .frame(maxWidth: .infinity)
 
-                Text("原视频不会被改动，分段先落在临时目录。")
+                Text(T("原视频不会被改动，分段先落在临时目录。"))
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.42))
 
@@ -655,7 +655,7 @@ struct MacVideoSplitView: View {
                     Button {
                         showConfirm = false
                     } label: {
-                        Text("取消")
+                        Text(T("取消"))
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -668,7 +668,7 @@ struct MacVideoSplitView: View {
                         showConfirm = false
                         start()
                     } label: {
-                        Text("开始分割")
+                        Text(T("开始分割"))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -697,7 +697,7 @@ struct MacVideoSplitView: View {
                 ProgressView()
                     .controlSize(.large)
                     .tint(MacTheme.accent)
-                Text("视频分割中 \(Int(progress * 100))%")
+                Text(T("视频分割中 {1}%", Int(progress * 100)))
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(.white)
                     .monospacedDigit()
@@ -709,7 +709,7 @@ struct MacVideoSplitView: View {
                     .frame(width: 280)
                     .tint(MacTheme.accent)
 
-                Button("停止分割") { showCancelAlert = true }
+                Button(T("停止分割")) { showCancelAlert = true }
                     .buttonStyle(.plain)
                     .font(.footnote)
                     .foregroundStyle(Color.white.opacity(0.6))
@@ -723,31 +723,31 @@ struct MacVideoSplitView: View {
     private func resultScreen(_ result: MacSplitResult) -> some View {
         VStack(spacing: 0) {
             header(
-                title: "分割结果",
+                title: T("分割结果"),
                 trailing: AnyView(
                     HStack(spacing: 10) {
-                        Button("存入视频库") {
+                        Button(T("存入视频库")) {
                             saveToLibrary(result)
                         }
                         .buttonStyle(MacSplitAccentButtonStyle())
                         .disabled(isSaving)
-                        Button("导出到文件夹…") {
+                        Button(T("导出到文件夹…")) {
                             exportToFolder(result)
                         }
                         .buttonStyle(.bordered)
                         .disabled(isSaving)
-                        Button("关闭") { closeWindow() }
+                        Button(T("关闭")) { closeWindow() }
                             .buttonStyle(.bordered)
                     }
                 )
             )
 
             HStack(spacing: 10) {
-                infoChip(icon: "square.split.2x1", text: "共 \(result.parts.count) 段")
-                infoChip(icon: "clock", text: "原片 \(result.totalDuration.timecode)")
-                infoChip(icon: "clock.badge.checkmark", text: "每段约 \(partDurationText)")
+                infoChip(icon: "square.split.2x1", text: T("共 {1} 段", result.parts.count))
+                infoChip(icon: "clock", text: T("原片 {1}", result.totalDuration.timecode))
+                infoChip(icon: "clock.badge.checkmark", text: T("每段约 {1}", partDurationText))
                 Spacer()
-                Button("重新分割") {
+                Button(T("重新分割")) {
                     MacVideoSplitter.cleanUp(self.result)
                     self.result = nil
                 }
@@ -802,7 +802,7 @@ struct MacVideoSplitView: View {
                 .background(MacTheme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("第 \(part.index) 段")
+                Text(T("第 {1} 段", part.index))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.white)
                 Text("\(part.timeLabel) · \(part.duration.shortDuration) · \(part.fileSize.fileSizeText)")
@@ -820,7 +820,7 @@ struct MacVideoSplitView: View {
                     .foregroundStyle(Color.white.opacity(0.65))
             }
             .buttonStyle(.plain)
-            .help("预览这一段")
+            .help(T("预览这一段"))
         }
         .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -835,7 +835,7 @@ struct MacVideoSplitView: View {
 
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
-                    Text("第 \(previewPart?.index ?? 1) 段预览")
+                    Text(T("第 {1} 段预览", previewPart?.index ?? 1))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                     Spacer()
@@ -931,7 +931,7 @@ struct MacVideoSplitView: View {
         guard let url = sourceURL else { return }
         isProcessing = true
         progress = 0
-        phaseText = "准备中…"
+        phaseText = T("准备中…")
         runTask = Task {
             do {
                 let res = try await MacVideoSplitter.run(url: url, parts: parts) { value, phase in
@@ -990,27 +990,27 @@ struct MacVideoSplitView: View {
             var saved = 0
             for part in result.parts {
                 guard let url = part.url else { continue }
-                await MainActor.run { phaseText = "正在存入视频库 \(part.index) / \(result.parts.count)" }
+                await MainActor.run { phaseText = T("正在存入视频库 {1} / {2}", part.index, result.parts.count) }
                 do {
                     _ = try await library.importExport(fileURL: url, title: "\(result.baseName) \(part.index)")
                     saved += 1
                 } catch {
-                    await MainActor.run { errorMessage = "第 \(part.index) 段存入失败：\(error.localizedDescription)" }
+                    await MainActor.run { errorMessage = T("第 {1} 段存入失败：{2}", part.index, error.localizedDescription) }
                     break
                 }
             }
             await MainActor.run {
                 isSaving = false
                 phaseText = ""
-                if saved > 0 { showToast("已存入视频库 \(saved) 段") }
+                if saved > 0 { showToast(T("已存入视频库 {1} 段", saved)) }
             }
         }
     }
 
     private func exportToFolder(_ result: MacSplitResult) {
         let panel = NSOpenPanel()
-        panel.title = "选择保存文件夹"
-        panel.prompt = "导出到这里"
+        panel.title = T("选择保存文件夹")
+        panel.prompt = T("导出到这里")
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
@@ -1030,14 +1030,14 @@ struct MacVideoSplitView: View {
                     try FileManager.default.copyItem(at: url, to: dest)
                     exported += 1
                 } catch {
-                    await MainActor.run { errorMessage = "第 \(part.index) 段导出失败：\(error.localizedDescription)" }
+                    await MainActor.run { errorMessage = T("第 {1} 段导出失败：{2}", part.index, error.localizedDescription) }
                     break
                 }
             }
             await MainActor.run {
                 isSaving = false
                 if exported > 0 {
-                    showToast("已导出 \(exported) 个文件")
+                    showToast(T("已导出 {1} 个文件", exported))
                     NSWorkspace.shared.activateFileViewerSelecting([dir])
                 }
             }

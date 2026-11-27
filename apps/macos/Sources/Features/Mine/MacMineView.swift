@@ -20,6 +20,9 @@ struct MacMineView: View {
     /// 本地缓存（缩略图目录）当前占用，进来后每 2 秒刷新一次
     @State private var cacheBytes: Int64 = 0
 
+    // V4.3：语言选择（默认 English，切换后整站文案即时换成对应语言）
+    @ObservedObject private var language = MacLanguageStore.shared
+
     // V4.2：隐私政策 / 用户协议 内置文本页，联系我们走 mailto，评分走 StoreKit
     @State private var showPrivacy = false
     @State private var showTerms = false
@@ -46,12 +49,12 @@ struct MacMineView: View {
             .padding(MacTheme.pagePadding)
         }
         .background(MacTheme.canvas)
-        .navigationTitle("我的")
+        .navigationTitle(T("我的"))
         .sheet(isPresented: $showPrivacy) {
-            MacLegalSheet(title: "隐私政策", bodyText: MacLegal.privacyPolicy)
+            MacLegalSheet(title: T("隐私政策"), bodyText: MacLegal.privacyPolicy)
         }
         .sheet(isPresented: $showTerms) {
-            MacLegalSheet(title: "用户协议", bodyText: MacLegal.terms)
+            MacLegalSheet(title: T("用户协议"), bodyText: MacLegal.terms)
         }
         .overlay(alignment: .bottom) {
             if let toast {
@@ -91,32 +94,32 @@ struct MacMineView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(session.user.nickname).font(.title3.weight(.semibold))
                         Text(session.user.email).font(.caption).foregroundStyle(.secondary)
-                        Text("登录时间 \(session.issuedAt.formatted(date: .abbreviated, time: .shortened))")
+                        Text(T("登录时间 {1}", session.issuedAt.formatted(date: .abbreviated, time: .shortened)))
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
                     Spacer()
-                    Button("退出登录") { auth.logout() }
+                    Button(T("退出登录")) { auth.logout() }
                         .buttonStyle(.bordered)
                 }
             } else {
-                Text("登录后同步你的账号状态").font(.headline)
+                Text(T("登录后同步你的账号状态")).font(.headline)
                 Picker("", selection: $mode) {
-                    Text("登录").tag(Mode.login)
-                    Text("注册").tag(Mode.register)
+                    Text(T("登录")).tag(Mode.login)
+                    Text(T("注册")).tag(Mode.register)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(width: 220)
 
                 if mode == .register {
-                    TextField("昵称（可留空）", text: $nickname)
+                    TextField(T("昵称（可留空）"), text: $nickname)
                         .textFieldStyle(.roundedBorder)
                 }
-                TextField("邮箱", text: $email)
+                TextField(T("邮箱"), text: $email)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 360, alignment: .leading)
-                SecureField("密码（至少 6 位）", text: $password)
+                SecureField(T("密码（至少 6 位）"), text: $password)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 360, alignment: .leading)
 
@@ -139,7 +142,7 @@ struct MacMineView: View {
                         if auth.isBusy {
                             ProgressView().controlSize(.small)
                         } else {
-                            Text(mode == .login ? "登录" : "注册并登录")
+                            Text(mode == .login ? T("登录") : T("注册并登录"))
                         }
                     }
                     .buttonStyle(.borderedProminent)
@@ -147,7 +150,7 @@ struct MacMineView: View {
                     .disabled(email.isEmpty || password.isEmpty || auth.isBusy)
                 }
 
-                Text("当前为本地账号实现（密码加盐哈希 + Keychain 保存登录态），接入后端只需替换 AuthServicing 实现。")
+                Text(T("当前为本地账号实现（密码加盐哈希 + Keychain 保存登录态），接入后端只需替换 AuthServicing 实现。"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -164,14 +167,31 @@ struct MacMineView: View {
 
     private var settingsCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("设置").font(.headline).padding(.bottom, 10)
+            Text(T("设置")).font(.headline).padding(.bottom, 10)
 
-            settingRow("本地缓存") {
+            // V4.3：语言——默认英文，可切中文；切换后整个 App 立即换语言
+            settingRow(T("语言")) {
+                Picker("", selection: Binding(
+                    get: { language.current },
+                    set: { language.set($0) }
+                )) {
+                    ForEach(MacLanguage.allCases) { option in
+                        Text(option.displayName).tag(option)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 190)
+            }
+
+            Divider()
+
+            settingRow(T("本地缓存")) {
                 HStack(spacing: 10) {
                     Text(cacheBytes.fileSizeText)
                         .font(.caption.weight(.semibold).monospacedDigit())
                         .foregroundStyle(.secondary)
-                    Button("清理缓存") {
+                    Button(T("清理缓存")) {
                         library.clearThumbnailCache()
                         MacImageCache.clear()
                         cacheBytes = Self.thumbnailCacheSize()
@@ -182,43 +202,43 @@ struct MacMineView: View {
 
             Divider()
 
-            settingRow("隐私政策") {
-                linkButton("查看") { showPrivacy = true }
+            settingRow(T("隐私政策")) {
+                linkButton(T("查看")) { showPrivacy = true }
             }
 
             Divider()
 
-            settingRow("用户协议") {
-                linkButton("查看") { showTerms = true }
+            settingRow(T("用户协议")) {
+                linkButton(T("查看")) { showTerms = true }
             }
 
             Divider()
 
-            settingRow("联系我们") {
-                linkButton("邮件反馈") { openMail() }
+            settingRow(T("联系我们")) {
+                linkButton(T("邮件反馈")) { openMail() }
             }
 
             Divider()
 
-            settingRow("给 App 评分") {
-                linkButton("去评分") { requestReview() }
+            settingRow(T("给 App 评分")) {
+                linkButton(T("去评分")) { requestReview() }
             }
 
             Divider()
 
-            settingRow("版本号") {
+            settingRow(T("版本号")) {
                 HStack(spacing: 10) {
                     Text(appVersionText)
                         .font(.caption.weight(.semibold).monospacedDigit())
                         .foregroundStyle(.secondary)
-                    linkButton("检查更新") { checkUpdate() }
+                    linkButton(T("检查更新")) { checkUpdate() }
                 }
             }
 
             Divider()
 
-            settingRow("关于 LeogotoPlay") {
-                Text("本地视频管理与剪辑 · macOS")
+            settingRow(T("关于 LeogotoPlay")) {
+                Text(T("本地视频管理与剪辑 · macOS"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -234,13 +254,13 @@ struct MacMineView: View {
     /// V4.0：功能选择——Library / Cut 至少留一个（仿 iOS 的 TabLayoutView）
     private var featureCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("功能选择").font(.headline).padding(.bottom, 4)
-            Text("至少保留一个功能；关掉的那个不会出现在左侧栏。")
+            Text(T("功能选择")).font(.headline).padding(.bottom, 4)
+            Text(T("至少保留一个功能；关掉的那个不会出现在左侧栏。"))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 10)
 
-            settingRow("Library · 视频库") {
+            settingRow(T("Library · 视频库")) {
                 Toggle("", isOn: $showLibrary)
                     .labelsHidden()
                     .toggleStyle(.switch)
@@ -250,7 +270,7 @@ struct MacMineView: View {
 
             Divider()
 
-            settingRow("Cut · 剪辑台") {
+            settingRow(T("Cut · 剪辑台")) {
                 Toggle("", isOn: $showCut)
                     .labelsHidden()
                     .toggleStyle(.switch)
@@ -290,9 +310,9 @@ struct MacMineView: View {
         var comps = URLComponents()
         comps.scheme = "mailto"
         comps.path = MacLegal.contactEmail
-        comps.queryItems = [URLQueryItem(name: "subject", value: "LeogotoPlay 反馈（\(appVersionText)）")]
+        comps.queryItems = [URLQueryItem(name: "subject", value: T("LeogotoPlay 反馈（{1}）", appVersionText))]
         guard let url = comps.url, NSWorkspace.shared.open(url) else {
-            showToast("没有可用的邮件客户端，请直接发到 \(MacLegal.contactEmail)")
+            showToast(T("没有可用的邮件客户端，请直接发到 {1}", MacLegal.contactEmail))
             return
         }
     }
@@ -300,12 +320,12 @@ struct MacMineView: View {
     /// 评分：Debug / 非 App Store 分发时系统不会弹框，兜个提示说明
     private func requestReview() {
         SKStoreReviewController.requestReview()
-        showToast("谢谢支持！如果没弹出评分框，说明当前是开发版，上架 App Store 后才会出现。")
+        showToast(T("谢谢支持！如果没弹出评分框，说明当前是开发版，上架 App Store 后才会出现。"))
     }
 
     /// 暂无更新服务端：本地比对版本，直接告诉用户当前已是最新
     private func checkUpdate() {
-        showToast("当前已是最新版本 \(appVersionText)")
+        showToast(T("当前已是最新版本 {1}", appVersionText))
     }
 
     private func showToast(_ text: String) {
@@ -334,7 +354,10 @@ enum MacLegal {
     /// TODO: 上架前换成正式支持邮箱
     static let contactEmail = "support@leogotoplay.com"
 
-    static let privacyPolicy = """
+    static var privacyPolicy: String { MacLang.current == .zh ? privacyPolicyZH : privacyPolicyEN }
+    static var terms: String { MacLang.current == .zh ? termsZH : termsEN }
+
+    private static let privacyPolicyZH = """
     LeogotoPlay 隐私政策
     更新日期：2026 年 11 月 27 日
 
@@ -358,7 +381,31 @@ enum MacLegal {
     对本政策有任何疑问，请发邮件至 \(contactEmail)。
     """
 
-    static let terms = """
+    private static let privacyPolicyEN = """
+    LeogotoPlay Privacy Policy
+    Last updated: November 27, 2026
+
+    1. What we don't collect
+    Importing, playback, editing, splitting, face blurring and text extraction all run locally on your Mac. We never upload your videos, images or recognized text, and the app bundles no third-party analytics, advertising or tracking SDKs.
+
+    2. Where your data lives
+    · Videos and thumbnails: ~/Library/Application Support/LeogotoPlay/ (you can delete them in the app at any time)
+    · Editing drafts: draft files in the same folder
+    · Intermediate split / blurred outputs: the system temp folder, deleted automatically when the window closes
+    · Account info (local demo implementation): email, nickname and a salted password hash; the session is stored in the macOS Keychain
+
+    3. System permissions
+    · Speech recognition: used only by "Extract Text" for audio transcription; recognition runs on this Mac and audio never leaves the device
+    · File access: only the files and folders you pick via "Import video" or "Export to folder"
+
+    4. Your control
+    Clear the local cache from "Me" in one click; deleting the app removes all local data. Sign out after signing in, or delete the app, to erase account data.
+
+    5. Contact us
+    Questions about this policy? Email \(contactEmail).
+    """
+
+    private static let termsZH = """
     LeogotoPlay 用户协议
     更新日期：2026 年 11 月 27 日
 
@@ -383,6 +430,32 @@ enum MacLegal {
     七、联系方式
     邮件：\(contactEmail)
     """
+
+    private static let termsEN = """
+    LeogotoPlay Terms of Use
+    Last updated: November 27, 2026
+
+    1. The service
+    LeogotoPlay offers a local video library, playback, editing, one-click splitting, face blurring, text extraction and face extraction. Everything runs offline on this Mac.
+
+    2. Media and copyright
+    You must hold the rights to any video or image you import, edit or export. You are responsible for any claim arising from copyright, portrait rights or privacy disputes.
+
+    3. Acceptable use
+    Don't use this tool to create or distribute unlawful content, and don't publish footage of other people without their consent.
+
+    4. Data and backups
+    All processing happens on your device. Clearing the cache, deleting or uninstalling the app removes local data — back up important media yourself.
+
+    5. Disclaimer
+    We are not liable for file damage or data loss caused by device failure, system errors or power loss, although the implementation does its best to avoid interrupted writes.
+
+    6. Changes
+    Updated terms are shown inside the app; continued use means you accept them.
+
+    7. Contact
+    Email: \(contactEmail)
+    """
 }
 
 struct MacLegalSheet: View {
@@ -395,7 +468,7 @@ struct MacLegalSheet: View {
             HStack {
                 Text(title).font(.headline).foregroundStyle(.white)
                 Spacer()
-                Button("完成") { dismiss() }
+                Button(T("完成")) { dismiss() }
                     .buttonStyle(.bordered)
                     .keyboardShortcut(.defaultAction)
             }

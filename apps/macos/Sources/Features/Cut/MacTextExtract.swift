@@ -13,9 +13,16 @@ enum MacTextExtractPrefs {
 }
 
 struct MacExtractedLine: Identifiable {
-    enum Source: String {
-        case screen = "画面文字"
-        case speech = "语音转写"
+    enum Source {
+        case screen
+        case speech
+
+        var title: String {
+            switch self {
+            case .screen: return T("画面文字")
+            case .speech: return T("语音转写")
+            }
+        }
     }
 
     let id = UUID()
@@ -45,7 +52,7 @@ struct MacTextExtractResult {
 
     /// 带时间码的 txt，导出用
     var stampedText: String {
-        lines.map { "[\($0.timeLabel)] \($0.source.rawValue) \($0.text)" }.joined(separator: "\n")
+        lines.map { "[\($0.timeLabel)] \($0.source.title) \($0.text)" }.joined(separator: "\n")
     }
 }
 
@@ -56,9 +63,9 @@ enum MacTextExtractError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noVideoTrack: return "这个视频没有可识别的画面轨道"
-        case .noAudioTrack: return "这个视频没有音轨，无法做声音转文字"
-        case .speechUnavailable(let reason): return "语音识别不可用：\(reason)"
+        case .noVideoTrack: return T("这个视频没有可识别的画面轨道")
+        case .noAudioTrack: return T("这个视频没有音轨，无法做声音转文字")
+        case .speechUnavailable(let reason): return T("语音识别不可用：{1}", reason)
         }
     }
 }
@@ -79,10 +86,10 @@ enum MacTextExtractor {
 
     static func estimateLabel(_ seconds: TimeInterval) -> String {
         let total = Int(seconds.rounded())
-        if total < 60 { return "约 \(total) 秒" }
+        if total < 60 { return T("约 {1} 秒", total) }
         let m = total / 60
         let r = total % 60
-        return r == 0 ? "约 \(m) 分钟" : "约 \(m) 分 \(r) 秒"
+        return r == 0 ? T("约 {1} 分钟", m) : T("约 {1} 分 {2} 秒", m, r)
     }
 
     // MARK: 主流程
@@ -106,7 +113,7 @@ enum MacTextExtractor {
 
         if includeScreen {
             let screen = try await screenLines(url: url, duration: duration, total: framesTotal) { value in
-                onProgress(value * screenWeight, "正在识别画面文字")
+                onProgress(value * screenWeight, T("正在识别画面文字"))
             }
             lines.append(contentsOf: screen)
         }
@@ -114,7 +121,7 @@ enum MacTextExtractor {
         if includeSpeech {
             do {
                 let speech = try await speechLines(url: url, duration: duration, chunks: speechChunks) { value in
-                    onProgress(screenWeight + value * speechWeight, "正在转写声音")
+                    onProgress(screenWeight + value * speechWeight, T("正在转写声音"))
                 }
                 lines.append(contentsOf: speech)
             } catch {
@@ -124,7 +131,7 @@ enum MacTextExtractor {
         }
 
         lines.sort { $0.start == $1.start ? $0.end < $1.end : $0.start < $1.start }
-        onProgress(1.0, "提取完成")
+        onProgress(1.0, T("提取完成"))
         return MacTextExtractResult(lines: lines, warnings: warnings)
     }
 
@@ -273,11 +280,11 @@ enum MacTextExtractor {
         onProgress: @escaping (Double) -> Void
     ) async throws -> [MacExtractedLine] {
         guard await requestSpeechPermission() else {
-            throw MacTextExtractError.speechUnavailable("系统里没有允许语音识别（可在 系统设置 › 隐私与安全性 › 语音识别 里打开）")
+            throw MacTextExtractError.speechUnavailable(T("系统里没有允许语音识别（可在 系统设置 › 隐私与安全性 › 语音识别 里打开）"))
         }
         let candidates = speechCandidates()
         guard let first = candidates.first else {
-            throw MacTextExtractError.speechUnavailable("当前机器没有可用的语音识别语种")
+            throw MacTextExtractError.speechUnavailable(T("当前机器没有可用的语音识别语种"))
         }
 
         let asset = AVURLAsset(url: url)
@@ -379,7 +386,7 @@ enum MacTextExtractor {
         session.outputFileType = .m4a
         await session.export()
         guard session.status == .completed else {
-            throw MacTextExtractError.speechUnavailable(session.error?.localizedDescription ?? "音轨导出失败")
+            throw MacTextExtractError.speechUnavailable(session.error?.localizedDescription ?? T("音轨导出失败"))
         }
         return outputURL
     }
@@ -581,7 +588,7 @@ final class MacTextExtractWindowManager: NSObject, NSWindowDelegate {
         )
         window.isReleasedWhenClosed = false
         window.isRestorable = false
-        window.title = "一键提取文字"
+        window.title = T("一键提取文字")
         window.subtitle = "LeogotoPlay"
         window.minSize = NSSize(width: 820, height: 620)
         window.appearance = NSAppearance(named: .darkAqua)
@@ -621,7 +628,7 @@ struct MacTextExtractView: View {
     @State private var sourceDuration: Double = 0
     @State private var isProcessing = false
     @State private var progress: Double = 0
-    @State private var phaseText = "准备中…"
+    @State private var phaseText = T("准备中…")
     @State private var result: MacTextExtractResult?
     @State private var toast: String?
     @State private var toastToken = 0
@@ -660,19 +667,19 @@ struct MacTextExtractView: View {
             }
         }
         .task { await autoStartIfNeeded() }
-        .alert("提取失败", isPresented: Binding(
+        .alert(T("提取失败"), isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
-            Button("知道了", role: .cancel) { errorMessage = nil }
+            Button(T("知道了"), role: .cancel) { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
         }
-        .alert("停止提取？", isPresented: $showCancelAlert) {
-            Button("停止提取", role: .destructive) { cancelProcessing() }
-            Button("继续", role: .cancel) {}
+        .alert(T("停止提取？"), isPresented: $showCancelAlert) {
+            Button(T("停止提取"), role: .destructive) { cancelProcessing() }
+            Button(T("继续"), role: .cancel) {}
         } message: {
-            Text("已经识别出来的文字会一并丢弃，视频本身不受影响。")
+            Text(T("已经识别出来的文字会一并丢弃，视频本身不受影响。"))
         }
     }
 
@@ -680,7 +687,7 @@ struct MacTextExtractView: View {
 
     private var setupScreen: some View {
         VStack(spacing: 0) {
-            header(title: "一键提取文字", trailing: nil)
+            header(title: T("一键提取文字"), trailing: nil)
 
             ScrollView {
                 VStack(spacing: 16) {
@@ -720,10 +727,10 @@ struct MacTextExtractView: View {
                     .frame(width: 38, height: 38)
                     .background(MacTheme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("把视频里的文字全拿出来")
+                    Text(T("把视频里的文字全拿出来"))
                         .font(.headline)
                         .foregroundStyle(.white)
-                    Text("画面字幕 + 说话内容，一次转成可以复制的文本")
+                    Text(T("画面字幕 + 说话内容，一次转成可以复制的文本"))
                         .font(.caption)
                         .foregroundStyle(Color.white.opacity(0.55))
                 }
@@ -731,9 +738,9 @@ struct MacTextExtractView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                bullet("逐 0.5 秒抽帧，识别画面里出现的字幕与贴片文字")
-                bullet("声音按 30 秒切片转写，分出句子并带上时间码")
-                bullet("两种来源可以只取一种，也可以都要")
+                bullet(T("逐 0.5 秒抽帧，识别画面里出现的字幕与贴片文字"))
+                bullet(T("声音按 30 秒切片转写，分出句子并带上时间码"))
+                bullet(T("两种来源可以只取一种，也可以都要"))
             }
         }
         .padding(16)
@@ -764,10 +771,10 @@ struct MacTextExtractView: View {
                     .foregroundStyle(MacTheme.accent)
                     .frame(width: 54, height: 54)
                     .background(MacTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                Text(isPreparing ? "读取视频中…" : "选择一个视频文件")
+                Text(isPreparing ? T("读取视频中…") : T("选择一个视频文件"))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
-                Text("只做识别，不改动原视频，也不会上传")
+                Text(T("只做识别，不改动原视频，也不会上传"))
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.5))
             }
@@ -786,11 +793,11 @@ struct MacTextExtractView: View {
     private var optionCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Label("提取内容", systemImage: "checklist")
+                Label(T("提取内容"), systemImage: "checklist")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(Color.white.opacity(0.55))
                 Spacer()
-                Text("至少保留一项")
+                Text(T("至少保留一项"))
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.4))
             }
@@ -804,8 +811,8 @@ struct MacTextExtractView: View {
                             includeScreen = value
                         }
                     ),
-                    title: "画面字幕文字",
-                    detail: "识别画面里出现的字幕与贴片文字",
+                    title: T("画面字幕文字"),
+                    detail: T("识别画面里出现的字幕与贴片文字"),
                     symbol: "textformat"
                 )
 
@@ -822,8 +829,8 @@ struct MacTextExtractView: View {
                             includeSpeech = value
                         }
                     ),
-                    title: "声音转文字",
-                    detail: "把说话内容转写出来，带时间码",
+                    title: T("声音转文字"),
+                    detail: T("把说话内容转写出来，带时间码"),
                     symbol: "waveform"
                 )
             }
@@ -831,7 +838,7 @@ struct MacTextExtractView: View {
             .padding(.vertical, 4)
             .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-            Text("这个设置会记在这台 Mac 上，下次进来还是这次的选择。")
+            Text(T("这个设置会记在这台 Mac 上，下次进来还是这次的选择。"))
                 .font(.caption2)
                 .foregroundStyle(Color.white.opacity(0.4))
         }
@@ -869,10 +876,10 @@ struct MacTextExtractView: View {
 
     private var noteCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label("说明", systemImage: "info.circle")
+            Label(T("说明"), systemImage: "info.circle")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(Color.white.opacity(0.55))
-            Text("只认画面里看得见的字，视频自带的独立字幕轨道读不到；音乐、多人抢话、方言会降低声音转写的准确度，结果建议再核对一遍。声音转写要重新导出音轨，长片会等得久一些。")
+            Text(T("只认画面里看得见的字，视频自带的独立字幕轨道读不到；音乐、多人抢话、方言会降低声音转写的准确度，结果建议再核对一遍。声音转写要重新导出音轨，长片会等得久一些。"))
                 .font(.caption)
                 .foregroundStyle(Color.white.opacity(0.5))
                 .fixedSize(horizontal: false, vertical: true)
@@ -891,26 +898,26 @@ struct MacTextExtractView: View {
                 .onTapGesture {}
 
             VStack(spacing: 14) {
-                Text("开始提取？")
+                Text(T("开始提取？"))
                     .font(.headline)
                     .foregroundStyle(.white)
 
-                Text("时长 \(sourceDuration.timecode) · \(optionSummary)")
+                Text(T("时长 {1} · {2}", sourceDuration.timecode, optionSummary))
                     .font(.footnote)
                     .foregroundStyle(Color.white.opacity(0.55))
 
                 VStack(spacing: 2) {
-                    Text("预计需要")
+                    Text(T("预计需要"))
                         .font(.caption)
                         .foregroundStyle(Color.white.opacity(0.5))
-                    Text(estimateText.isEmpty ? "几秒" : estimateText)
+                    Text(estimateText.isEmpty ? T("几秒") : estimateText)
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(MacTheme.accent)
                         .monospacedDigit()
                 }
                 .frame(maxWidth: .infinity)
 
-                Text("声音转写要用系统语音识别，第一次会弹权限请求。")
+                Text(T("声音转写要用系统语音识别，第一次会弹权限请求。"))
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.42))
 
@@ -919,7 +926,7 @@ struct MacTextExtractView: View {
                         showConfirm = false
                         sourceURL = nil
                     } label: {
-                        Text("取消")
+                        Text(T("取消"))
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -932,7 +939,7 @@ struct MacTextExtractView: View {
                         showConfirm = false
                         start()
                     } label: {
-                        Text("开始提取")
+                        Text(T("开始提取"))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -955,10 +962,10 @@ struct MacTextExtractView: View {
 
     private var optionSummary: String {
         switch (includeScreen, includeSpeech) {
-        case (true, true): return "画面 + 声音"
-        case (true, false): return "只取画面文字"
-        case (false, true): return "只转写声音"
-        default: return "画面 + 声音"
+        case (true, true): return T("画面 + 声音")
+        case (true, false): return T("只取画面文字")
+        case (false, true): return T("只转写声音")
+        default: return T("画面 + 声音")
         }
     }
 
@@ -970,7 +977,7 @@ struct MacTextExtractView: View {
                 ProgressView()
                     .controlSize(.large)
                     .tint(MacTheme.accent)
-                Text("文字提取中 \(Int(progress * 100))%")
+                Text(T("文字提取中 {1}%", Int(progress * 100)))
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(.white)
                     .monospacedDigit()
@@ -982,7 +989,7 @@ struct MacTextExtractView: View {
                     .frame(width: 280)
                     .tint(MacTheme.accent)
 
-                Button("停止提取") { showCancelAlert = true }
+                Button(T("停止提取")) { showCancelAlert = true }
                     .buttonStyle(.plain)
                     .font(.footnote)
                     .foregroundStyle(Color.white.opacity(0.6))
@@ -996,31 +1003,31 @@ struct MacTextExtractView: View {
     private func resultScreen(_ result: MacTextExtractResult) -> some View {
         VStack(spacing: 0) {
             header(
-                title: "提取结果",
+                title: T("提取结果"),
                 trailing: AnyView(
                     HStack(spacing: 10) {
-                        Button("复制全部文字") {
+                        Button(T("复制全部文字")) {
                             copyAll(result)
                         }
                         .buttonStyle(MacTextAccentButtonStyle())
                         .disabled(result.lines.isEmpty)
-                        Button("导出 txt…") {
+                        Button(T("导出 txt…")) {
                             exportTxt(result)
                         }
                         .buttonStyle(.bordered)
                         .disabled(result.lines.isEmpty)
-                        Button("关闭") { onClose() }
+                        Button(T("关闭")) { onClose() }
                             .buttonStyle(.bordered)
                     }
                 )
             )
 
             HStack(spacing: 10) {
-                infoChip(icon: "text.alignleft", text: "共 \(result.lines.count) 条")
-                infoChip(icon: "textformat", text: "画面 \(result.screenCount)")
-                infoChip(icon: "waveform", text: "语音 \(result.speechCount)")
+                infoChip(icon: "text.alignleft", text: T("共 {1} 条", result.lines.count))
+                infoChip(icon: "textformat", text: T("画面 {1}", result.screenCount))
+                infoChip(icon: "waveform", text: T("语音 {1}", result.speechCount))
                 Spacer()
-                Button("再提一次") {
+                Button(T("再提一次")) {
                     self.result = nil
                     sourceURL = nil
                 }
@@ -1054,10 +1061,10 @@ struct MacTextExtractView: View {
                     Image(systemName: "text.magnifyingglass")
                         .font(.system(size: 30, weight: .light))
                         .foregroundStyle(Color.white.opacity(0.3))
-                    Text("没提取到文字")
+                    Text(T("没提取到文字"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
-                    Text("这个视频里没有识别到可见的字幕，声音也没转出内容。")
+                    Text(T("这个视频里没有识别到可见的字幕，声音也没转出内容。"))
                         .font(.caption)
                         .foregroundStyle(Color.white.opacity(0.5))
                 }
@@ -1093,7 +1100,7 @@ struct MacTextExtractView: View {
                 Text(line.timeLabel)
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(Color.white.opacity(0.45))
-                Text(line.source.rawValue)
+                Text(line.source.title)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(line.source == .screen ? MacTheme.accent : Color(red: 0.45, green: 0.68, blue: 1))
                     .padding(.horizontal, 6)
@@ -1106,14 +1113,14 @@ struct MacTextExtractView: View {
                 Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(line.text, forType: .string)
-                    showToast("已复制这一条")
+                    showToast(T("已复制这一条"))
                 } label: {
                     Image(systemName: "doc.on.doc")
                         .font(.caption2)
                         .foregroundStyle(Color.white.opacity(0.4))
                 }
                 .buttonStyle(.plain)
-                .help("复制这一条")
+                .help(T("复制这一条"))
             }
             Text(line.text)
                 .font(.system(size: 13))
@@ -1169,7 +1176,7 @@ struct MacTextExtractView: View {
         guard let url = sourceURL else { return }
         isProcessing = true
         progress = 0
-        phaseText = "准备中…"
+        phaseText = T("准备中…")
         runTask = Task {
             do {
                 let res = try await MacTextExtractor.run(
@@ -1207,19 +1214,19 @@ struct MacTextExtractView: View {
     private func copyAll(_ result: MacTextExtractResult) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(result.plainText, forType: .string)
-        showToast("已复制 \(result.lines.count) 条文字")
+        showToast(T("已复制 {1} 条文字", result.lines.count))
     }
 
     private func exportTxt(_ result: MacTextExtractResult) {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "文字提取.txt"
+        panel.nameFieldStringValue = T("文字提取.txt")
         panel.canCreateDirectories = true
-        panel.title = "导出文字"
-        panel.prompt = "导出"
+        panel.title = T("导出文字")
+        panel.prompt = T("导出")
         guard panel.runModal() == .OK, let dest = panel.url else { return }
         do {
             try result.stampedText.write(to: dest, atomically: true, encoding: .utf8)
-            showToast("已导出到 \(dest.lastPathComponent)")
+            showToast(T("已导出到 {1}", dest.lastPathComponent))
             NSWorkspace.shared.activateFileViewerSelecting([dest])
         } catch {
             errorMessage = error.localizedDescription

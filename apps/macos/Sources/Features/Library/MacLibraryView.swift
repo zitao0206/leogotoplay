@@ -58,12 +58,12 @@ struct MacLibraryView: View {
     var body: some View {
         decorated
             .sheet(item: $renameVideoTarget) { item in
-                MacRenameSheet(title: "重命名视频", currentName: item.title) { newName in
+                MacRenameSheet(title: T("重命名视频"), currentName: item.title) { newName in
                     library.renameVideo(item.id, to: newName)
                 }
             }
             .sheet(item: $renameFolderTarget) { folder in
-                MacRenameSheet(title: "重命名文件夹", currentName: folder.name) { newName in
+                MacRenameSheet(title: T("重命名文件夹"), currentName: folder.name) { newName in
                     library.renameFolder(folder.id, to: newName)
                 }
             }
@@ -76,11 +76,11 @@ struct MacLibraryView: View {
                 MacMoveSheet(
                     folders: library.folders.filter { $0.id != folder.id },
                     currentFolderID: folder.parentID,
-                    rootTitle: "根目录",
-                    title: "移动文件夹"
+                    rootTitle: T("根目录"),
+                    title: T("移动文件夹")
                 ) { parentID in
                     library.moveFolder(folder.id, to: parentID)
-                    showToast("已移动文件夹「\(folder.name)」")
+                    showToast(T("已移动文件夹「{1}」", folder.name))
                 }
             }
             .sheet(item: $deleteFolderTarget) { folder in
@@ -89,17 +89,17 @@ struct MacLibraryView: View {
                     videoCount: library.videoCount(in: folder.id)
                 ) {
                     library.deleteFolder(folder.id, deleteVideos: true)
-                    showToast("已删除文件夹「\(folder.name)」及其中的视频")
+                    showToast(T("已删除文件夹「{1}」及其中的视频", folder.name))
                 } onKeepVideos: {
                     library.deleteFolder(folder.id, deleteVideos: false)
-                    showToast("已删除文件夹「\(folder.name)」，视频已移到根目录")
+                    showToast(T("已删除文件夹「{1}」，视频已移到根目录", folder.name))
                 }
             }
             .sheet(isPresented: $showNewFolder) {
                 MacNewFolderSheet { name in
                     // 在子文件夹里新建 → 建在当前文件夹下；首页新建 → 建在根目录
                     _ = library.createFolder(named: name, parentID: openFolderID)
-                    showToast("已创建文件夹「\(name)」")
+                    showToast(T("已创建文件夹「{1}」", name))
                 }
             }
             .overlay { videoActionsPanel }
@@ -131,11 +131,11 @@ struct MacLibraryView: View {
                     Button {
                         openSearch()
                     } label: {
-                        Label("搜索", systemImage: "magnifyingglass")
+                        Label(T("搜索"), systemImage: "magnifyingglass")
                     }
-                    .help("搜索视频库视频")
+                    .help(T("搜索视频库视频"))
                     PhotosPicker(selection: $photoPickerItem, matching: .videos) {
-                        Label("从相册导入", systemImage: "photo.on.rectangle")
+                        Label(T("从相册导入"), systemImage: "photo.on.rectangle")
                     }
                     .buttonStyle(MacAccentToolbarButtonStyle())
                     Button {
@@ -143,13 +143,13 @@ struct MacLibraryView: View {
                             Task { await importFile(url) }
                         }
                     } label: {
-                        Label("导入视频", systemImage: "plus")
+                        Label(T("导入视频"), systemImage: "plus")
                     }
                     .buttonStyle(MacAccentToolbarButtonStyle())
                     Button {
                         showNewFolder = true
                     } label: {
-                        Label("新建文件夹", systemImage: "folder.badge.plus")
+                        Label(T("新建文件夹"), systemImage: "folder.badge.plus")
                     }
                     .buttonStyle(MacAccentToolbarButtonStyle())
                     }
@@ -220,13 +220,13 @@ struct MacLibraryView: View {
                     Image(systemName: "chevron.left")
                 }
                 .buttonStyle(.bordered)
-                .help("返回视频库")
+                .help(T("返回视频库"))
 
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 12))
                         .foregroundStyle(Color.white.opacity(0.5))
-                    TextField("搜索视频标题", text: $searchText)
+                    TextField(T("搜索视频标题"), text: $searchText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .focused($searchFieldFocused)
@@ -240,7 +240,7 @@ struct MacLibraryView: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(Color.white.opacity(0.45))
-                        .help("清空")
+                        .help(T("清空"))
                     }
                 }
                 .padding(.horizontal, 10)
@@ -254,7 +254,7 @@ struct MacLibraryView: View {
                 Spacer()
 
                 if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text("\(searchResults.count) 个结果")
+                    Text(T("{1} 个结果", searchResults.count))
                         .font(.caption)
                         .foregroundStyle(Color.white.opacity(0.5))
                 }
@@ -278,15 +278,15 @@ struct MacLibraryView: View {
         if keyword.isEmpty {
             MacEmptyStateView(
                 symbol: "text.magnifyingglass",
-                title: "搜索视频库里的视频",
-                message: "输入片名关键词即可，文件夹里的视频也能搜到。"
+                title: T("搜索视频库里的视频"),
+                message: T("输入片名关键词即可，文件夹里的视频也能搜到。")
             )
             .frame(height: 320)
         } else if searchResults.isEmpty {
             MacEmptyStateView(
                 symbol: "magnifyingglass",
-                title: "没有找到匹配的视频",
-                message: "没有标题包含「\(keyword)」的视频，换个关键词或检查拼写。"
+                title: T("没有找到匹配的视频"),
+                message: T("没有标题包含「{1}」的视频，换个关键词或检查拼写。", keyword)
             )
             .frame(height: 320)
         } else {
@@ -299,7 +299,7 @@ struct MacLibraryView: View {
     }
 
     private func searchResultRow(_ item: VideoItem) -> some View {
-        let folderName = item.folderID.flatMap { library.folder(with: $0)?.name } ?? "根目录"
+        let folderName = item.folderID.flatMap { library.folder(with: $0)?.name } ?? T("根目录")
         let meta = "\(folderName) · \(item.fileSize.fileSizeText) · \(item.duration.timecode)"
         return Button {
             play(item)
@@ -337,7 +337,7 @@ struct MacLibraryView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("单击播放")
+        .help(T("单击播放"))
     }
 
     // MARK: - 头部
@@ -351,7 +351,7 @@ struct MacLibraryView: View {
                     Image(systemName: "chevron.left")
                 }
                 .buttonStyle(.bordered)
-                .help("返回视频库")
+                .help(T("返回视频库"))
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(currentFolder?.name ?? "Library")
@@ -359,7 +359,7 @@ struct MacLibraryView: View {
                 // 文件位置只在首页（未进入子文件夹）显示
                 if openFolderID == nil {
                     HStack(spacing: 6) {
-                        Text("文件位置：\(VideoFileStore.shared.mediaDirectory.path)")
+                        Text(T("文件位置：{1}", VideoFileStore.shared.mediaDirectory.path))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -373,10 +373,10 @@ struct MacLibraryView: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
-                        .help("复制文件夹路径")
+                        .help(T("复制文件夹路径"))
                     }
                 } else {
-                    Text("\(displayedVideos.count) 个视频 · \(displayedSize)")
+                    Text(T("{1} 个视频 · {2}", displayedVideos.count, displayedSize))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -389,11 +389,11 @@ struct MacLibraryView: View {
 
     private var statsBar: some View {
         HStack(spacing: 0) {
-            statItem(value: "\(library.videos.count)", title: "视频")
+            statItem(value: "\(library.videos.count)", title: T("视频"))
             Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1, height: 26)
-            statItem(value: library.totalSize.fileSizeText, title: "占用空间")
+            statItem(value: library.totalSize.fileSizeText, title: T("占用空间"))
             Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1, height: 26)
-            statItem(value: library.totalDuration.timecode, title: "总时长")
+            statItem(value: library.totalDuration.timecode, title: T("总时长"))
         }
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity)
@@ -425,12 +425,12 @@ struct MacLibraryView: View {
         let children = library.subfolders(in: openFolderID)
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("文件夹").font(.system(size: 17, weight: .semibold))
-                Text("\(children.count) 个文件夹")
+                Text(T("文件夹")).font(.system(size: 17, weight: .semibold))
+                Text(T("{1} 个文件夹", children.count))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("新建") { showNewFolder = true }
+                Button(T("新建")) { showNewFolder = true }
                     .buttonStyle(.link)
             }
 
@@ -440,7 +440,7 @@ struct MacLibraryView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "folder.badge.plus").foregroundStyle(MacTheme.accent)
-                        Text("在当前文件夹下新建一个子文件夹")
+                        Text(T("在当前文件夹下新建一个子文件夹"))
                             .font(.callout)
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -463,10 +463,10 @@ struct MacLibraryView: View {
                             onLongPress: { showFolderActionsPanel(for: folder) }
                         )
                         .contextMenu {
-                            Button("打开") { openFolderID = folder.id }
-                            Button("重命名") { renameFolderTarget = folder }
+                            Button(T("打开")) { openFolderID = folder.id }
+                            Button(T("重命名")) { renameFolderTarget = folder }
                             Divider()
-                            Button("删除…") { deleteFolderTarget = folder }
+                            Button(T("删除…")) { deleteFolderTarget = folder }
                         }
                     }
                 }
@@ -479,12 +479,12 @@ struct MacLibraryView: View {
     private var folderSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("文件夹").font(.system(size: 17, weight: .semibold))
-                Text("\(library.subfolders(in: nil).count) 个文件夹")
+                Text(T("文件夹")).font(.system(size: 17, weight: .semibold))
+                Text(T("{1} 个文件夹", library.subfolders(in: nil).count))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("新建") { showNewFolder = true }
+                Button(T("新建")) { showNewFolder = true }
                     .buttonStyle(.link)
             }
 
@@ -494,7 +494,7 @@ struct MacLibraryView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "folder.badge.plus").foregroundStyle(MacTheme.accent)
-                        Text("新建第一个文件夹，把视频分类管理")
+                        Text(T("新建第一个文件夹，把视频分类管理"))
                             .font(.callout)
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -518,10 +518,10 @@ struct MacLibraryView: View {
                             onLongPress: { showFolderActionsPanel(for: folder) }
                         )
                         .contextMenu {
-                            Button("打开") { openFolderID = folder.id }
-                            Button("重命名") { renameFolderTarget = folder }
+                            Button(T("打开")) { openFolderID = folder.id }
+                            Button(T("重命名")) { renameFolderTarget = folder }
                             Divider()
-                            Button("删除…") { deleteFolderTarget = folder }
+                            Button(T("删除…")) { deleteFolderTarget = folder }
                         }
                     }
                 }
@@ -534,32 +534,32 @@ struct MacLibraryView: View {
     private var videoSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("视频")
+                Text(T("视频"))
                     .font(.system(size: 17, weight: .semibold))
                 if !displayedVideos.isEmpty {
-                    Text("\(displayedVideos.count) 个 · \(displayedSize)")
+                    Text(T("{1} 个 · {2}", displayedVideos.count, displayedSize))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
                 if !displayedVideos.isEmpty {
-                    Picker("布局", selection: $videoLayout) {
+                    Picker(T("布局"), selection: $videoLayout) {
                         Image(systemName: "square.grid.2x2").tag("grid")
                         Image(systemName: "list.bullet").tag("list")
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
                     .frame(width: 88)
-                    .help("切换宫格 / 列表")
+                    .help(T("切换宫格 / 列表"))
                 }
             }
 
             if displayedVideos.isEmpty {
                 MacEmptyStateView(
                     symbol: "film.stack",
-                    title: openFolderID == nil ? "还没有视频" : "这个文件夹还是空的",
-                    message: "支持从本地文件、系统相册导入；导入后即可播放、剪辑、分文件夹管理。",
-                    actionTitle: "从本地导入",
+                    title: openFolderID == nil ? T("还没有视频") : T("这个文件夹还是空的"),
+                    message: T("支持从本地文件、系统相册导入；导入后即可播放、剪辑、分文件夹管理。"),
+                    actionTitle: T("从本地导入"),
                     action: {
                         if let url = MacAlerts.chooseVideoFile() {
                             Task { await importFile(url) }
@@ -635,15 +635,15 @@ struct MacLibraryView: View {
 
                     Divider().overlay(Color.white.opacity(0.08))
 
-                    MacActionPanelRow(title: "重命名", systemImage: "pencil") {
+                    MacActionPanelRow(title: T("重命名"), systemImage: "pencil") {
                         dismissFolderActions()
                         renameFolderTarget = folder
                     }
-                    MacActionPanelRow(title: "移动", systemImage: "folder") {
+                    MacActionPanelRow(title: T("移动"), systemImage: "folder") {
                         dismissFolderActions()
                         moveFolderTarget = folder
                     }
-                    MacActionPanelRow(title: "删除", systemImage: "trash", isDestructive: true) {
+                    MacActionPanelRow(title: T("删除"), systemImage: "trash", isDestructive: true) {
                         dismissFolderActions()
                         deleteFolderTarget = folder
                     }
@@ -687,7 +687,7 @@ struct MacLibraryView: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(VideoFileStore.shared.mediaDirectory.path, forType: .string)
-        showToast("路径已复制")
+        showToast(T("路径已复制"))
     }
 
     /// 长按 / 右键弹出的四项操作面板
@@ -711,19 +711,19 @@ struct MacLibraryView: View {
 
                     Divider().overlay(Color.white.opacity(0.08))
 
-                    MacActionPanelRow(title: "播放", systemImage: "play.fill") {
+                    MacActionPanelRow(title: T("播放"), systemImage: "play.fill") {
                         dismissActions()
                         play(item)
                     }
-                    MacActionPanelRow(title: "重命名", systemImage: "pencil") {
+                    MacActionPanelRow(title: T("重命名"), systemImage: "pencil") {
                         dismissActions()
                         renameVideoTarget = item
                     }
-                    MacActionPanelRow(title: "移动到文件夹", systemImage: "folder") {
+                    MacActionPanelRow(title: T("移动到文件夹"), systemImage: "folder") {
                         dismissActions()
                         moveVideoTarget = item
                     }
-                    MacActionPanelRow(title: "删除", systemImage: "trash", isDestructive: true) {
+                    MacActionPanelRow(title: T("删除"), systemImage: "trash", isDestructive: true) {
                         dismissActions()
                         confirmDelete(item)
                     }
@@ -744,16 +744,16 @@ struct MacLibraryView: View {
 
     @ViewBuilder
     private func videoMenuActions(for item: VideoItem) -> some View {
-        Button("播放") { play(item) }
-        Button("重命名") { renameVideoTarget = item }
-        Button("删除", role: .destructive) { confirmDelete(item) }
-        Button("移动到文件夹") { moveVideoTarget = item }
+        Button(T("播放")) { play(item) }
+        Button(T("重命名")) { renameVideoTarget = item }
+        Button(T("删除"), role: .destructive) { confirmDelete(item) }
+        Button(T("移动到文件夹")) { moveVideoTarget = item }
     }
 
     private func confirmDelete(_ item: VideoItem) {
         guard MacAlerts.confirmDelete(
-            title: "删除「\(item.title)」？",
-            message: "视频文件会从视频库中移除，且不可恢复。"
+            title: T("删除「{1}」？", item.title),
+            message: T("视频文件会从视频库中移除，且不可恢复。")
         ) else { return }
         library.deleteVideo(item.id)
     }
@@ -792,7 +792,7 @@ struct MacLibraryView: View {
             suggestedTitle: suggestedTitle
         )
         VideoImporter.cleanTemporaryFile(at: temp)
-        showToast("已导入「\(item.title)」")
+        showToast(T("已导入「{1}」", item.title))
     }
 }
 

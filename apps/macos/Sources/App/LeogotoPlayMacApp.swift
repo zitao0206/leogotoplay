@@ -42,7 +42,7 @@ struct LeogotoPlayMacApp: App {
         .defaultSize(width: 1180, height: 760)
         .commands {
             CommandGroup(after: .newItem) {
-                Button("导入视频…") {
+                Button(T("导入视频…")) {
                     NotificationCenter.default.post(name: .macImportVideo, object: nil)
                 }
                 .keyboardShortcut("i", modifiers: [.command, .shift])

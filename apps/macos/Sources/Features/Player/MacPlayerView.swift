@@ -276,7 +276,7 @@ struct MacPlayerView: View {
     private var pinButton: some View {
         HStack(spacing: 6) {
             if pinHovering && pinVisible {
-                Text(isPinned ? "取消最前" : "在最前")
+                Text(isPinned ? T("取消最前") : T("在最前"))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 9)
@@ -485,16 +485,16 @@ struct MacPlayerView: View {
 
                 Spacer(minLength: 0)
 
-                transportButton("backward.end.fill", size: 15, tip: "上一个") { step(by: -1) }
-                transportButton(isPlaying ? "pause.fill" : "play.fill", size: 20, tip: isPlaying ? "暂停" : "播放") {
+                transportButton("backward.end.fill", size: 15, tip: T("上一个")) { step(by: -1) }
+                transportButton(isPlaying ? "pause.fill" : "play.fill", size: 20, tip: isPlaying ? T("暂停") : T("播放")) {
                     isPlaying ? pause() : play()
                 }
                 .keyboardShortcut(.space, modifiers: [])
-                transportButton("forward.end.fill", size: 15, tip: "下一个") { step(by: 1) }
+                transportButton("forward.end.fill", size: 15, tip: T("下一个")) { step(by: 1) }
 
                 Spacer(minLength: 0)
 
-                transportButton("camera", size: 15, tip: "截取当前帧") { captureFrame() }
+                transportButton("camera", size: 15, tip: T("截取当前帧")) { captureFrame() }
 
                 Button {
                     showSettings.toggle()
@@ -504,7 +504,7 @@ struct MacPlayerView: View {
                         .foregroundStyle(showSettings ? MacTheme.accent : .white.opacity(0.9))
                 }
                 .buttonStyle(.plain)
-                .help("播放设置")
+                .help(T("播放设置"))
 
                 Button {
                     showPlaylist.toggle()
@@ -514,7 +514,7 @@ struct MacPlayerView: View {
                         .foregroundStyle(showPlaylist ? MacTheme.accent : .white.opacity(0.9))
                 }
                 .buttonStyle(.plain)
-                .help("播放列表")
+                .help(T("播放列表"))
             }
 
             HStack(spacing: 10) {
@@ -580,10 +580,10 @@ struct MacPlayerView: View {
     private var settingsPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("速度")
+                Text(T("速度"))
                     .font(.system(size: 15, weight: .semibold))
                 Spacer()
-                Text(String(format: "%.1f 倍", rate))
+                Text(String(format: T("%.1f 倍"), rate))
                     .font(.system(size: 14))
                     .foregroundStyle(.white.opacity(0.85))
             }
@@ -612,7 +612,7 @@ struct MacPlayerView: View {
             Divider().opacity(0.25)
 
             Toggle(isOn: $autoLoop) {
-                Text("循环播放")
+                Text(T("循环播放"))
                     .font(.system(size: 15, weight: .semibold))
             }
             .toggleStyle(.switch)
@@ -621,16 +621,16 @@ struct MacPlayerView: View {
 
             Divider().opacity(0.25)
 
-            Text("旋转")
+            Text(T("旋转"))
                 .font(.system(size: 15, weight: .semibold))
                 .padding(.top, 12)
                 .padding(.bottom, 10)
 
             HStack(spacing: 10) {
-                rotationButton("arrow.counterclockwise", tip: "向左旋转") { rotate(by: -90) }
-                rotationButton("arrow.clockwise", tip: "向右旋转") { rotate(by: 90) }
-                rotationButton("arrow.left.and.right", tip: "水平翻转", active: flipH) { flipH.toggle() }
-                rotationButton("arrow.up.and.down", tip: "垂直翻转", active: flipV) { flipV.toggle() }
+                rotationButton("arrow.counterclockwise", tip: T("向左旋转")) { rotate(by: -90) }
+                rotationButton("arrow.clockwise", tip: T("向右旋转")) { rotate(by: 90) }
+                rotationButton("arrow.left.and.right", tip: T("水平翻转"), active: flipH) { flipH.toggle() }
+                rotationButton("arrow.up.and.down", tip: T("垂直翻转"), active: flipV) { flipV.toggle() }
             }
             .padding(.bottom, 12)
 
@@ -641,7 +641,7 @@ struct MacPlayerView: View {
                 Button {
                     resetTransform()
                 } label: {
-                    Text("重置")
+                    Text(T("重置"))
                         .font(.system(size: 13))
                         .foregroundStyle(.white.opacity(0.55))
                 }
@@ -695,7 +695,7 @@ struct MacPlayerView: View {
         let items = playlistItems
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Text("播放列表")
+                Text(T("播放列表"))
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
                 Text("\(items.count)")
@@ -921,17 +921,17 @@ struct MacPlayerView: View {
 
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyyMMdd-HHmmss"
-            let name = "截图-\(formatter.string(from: Date())).png"
+            let name = T("截图-{1}.png", formatter.string(from: Date()))
             let directory = FileManager.default
                 .urls(for: .picturesDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("LeogotoPlay", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let url = directory.appendingPathComponent(name)
             try data.write(to: url)
-            toast = "已保存到 图片/LeogotoPlay/\(name)"
+            toast = T("已保存到 图片/LeogotoPlay/{1}", name)
             dismissToast()
         } catch {
-            toast = "截帧失败：\(error.localizedDescription)"
+            toast = T("截帧失败：{1}", error.localizedDescription)
             dismissToast()
         }
     }

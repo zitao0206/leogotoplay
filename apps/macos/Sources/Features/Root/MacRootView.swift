@@ -21,9 +21,9 @@ enum MacSection: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .cut: return "剪辑台"
-        case .library: return "视频库"
-        case .mine: return "我的"
+        case .cut: return T("剪辑台")
+        case .library: return T("视频库")
+        case .mine: return MacLang.current == .zh ? "我的" : "Account"
         }
     }
 
@@ -52,11 +52,24 @@ enum MacTabPrefs {
 
 struct MacRootView: View {
     @EnvironmentObject private var library: LibraryStore
+    // V4.3：语言一变，侧栏与详情一起换文案（详情靠 .id 重建，侧栏随 body 重算）
+    @ObservedObject private var language = MacLanguageStore.shared
 
-    @State private var selection: MacSection? = MacRootView.initialSection()
+    /// V4.3：当前分区持久化，语言切换重建根视图后仍停在原来的分区
+    @AppStorage("tab.selected") private var selectedRaw: String = MacRootView.initialSection().rawValue
 
     @AppStorage(MacTabPrefs.showListKey) private var showList = true
     @AppStorage(MacTabPrefs.showCutKey) private var showCut = true
+
+    init() {
+        #if DEBUG
+        // 启动参数 -startSection cut|library|mine：截图/调试直达分区
+        if let raw = UserDefaults.standard.string(forKey: "startSection"),
+           MacSection(rawValue: raw) != nil {
+            UserDefaults.standard.set(raw, forKey: "tab.selected")
+        }
+        #endif
+    }
 
     /// 默认进「视频库」；Debug 下可用启动参数 `-startSection cut` 直达某个分区，方便截图与调试。
     private static func initialSection() -> MacSection {
@@ -69,6 +82,20 @@ struct MacRootView: View {
         return .library
     }
 
+    private var selection: MacSection {
+        guard let section = MacSection(rawValue: selectedRaw), section.isVisible else {
+            return visibleSections.first ?? .mine
+        }
+        return section
+    }
+
+    private var selectionBinding: Binding<MacSection?> {
+        Binding(
+            get: { MacSection(rawValue: selectedRaw) ?? .library },
+            set: { selectedRaw = ($0 ?? .library).rawValue }
+        )
+    }
+
     /// 侧栏实际展示的分区：Mine 恒显，Library / Cut 受「功能选择」控制
     private var visibleSections: [MacSection] {
         MacSection.allCases.filter { $0.isVisible }
@@ -76,7 +103,7 @@ struct MacRootView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $selection) {
+            List(selection: selectionBinding) {
                 Section {
                     ForEach(visibleSections) { section in
                         Label {
@@ -104,7 +131,7 @@ struct MacRootView: View {
             .background(MacTheme.canvas)
             .safeAreaInset(edge: .bottom) {
                 // V1.0：这里原来显示账号名（登录状态），已去掉，只留视频库统计。
-                Text("\(library.videos.count) 个视频 · \(library.totalSize.fileSizeText)")
+                Text(T("{1} 个视频 · {2}", library.videos.count, library.totalSize.fileSizeText))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -114,6 +141,7 @@ struct MacRootView: View {
             }
         } detail: {
             detail
+                .id(language.current)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear { reconcileSelection() }
@@ -123,13 +151,13 @@ struct MacRootView: View {
 
     /// 当前分区被用户在「功能选择」里关掉时，自动跳到还留着的那一个
     private func reconcileSelection() {
-        if let current = selection, current.isVisible { return }
-        selection = visibleSections.first ?? .mine
+        if let current = MacSection(rawValue: selectedRaw), current.isVisible { return }
+        selectedRaw = (visibleSections.first ?? .mine).rawValue
     }
 
     @ViewBuilder
     private var detail: some View {
-        switch selection ?? .library {
+        switch selection {
         case .cut:
             MacCutView()
         case .library:

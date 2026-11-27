@@ -37,12 +37,12 @@ extension Color {
 extension Double {
     /// 秒 -> 带小数的短时长：6.7 秒 / 2 分 13 秒
     var shortDuration: String {
-        guard isFinite, self >= 0 else { return "0 秒" }
-        if self < 60 { return String(format: "%.1f 秒", self) }
+        guard isFinite, self >= 0 else { return T("0 秒") }
+        if self < 60 { return String(format: T("%.1f 秒"), self) }
         let total = Int(rounded())
         let m = total / 60
         let s = total % 60
-        return s == 0 ? "\(m) 分钟" : "\(m) 分 \(s) 秒"
+        return s == 0 ? T("{1} 分钟", m) : T("{1} 分 {2} 秒", m, s)
     }
 
     /// 秒 -> "01:23" / "1:02:03"

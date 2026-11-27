@@ -145,7 +145,7 @@ struct MacVideoCard<MenuContent: View>: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: MacTheme.cardRadius, style: .continuous))
         }
-        .help("单击播放，右键更多操作")
+        .help(T("单击播放，右键更多操作"))
     }
 }
 
@@ -184,7 +184,7 @@ struct MacFolderCard: View {
             }
             .frame(height: 56)
 
-            Text("\(videoCount) 个视频")
+            Text(T("{1} 个视频", videoCount))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -200,7 +200,7 @@ struct MacFolderCard: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(count: 2, perform: onOpen)
-        .help("双击打开文件夹")
+        .help(T("双击打开文件夹"))
     }
 }
 
@@ -243,7 +243,7 @@ enum MacAlerts {
     @MainActor
     static func chooseSaveURL(suggestedName: String) -> URL? {
         let panel = NSSavePanel()
-        panel.title = "保存导出视频"
+        panel.title = T("保存导出视频")
         panel.nameFieldStringValue = suggestedName
         panel.canCreateDirectories = true
         panel.allowedContentTypes = [.mpeg4Movie]
@@ -254,7 +254,7 @@ enum MacAlerts {
     @MainActor
     static func chooseVideoFile() -> URL? {
         let panel = NSOpenPanel()
-        panel.title = "选择要导入的视频"
+        panel.title = T("选择要导入的视频")
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.movie, .mpeg4Movie, .quickTimeMovie]
@@ -266,8 +266,8 @@ enum MacAlerts {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
-        alert.addButton(withTitle: "删除")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: T("删除"))
+        alert.addButton(withTitle: T("取消"))
         alert.alertStyle = .warning
         return alert.runModal() == .alertFirstButtonReturn
     }
@@ -298,8 +298,8 @@ struct MacFolderRow: View {
 
     private var detail: String {
         subfolderCount > 0
-        ? "\(videoCount) 个视频 · \(subfolderCount) 个文件夹"
-        : "\(videoCount) 个视频"
+        ? T("{1} 个视频 · {2} 个文件夹", videoCount, subfolderCount)
+        : T("{1} 个视频", videoCount)
     }
 
     var body: some View {

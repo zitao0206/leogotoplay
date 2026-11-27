@@ -30,11 +30,11 @@ enum MacFaceExtractError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noVideoTrack: return "这个文件里没有视频画面"
-        case .noFaceFound: return "整段视频没有检测到清晰的人脸"
-        case .readerFailed(let reason): return "读取视频失败：\(reason)"
-        case .saveFailed(let reason): return "保存失败：\(reason)"
-        case .cancelled: return "已取消"
+        case .noVideoTrack: return T("这个文件里没有视频画面")
+        case .noFaceFound: return T("整段视频没有检测到清晰的人脸")
+        case .readerFailed(let reason): return T("读取视频失败：{1}", reason)
+        case .saveFailed(let reason): return T("保存失败：{1}", reason)
+        case .cancelled: return T("已取消")
         }
     }
 }
@@ -70,10 +70,10 @@ enum MacFaceExtractor {
         let interval: Double
 
         var summary: String {
-            let intervalText = "每 \(Int(interval)) 秒 1 帧"
+            let intervalText = T("每 {1} 秒 1 帧", Int(interval))
             return duration > 0
-                ? "视频 \(duration.timecode) · \(intervalText) · \(frames) 帧"
-                : "\(intervalText) · \(frames) 帧"
+                ? T("视频 {1} · {2} · {3} 帧", duration.timecode, intervalText, frames)
+                : T("{1} · {2} 帧", intervalText, frames)
         }
 
         var durationLabel: String { MacFaceExtractor.estimateLabel(seconds) }
@@ -92,11 +92,11 @@ enum MacFaceExtractor {
     }
 
     static func estimateLabel(_ seconds: Double) -> String {
-        if seconds < 60 { return "约 \(Int(seconds.rounded(.up))) 秒" }
+        if seconds < 60 { return T("约 {1} 秒", Int(seconds.rounded(.up))) }
         let minutes = Int(seconds) / 60
         let rest = Int(seconds) % 60
-        if rest == 0 { return "约 \(minutes) 分钟" }
-        return "约 \(minutes) 分 \(rest) 秒"
+        if rest == 0 { return T("约 {1} 分钟", minutes) }
+        return T("约 {1} 分 {2} 秒", minutes, rest)
     }
 
     private static func probeSecondsPerFrame(url: URL) async -> Double? {
@@ -188,11 +188,11 @@ enum MacFaceExtractor {
         ])
         output.alwaysCopiesSampleData = false
         guard reader.canAdd(output) else {
-            throw MacFaceExtractError.readerFailed("无法读取视频轨道")
+            throw MacFaceExtractError.readerFailed(T("无法读取视频轨道"))
         }
         reader.add(output)
         guard reader.startReading() else {
-            throw MacFaceExtractError.readerFailed(reader.error?.localizedDescription ?? "无法开始读取")
+            throw MacFaceExtractError.readerFailed(reader.error?.localizedDescription ?? T("无法开始读取"))
         }
 
         let interval = clamp(frameInterval, 1, 10)
@@ -258,7 +258,7 @@ enum MacFaceExtractor {
         }
 
         if reader.status == .failed {
-            throw MacFaceExtractError.readerFailed(reader.error?.localizedDescription ?? "读取中断")
+            throw MacFaceExtractError.readerFailed(reader.error?.localizedDescription ?? T("读取中断"))
         }
         guard !faces.isEmpty else { throw MacFaceExtractError.noFaceFound }
 
@@ -285,7 +285,7 @@ enum MacFaceExtractor {
                 throw MacFaceExtractError.saveFailed(error.localizedDescription)
             }
         }
-        guard written > 0 else { throw MacFaceExtractError.saveFailed("没有可保存的图片") }
+        guard written > 0 else { throw MacFaceExtractError.saveFailed(T("没有可保存的图片")) }
         return written
     }
 
@@ -468,7 +468,7 @@ final class MacFaceExtractWindowManager: NSObject, NSWindowDelegate {
         )
         window.isReleasedWhenClosed = false
         window.isRestorable = false
-        window.title = "一键提取人脸"
+        window.title = T("一键提取人脸")
         window.subtitle = "LeogotoPlay"
         window.minSize = NSSize(width: 860, height: 620)
         window.appearance = NSAppearance(named: .darkAqua)
@@ -549,20 +549,20 @@ struct MacFaceExtractView: View {
                 }
             }
         }
-        .alert("提取失败", isPresented: Binding(
+        .alert(T("提取失败"), isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
-            Button("知道了", role: .cancel) { errorMessage = nil }
+            Button(T("知道了"), role: .cancel) { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
         }
         .task { await autoStartIfNeeded() }
-        .alert("停止提取？", isPresented: $showCancelAlert) {
-            Button("停止提取", role: .destructive) { cancelProcessing() }
-            Button("继续", role: .cancel) {}
+        .alert(T("停止提取？"), isPresented: $showCancelAlert) {
+            Button(T("停止提取"), role: .destructive) { cancelProcessing() }
+            Button(T("继续"), role: .cancel) {}
         } message: {
-            Text("已经扫过的部分会丢弃，原视频不受影响。")
+            Text(T("已经扫过的部分会丢弃，原视频不受影响。"))
         }
     }
 
@@ -570,7 +570,7 @@ struct MacFaceExtractView: View {
 
     private var setupScreen: some View {
         VStack(spacing: 0) {
-            header(title: "一键提取人脸", trailing: nil)
+            header(title: T("一键提取人脸"), trailing: nil)
 
             ScrollView {
                 VStack(spacing: 16) {
@@ -610,10 +610,10 @@ struct MacFaceExtractView: View {
                     .frame(width: 38, height: 38)
                     .background(MacTheme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("把视频里的每张脸单独挑出来")
+                    Text(T("把视频里的每张脸单独挑出来"))
                         .font(.headline)
                         .foregroundStyle(.white)
-                    Text("扫完一段视频，按人分好，裁成可以直接用的图片")
+                    Text(T("扫完一段视频，按人分好，裁成可以直接用的图片"))
                         .font(.caption)
                         .foregroundStyle(Color.white.opacity(0.55))
                 }
@@ -621,9 +621,9 @@ struct MacFaceExtractView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                bullet("按设定的取帧间隔扫完整段视频，同一张脸只留最清楚的一张")
-                bullet("按 3:4 竖图裁切，自带一点额头和头发，可以直接当头像用")
-                bullet("全程在本机处理，原视频不动，也不会上传")
+                bullet(T("按设定的取帧间隔扫完整段视频，同一张脸只留最清楚的一张"))
+                bullet(T("按 3:4 竖图裁切，自带一点额头和头发，可以直接当头像用"))
+                bullet(T("全程在本机处理，原视频不动，也不会上传"))
             }
         }
         .padding(16)
@@ -647,11 +647,11 @@ struct MacFaceExtractView: View {
     private var intervalCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Label("取帧间隔", systemImage: "speedometer")
+                Label(T("取帧间隔"), systemImage: "speedometer")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(Color.white.opacity(0.55))
                 Spacer()
-                Text("每 \(Int(frameInterval)) 秒 1 帧")
+                Text(T("每 {1} 秒 1 帧", Int(frameInterval)))
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(MacTheme.accent)
                     .monospacedDigit()
@@ -667,14 +667,14 @@ struct MacFaceExtractView: View {
                 }
 
             HStack {
-                Text("1 秒（最细）")
+                Text(T("1 秒（最细）"))
                 Spacer()
-                Text("10 秒（最省）")
+                Text(T("10 秒（最省）"))
             }
             .font(.caption2)
             .foregroundStyle(Color.white.opacity(0.4))
 
-            Text("1 秒取 1 帧最不容易漏掉人脸，耗时也最长；往后每加 1 秒，抽检帧数和耗时约少一成，一闪而过的脸就更容易漏。")
+            Text(T("1 秒取 1 帧最不容易漏掉人脸，耗时也最长；往后每加 1 秒，抽检帧数和耗时约少一成，一闪而过的脸就更容易漏。"))
                 .font(.caption)
                 .foregroundStyle(Color.white.opacity(0.5))
                 .fixedSize(horizontal: false, vertical: true)
@@ -694,10 +694,10 @@ struct MacFaceExtractView: View {
                     .foregroundStyle(MacTheme.accent)
                     .frame(width: 54, height: 54)
                     .background(MacTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                Text(isPreparing ? "读取视频中…" : "选择一个视频文件")
+                Text(isPreparing ? T("读取视频中…") : T("选择一个视频文件"))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
-                Text("选本地视频，处理好后把每张脸列出来")
+                Text(T("选本地视频，处理好后把每张脸列出来"))
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.5))
             }
@@ -715,10 +715,10 @@ struct MacFaceExtractView: View {
 
     private var noteCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label("说明", systemImage: "info.circle")
+            Label(T("说明"), systemImage: "info.circle")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(Color.white.opacity(0.55))
-            Text("侧脸、被手挡住的脸、画面里很小的路人脸可能抓不到。视频里出现的人越多、换人越频繁，提取出来的张数越多，最多保留 80 张；同一张脸只留质量最好的一帧。原视频不会被修改。提取完可以导出到一个文件夹里。")
+            Text(T("侧脸、被手挡住的脸、画面里很小的路人脸可能抓不到。视频里出现的人越多、换人越频繁，提取出来的张数越多，最多保留 80 张；同一张脸只留质量最好的一帧。原视频不会被修改。提取完可以导出到一个文件夹里。"))
                 .font(.caption)
                 .foregroundStyle(Color.white.opacity(0.5))
                 .fixedSize(horizontal: false, vertical: true)
@@ -737,19 +737,19 @@ struct MacFaceExtractView: View {
                 .onTapGesture {}
 
             VStack(spacing: 14) {
-                Text("开始提取人脸？")
+                Text(T("开始提取人脸？"))
                     .font(.headline)
                     .foregroundStyle(.white)
 
-                Text(estimate?.summary ?? "正在评估耗时…")
+                Text(estimate?.summary ?? T("正在评估耗时…"))
                     .font(.footnote)
                     .foregroundStyle(Color.white.opacity(0.55))
 
                 VStack(spacing: 2) {
-                    Text("按本机速度预计需要")
+                    Text(T("按本机速度预计需要"))
                         .font(.caption)
                         .foregroundStyle(Color.white.opacity(0.5))
-                    Text(estimate?.durationLabel ?? "几秒")
+                    Text(estimate?.durationLabel ?? T("几秒"))
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(MacTheme.accent)
                         .monospacedDigit()
@@ -761,7 +761,7 @@ struct MacFaceExtractView: View {
                         showConfirm = false
                         fileURL = nil
                     } label: {
-                        Text("取消")
+                        Text(T("取消"))
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -774,7 +774,7 @@ struct MacFaceExtractView: View {
                         showConfirm = false
                         start()
                     } label: {
-                        Text("开始提取")
+                        Text(T("开始提取"))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -803,11 +803,11 @@ struct MacFaceExtractView: View {
                 ProgressView()
                     .controlSize(.large)
                     .tint(MacTheme.accent)
-                Text("人脸提取中 \(Int(progress * 100))%")
+                Text(T("人脸提取中 {1}%", Int(progress * 100)))
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(.white)
                     .monospacedDigit()
-                Text("正在逐帧扫描人脸")
+                Text(T("正在逐帧扫描人脸"))
                     .font(.system(size: 13))
                     .foregroundStyle(Color.white.opacity(0.42))
 
@@ -815,7 +815,7 @@ struct MacFaceExtractView: View {
                     .frame(width: 280)
                     .tint(MacTheme.accent)
 
-                Button("停止提取") { showCancelAlert = true }
+                Button(T("停止提取")) { showCancelAlert = true }
                     .buttonStyle(.plain)
                     .font(.footnote)
                     .foregroundStyle(Color.white.opacity(0.6))
@@ -829,26 +829,26 @@ struct MacFaceExtractView: View {
     private func resultScreen(_ result: MacFaceExtractResult) -> some View {
         VStack(spacing: 0) {
             header(
-                title: "提取完成",
+                title: T("提取完成"),
                 trailing: AnyView(
                     HStack(spacing: 10) {
-                        Button(isExporting ? "导出中…" : (exportedCount != nil ? "已导出" : "导出到文件夹…")) {
+                        Button(isExporting ? T("导出中…") : (exportedCount != nil ? T("已导出") : T("导出到文件夹…"))) {
                             export(result)
                         }
                         .buttonStyle(MacAccentButtonStyle())
                         .disabled(isExporting || exportedCount != nil)
-                        Button("关闭") { onClose() }
+                        Button(T("关闭")) { onClose() }
                             .buttonStyle(.bordered)
                     }
                 )
             )
 
             HStack(spacing: 10) {
-                infoChip(icon: "person.2", text: "共 \(result.faces.count) 张")
-                infoChip(icon: "clock", text: "时长 \(result.duration.timecode)")
-                infoChip(icon: "square.grid.3x3", text: "3:4 裁切")
+                infoChip(icon: "person.2", text: T("共 {1} 张", result.faces.count))
+                infoChip(icon: "clock", text: T("时长 {1}", result.duration.timecode))
+                infoChip(icon: "square.grid.3x3", text: T("3:4 裁切"))
                 Spacer()
-                Button("再提一次") {
+                Button(T("再提一次")) {
                     self.result = nil
                     exportedCount = nil
                     fileURL = nil
@@ -889,7 +889,7 @@ struct MacFaceExtractView: View {
                                 }
                         }
                         .buttonStyle(.plain)
-                        .help("单击看大图")
+                        .help(T("单击看大图"))
                     }
                 }
                 .padding(.horizontal, MacTheme.pagePadding)
@@ -1007,19 +1007,19 @@ struct MacFaceExtractView: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.prompt = "导出到这里"
-        panel.message = "选一个文件夹，人脸图会放进里面的子文件夹"
+        panel.prompt = T("导出到这里")
+        panel.message = T("选一个文件夹，人脸图会放进里面的子文件夹")
         guard panel.runModal() == .OK, let dir = panel.url else { return }
 
         isExporting = true
         let stamp = DateFormatter()
         stamp.dateFormat = "yyyyMMdd-HHmmss"
-        let folder = dir.appendingPathComponent("人脸提取-\(stamp.string(from: Date()))", isDirectory: true)
+        let folder = dir.appendingPathComponent(T("人脸提取-{1}", stamp.string(from: Date())), isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let count = try MacFaceExtractor.write(faces: result.faces, to: folder)
             exportedCount = count
-            showToast("已导出 \(count) 张到「\(folder.lastPathComponent)」")
+            showToast(T("已导出 {1} 张到「{2}」", count, folder.lastPathComponent))
             NSWorkspace.shared.activateFileViewerSelecting([folder])
         } catch {
             errorMessage = error.localizedDescription
@@ -1035,7 +1035,7 @@ struct MacFaceExtractView: View {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let count = try MacFaceExtractor.write(faces: result.faces, to: folder)
             exportedCount = count
-            showToast("已导出 \(count) 张到 \(folder.lastPathComponent)")
+            showToast(T("已导出 {1} 张到 {2}", count, folder.lastPathComponent))
         } catch {
             errorMessage = error.localizedDescription
         }

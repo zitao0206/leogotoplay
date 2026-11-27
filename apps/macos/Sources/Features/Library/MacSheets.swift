@@ -21,15 +21,15 @@ struct MacRenameSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title).font(.headline)
-            TextField("名称", text: $text)
+            TextField(T("名称"), text: $text)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
                 .onSubmit { commit() }
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
+                Button(T("取消")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("保存") { commit() }
+                Button(T("保存")) { commit() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
@@ -51,8 +51,8 @@ struct MacRenameSheet: View {
 struct MacMoveSheet: View {
     let folders: [VideoFolder]
     let currentFolderID: UUID?
-    var rootTitle: String = "未分类"
-    var title: String = "移动到文件夹"
+    var rootTitle: String = T("未分类")
+    var title: String = T("移动到文件夹")
     let onPick: (UUID?) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -73,7 +73,7 @@ struct MacMoveSheet: View {
             )
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
+                Button(T("取消")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
             }
         }
@@ -114,16 +114,16 @@ struct MacNewFolderSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("新建文件夹").font(.headline)
-            TextField("例如：旅行片段", text: $name)
+            Text(T("新建文件夹")).font(.headline)
+            TextField(T("例如：旅行片段"), text: $name)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
                 .onSubmit { commit() }
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
+                Button(T("取消")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("创建") { commit() }
+                Button(T("创建")) { commit() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
@@ -152,12 +152,12 @@ struct MacFolderDeleteSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("删除文件夹「\(folder.name)」")
+            Text(T("删除文件夹「{1}」", folder.name))
                 .font(.headline)
 
             Text(videoCount == 0
-                 ? "这个文件夹里没有视频，删除后不可恢复。"
-                 : "这个文件夹里有 \(videoCount) 个视频，选择怎么处理：")
+                 ? T("这个文件夹里没有视频，删除后不可恢复。")
+                 : T("这个文件夹里有 {1} 个视频，选择怎么处理：", videoCount))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -165,8 +165,8 @@ struct MacFolderDeleteSheet: View {
             if videoCount > 0 {
                 VStack(spacing: 8) {
                     actionRow(
-                        title: "删除文件夹和里面的视频",
-                        detail: "\(videoCount) 个视频文件会一并从磁盘删除，不可恢复",
+                        title: T("删除文件夹和里面的视频"),
+                        detail: T("{1} 个视频文件会一并从磁盘删除，不可恢复", videoCount),
                         symbol: "trash.fill",
                         tint: Color(red: 0.95, green: 0.32, blue: 0.28)
                     ) {
@@ -174,8 +174,8 @@ struct MacFolderDeleteSheet: View {
                         onDeleteAll()
                     }
                     actionRow(
-                        title: "只删文件夹，视频移到根目录",
-                        detail: "文件夹删掉，\(videoCount) 个视频保留在未分类里",
+                        title: T("只删文件夹，视频移到根目录"),
+                        detail: T("文件夹删掉，{1} 个视频保留在未分类里", videoCount),
                         symbol: "arrow.up.right.square",
                         tint: MacTheme.accent
                     ) {
@@ -185,8 +185,8 @@ struct MacFolderDeleteSheet: View {
                 }
             } else {
                 actionRow(
-                    title: "删除文件夹",
-                    detail: "文件夹本身删除，不可恢复",
+                    title: T("删除文件夹"),
+                    detail: T("文件夹本身删除，不可恢复"),
                     symbol: "trash.fill",
                     tint: Color(red: 0.95, green: 0.32, blue: 0.28)
                 ) {
@@ -197,7 +197,7 @@ struct MacFolderDeleteSheet: View {
 
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
+                Button(T("取消")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
             }
         }

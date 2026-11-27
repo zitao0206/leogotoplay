@@ -379,13 +379,13 @@ final class MacEditorModel: ObservableObject {
                 duration: file.duration
             )
             materials.append(material)
-            if title == "未命名项目" { title = file.title }
+            if title == T("未命名项目") { title = file.title }
             await loadTracks(for: material)
             loadThumbnail(for: material)
             persist()
             return material
         } catch {
-            errorMessage = "导入失败：\(error.localizedDescription)"
+            errorMessage = T("导入失败：{1}", error.localizedDescription)
             return nil
         }
     }
@@ -1152,7 +1152,7 @@ final class MacEditorModel: ObservableObject {
                 fileType: AVFileType = .mp4,
                 options: MacExportOptions? = nil) async -> URL? {
         guard !clips.isEmpty, outputDuration > 0.1 else {
-            errorMessage = "时间轴里没有可导出的片段"
+            errorMessage = T("时间轴里没有可导出的片段")
             return nil
         }
         guard !isExporting else { return nil }
@@ -1287,11 +1287,11 @@ struct MacEditorView: View {
             await model.load()
         }
         .onDisappear { model.persist() }
-        .alert("提示", isPresented: Binding(
+        .alert(T("提示"), isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }
         )) {
-            Button("好") { model.errorMessage = nil }
+            Button(T("好")) { model.errorMessage = nil }
         } message: {
             Text(model.errorMessage ?? "")
         }
@@ -1346,7 +1346,7 @@ struct MacEditorView: View {
             // V3.0.0：项目名只在窗口标题栏显示，这行不再重复
 
             if !model.hasClips {
-                Text("空白项目")
+                Text(T("空白项目"))
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(MacTheme.accent)
                     .padding(.horizontal, 8)
@@ -1391,7 +1391,7 @@ struct MacEditorView: View {
     private var mediaPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text("素材")
+                Text(T("素材"))
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.white)
 
@@ -1399,7 +1399,7 @@ struct MacEditorView: View {
                     Button {
                         confirmDeleteSelectedMaterials()
                     } label: {
-                        Label("删除 \(selectedMaterialIDs.count)", systemImage: "trash")
+                        Label(T("删除 {1}", selectedMaterialIDs.count), systemImage: "trash")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 8)
@@ -1410,13 +1410,13 @@ struct MacEditorView: View {
                             )
                     }
                     .buttonStyle(.plain)
-                    .help("删除选中的素材（也可以按 Delete 键）")
+                    .help(T("删除选中的素材（也可以按 Delete 键）"))
                 }
 
                 Spacer(minLength: 0)
 
                 if isImporting {
-                    Text("正在读取…")
+                    Text(T("正在读取…"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -1490,7 +1490,7 @@ struct MacEditorView: View {
         .onDrag {
             NSItemProvider(object: dragPayload(for: material) as NSString)
         }
-        .help("拖到时间轴添加；选中后按 Delete 键删除")
+        .help(T("拖到时间轴添加；选中后按 Delete 键删除"))
     }
 
     /// 正方形首帧缩略图（取不到就显示占位图标）
@@ -1517,7 +1517,7 @@ struct MacEditorView: View {
             VStack(spacing: 6) {
                 Image(systemName: "plus")
                     .font(.system(size: 16, weight: .semibold))
-                Text("添加视频")
+                Text(T("添加视频"))
                     .font(.caption)
             }
             .foregroundStyle(MacTheme.accent)
@@ -1534,7 +1534,7 @@ struct MacEditorView: View {
         }
         .buttonStyle(.plain)
         .disabled(isImporting)
-        .help("导入一条本地视频")
+        .help(T("导入一条本地视频"))
     }
 
     /// V2.8.13：点 cell 只选这一个（一次只能选中一个视频）；点空白取消选中
@@ -1651,7 +1651,7 @@ struct MacEditorView: View {
                 Image(systemName: "film")
                     .font(.system(size: 18, weight: .regular))
                     .foregroundStyle(.white.opacity(0.55))
-                Text("把左侧素材拖到这条时间轴上，开始你的大作吧～")
+                Text(T("把左侧素材拖到这条时间轴上，开始你的大作吧～"))
                     .font(.system(size: 15))
                     .foregroundStyle(.white.opacity(0.62))
                 Spacer(minLength: 0)
@@ -1720,25 +1720,25 @@ struct MacEditorView: View {
     private var toolRow: some View {
         // V2.7.15：按钮间距 10pt → 15pt（1.5 倍）；左右分割两个按键互换位置
         HStack(spacing: 15) {
-            MacGlyphButton(title: "撤销", kind: .undo, enabled: model.canUndo) {
+            MacGlyphButton(title: T("撤销"), kind: .undo, enabled: model.canUndo) {
                 model.undo()
             }
-            MacGlyphButton(title: "重置", kind: .reset, enabled: true) {
+            MacGlyphButton(title: T("重置"), kind: .reset, enabled: true) {
                 model.resetTimeline()
             }
-            MacGlyphButton(title: "分割", kind: .split, enabled: true) {
+            MacGlyphButton(title: T("分割"), kind: .split, enabled: true) {
                 model.splitAtPlayhead()
             }
             // V2.7.16：两个裁剪按钮按位置对齐语义——左边这个删左、右边这个删右；
             // 图标也跟着动作走：虚线那一侧就是要被删掉的那一侧
-            MacGlyphButton(title: "向左裁剪", kind: .keepRight, enabled: model.canTrimBefore) {
+            MacGlyphButton(title: T("向左裁剪"), kind: .keepRight, enabled: model.canTrimBefore) {
                 model.trimBeforePlayhead()
             }
-            MacGlyphButton(title: "向右裁剪", kind: .keepLeft, enabled: model.canTrimAfter) {
+            MacGlyphButton(title: T("向右裁剪"), kind: .keepLeft, enabled: model.canTrimAfter) {
                 model.trimAfterPlayhead()
             }
             MacGlyphButton(
-                title: "删除",
+                title: T("删除"),
                 kind: .trash,
                 enabled: model.currentClipIndex != nil,
                 emphasized: model.currentClipIndex != nil
@@ -1748,10 +1748,10 @@ struct MacEditorView: View {
 
             Spacer(minLength: 0)
 
-            MacToolIconButton(title: "时间轴缩小", icon: "minus.magnifyingglass", enabled: model.canZoomOut) {
+            MacToolIconButton(title: T("时间轴缩小"), icon: "minus.magnifyingglass", enabled: model.canZoomOut) {
                 zoomTimeline(zoomIn: false)
             }
-            MacToolIconButton(title: "时间轴放大", icon: "plus.magnifyingglass", enabled: model.canZoomIn) {
+            MacToolIconButton(title: T("时间轴放大"), icon: "plus.magnifyingglass", enabled: model.canZoomIn) {
                 zoomTimeline(zoomIn: true)
             }
         }
@@ -1788,7 +1788,7 @@ struct MacEditorView: View {
                     Image(systemName: "play.rectangle")
                         .font(.system(size: 40, weight: .light))
                         .foregroundStyle(Color.white.opacity(0.22))
-                    Text("还没有载入视频")
+                    Text(T("还没有载入视频"))
                         .font(.callout)
                         .foregroundStyle(Color.white.opacity(0.4))
                 }
@@ -1814,7 +1814,7 @@ struct MacEditorView: View {
 
                 Spacer(minLength: 0)
 
-                Button("回到开头") { model.seek(to: 0) }
+                Button(T("回到开头")) { model.seek(to: 0) }
                     .buttonStyle(.link)
                     .font(.system(size: 12, weight: .medium))
             }
@@ -1833,7 +1833,7 @@ struct MacEditorView: View {
                 .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .help("播放 / 暂停（空格键）")
+            .help(T("播放 / 暂停（空格键）"))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -1849,7 +1849,7 @@ struct MacEditorView: View {
                 HStack(spacing: 7) {
                     Image(systemName: "square.and.arrow.up")
                         .font(.system(size: 14, weight: .semibold))
-                    Text("导出")
+                    Text(T("导出"))
                         .font(.system(size: 15, weight: .semibold))
                 }
                 .foregroundStyle(.white)
@@ -1929,11 +1929,11 @@ struct MacEditorView: View {
             // V2.8.10：导入只进素材列表，不上时间轴；要上轨一律靠手动拖（多选后整组一次拖）
             selectedMaterialIDs = Set(imported)
             if !imported.isEmpty {
-                show("已添加 1 个视频，拖到时间轴即可")
+                show(T("已添加 1 个视频，拖到时间轴即可"))
             }
             if let failure {
                 let failed = urls.count - imported.count
-                show(failed == urls.count ? failure : "\(failed) 个视频导入失败")
+                show(failed == urls.count ? failure : T("{1} 个视频导入失败", failed))
             }
         }
     }
@@ -2020,7 +2020,7 @@ struct MacEditorView: View {
                                                 fileType: options.format.fileType,
                                                 options: options) else {
             // 失败信息放进弹框里，同时清掉全局 alert 的文案，避免两层弹窗叠一起
-            exportErrorText = model.errorMessage ?? "导出失败，请稍后再试"
+            exportErrorText = model.errorMessage ?? T("导出失败，请稍后再试")
             model.errorMessage = nil
             return
         }
@@ -2082,10 +2082,10 @@ enum MacExportBitrate: Equatable {
 
     var title: String {
         switch self {
-        case .recommended: return "推荐"
-        case .lower: return "更低"
-        case .higher: return "更高"
-        case .custom: return "自定义"
+        case .recommended: return T("推荐")
+        case .lower: return T("更低")
+        case .higher: return T("更高")
+        case .custom: return T("自定义")
         }
     }
 }
@@ -2108,7 +2108,7 @@ struct MacExportOptions: Equatable {
         let saved = UserDefaults.standard.string(forKey: directoryKey).map { URL(fileURLWithPath: $0) }
         let dir = saved ?? MacExportPaths.downloads
         return MacExportOptions(
-            title: title.isEmpty ? "未命名项目" : title,
+            title: title.isEmpty ? T("未命名项目") : title,
             directory: FileManager.default.fileExists(atPath: dir.path) ? dir : MacExportPaths.downloads,
             quality: ExportSettings.quality,
             frameRate: .followSource,
@@ -2123,7 +2123,7 @@ struct MacExportOptions: Equatable {
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? "未命名项目" : cleaned
+        return cleaned.isEmpty ? T("未命名项目") : cleaned
     }
 
     /// 重名自动加 -2、-3 …，不覆盖已有文件
@@ -2153,9 +2153,9 @@ private struct MacExportConfigSheet: View {
         let h = total / 3600
         let m = (total % 3600) / 60
         let s = total % 60
-        if h > 0 { return "\(h) 时 \(m) 分 \(s) 秒" }
-        if m > 0 { return "\(m) 分 \(s) 秒" }
-        return "\(s) 秒"
+        if h > 0 { return T("{1} 时 {2} 分 {3} 秒", h, m, s) }
+        if m > 0 { return T("{1} 分 {2} 秒", m, s) }
+        return T("{1} 秒", s)
     }
 
     private var sizeText: String {
@@ -2170,12 +2170,12 @@ private struct MacExportConfigSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("导出")
+            Text(T("导出"))
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.white)
                 .padding(.bottom, 16)
 
-            row("标题") {
+            row(T("标题")) {
                 TextField("", text: $options.title)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
@@ -2185,7 +2185,7 @@ private struct MacExportConfigSheet: View {
                     .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
 
-            row("导出至") {
+            row(T("导出至")) {
                 HStack(spacing: 8) {
                     Text(options.directory.path)
                         .font(.system(size: 12))
@@ -2208,12 +2208,12 @@ private struct MacExportConfigSheet: View {
                     }
                     .buttonStyle(.plain)
                     .onHover { hoveringFolder = $0 }
-                    .help("选择导出目录")
+                    .help(T("选择导出目录"))
                 }
             }
 
             HStack(spacing: 8) {
-                Text("视频原始参数：")
+                Text(T("视频原始参数："))
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.45))
                 Text(configSummary)
@@ -2231,7 +2231,7 @@ private struct MacExportConfigSheet: View {
                 .frame(height: 1)
                 .padding(.bottom, 4)
 
-            optionRow("分辨率", topic: .resolution) {
+            optionRow(T("分辨率"), topic: .resolution) {
                 menuField(resolutionTitle(options.quality)) {
                     ForEach(VideoExporter.Quality.allCases, id: \.self) { quality in
                         Button(resolutionTitle(quality)) { options.quality = quality }
@@ -2239,9 +2239,9 @@ private struct MacExportConfigSheet: View {
                 }
             }
 
-            optionRow("帧率", topic: .frameRate) {
+            optionRow(T("帧率"), topic: .frameRate) {
                 menuField(frameRateTitle) {
-                    Button("跟随源（\(MacExportFrameRate.label(model.sourceFrameRate))）") {
+                    Button(T("跟随源（{1}）", MacExportFrameRate.label(model.sourceFrameRate))) {
                         options.frameRate = .followSource
                     }
                     ForEach(frameRateChoices, id: \.self) { value in
@@ -2252,14 +2252,14 @@ private struct MacExportConfigSheet: View {
                 .opacity(isPassthrough ? 0.45 : 1)
             }
 
-            optionRow("码率", topic: .bitrate) {
+            optionRow(T("码率"), topic: .bitrate) {
                 menuField(bitrateTitle) {
-                    Button("推荐（\(formatMbps(model.recommendedBitrateMbps(for: options.quality)))）") {
+                    Button(T("推荐（{1}）", formatMbps(model.recommendedBitrateMbps(for: options.quality)))) {
                         options.bitrate = .recommended
                     }
-                    Button("更低") { options.bitrate = .lower }
-                    Button("更高") { options.bitrate = .higher }
-                    Button("自定义…") {
+                    Button(T("更低")) { options.bitrate = .lower }
+                    Button(T("更高")) { options.bitrate = .higher }
+                    Button(T("自定义…")) {
                         options.bitrate = .custom
                         if options.customMbps <= 0 {
                             options.customMbps = (model.recommendedBitrateMbps(for: options.quality) * 10).rounded() / 10
@@ -2271,7 +2271,7 @@ private struct MacExportConfigSheet: View {
             }
 
             if options.bitrate == .custom {
-                row("码率值") {
+                row(T("码率值")) {
                     HStack(spacing: 8) {
                         TextField("", value: $options.customMbps, format: .number.precision(.fractionLength(0...2)))
                             .textFieldStyle(.plain)
@@ -2291,14 +2291,14 @@ private struct MacExportConfigSheet: View {
             }
 
             if isPassthrough {
-                Text("「原始」档不重编码，帧率与码率直接沿用源片，上面两项不生效")
+                Text(T("「原始」档不重编码，帧率与码率直接沿用源片，上面两项不生效"))
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.4))
                     .padding(.leading, 84)
                     .padding(.bottom, 12)
             }
 
-            optionRow("格式", topic: .format) {
+            optionRow(T("格式"), topic: .format) {
                 menuField(options.format.title) {
                     ForEach(MacExportFormat.allCases) { format in
                         Button(format.title) { options.format = format }
@@ -2315,14 +2315,14 @@ private struct MacExportConfigSheet: View {
                 Image(systemName: "film")
                     .font(.system(size: 12))
                     .foregroundStyle(.white.opacity(0.45))
-                Text("时长：\(durationText) ｜ 大小：\(sizeText)（估计）")
+                Text(T("时长：{1} ｜ 大小：{2}（估计）", durationText, sizeText))
                     .font(.system(size: 12).monospacedDigit())
                     .foregroundStyle(.white.opacity(0.62))
                 Spacer(minLength: 12)
                 Button {
                     onCancel()
                 } label: {
-                    Text("取消")
+                    Text(T("取消"))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white.opacity(0.85))
                         .padding(.horizontal, 18)
@@ -2335,7 +2335,7 @@ private struct MacExportConfigSheet: View {
                 Button {
                     onSubmit(options)
                 } label: {
-                    Text("导出")
+                    Text(T("导出"))
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 20)
@@ -2360,21 +2360,21 @@ private struct MacExportConfigSheet: View {
         let fps = "\(MacExportFrameRate.label(model.sourceFrameRate))fps"
         let mbps = String(format: "%.2f Mbps", model.sourceBitrateMbps)
         let format = "\(model.sourceFormat.shortTitle)（\(model.sourceCodecLabel)）"
-        return "分辨率：\(resolution)，帧率：\(fps)，码率：\(mbps)，格式：\(format)"
+        return T("分辨率：{1}，帧率：{2}，码率：{3}，格式：{4}", resolution, fps, mbps, format)
     }
 
     private var frameRateTitle: String {
         if let value = options.frameRate.value { return MacExportFrameRate.label(value) }
-        return "跟随源（\(MacExportFrameRate.label(model.sourceFrameRate))）"
+        return T("跟随源（{1}）", MacExportFrameRate.label(model.sourceFrameRate))
     }
 
     private var bitrateTitle: String {
         switch options.bitrate {
-        case .recommended: return "推荐（\(formatMbps(model.recommendedBitrateMbps(for: options.quality)))）"
-        case .lower: return "更低"
-        case .higher: return "更高"
+        case .recommended: return T("推荐（{1}）", formatMbps(model.recommendedBitrateMbps(for: options.quality)))
+        case .lower: return T("更低")
+        case .higher: return T("更高")
         case .custom:
-            return options.customMbps > 0 ? "自定义（\(formatMbps(options.customMbps))）" : "自定义"
+            return options.customMbps > 0 ? T("自定义（{1}）", formatMbps(options.customMbps)) : T("自定义")
         }
     }
 
@@ -2392,7 +2392,7 @@ private struct MacExportConfigSheet: View {
         switch quality {
         case .highest:
             let plan = model.exportPlan(for: .highest)
-            return "原始（\(plan.width)×\(plan.height)）"
+            return T("原始（{1}×{2}）", plan.width, plan.height)
         case .p1080: return "1080p"
         case .p720: return "720p"
         }
@@ -2460,8 +2460,8 @@ private struct MacExportConfigSheet: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
-        panel.prompt = "选择"
-        panel.message = "选择导出视频保存的位置"
+        panel.prompt = T("选择")
+        panel.message = T("选择导出视频保存的位置")
         panel.directoryURL = options.directory
         if panel.runModal() == .OK, let url = panel.url {
             options.directory = url
@@ -2482,53 +2482,53 @@ private enum ExportHelpTopic: String, Identifiable {
 
     var title: String {
         switch self {
-        case .resolution: return "分辨率"
-        case .frameRate: return "帧率（fps）"
-        case .bitrate: return "视频码率"
-        case .format: return "视频格式"
+        case .resolution: return T("分辨率")
+        case .frameRate: return T("帧率（fps）")
+        case .bitrate: return T("视频码率")
+        case .format: return T("视频格式")
         }
     }
 
     var summary: String {
         switch self {
-        case .resolution: return "画面尺寸，决定清晰度的上限和文件大小"
-        case .frameRate: return "每秒画多少张，影响动作流畅度"
-        case .bitrate: return "每秒给多少数据，影响清晰度和文件大小"
-        case .format: return "封装容器，决定哪些平台和软件认它"
+        case .resolution: return T("画面尺寸，决定清晰度的上限和文件大小")
+        case .frameRate: return T("每秒画多少张，影响动作流畅度")
+        case .bitrate: return T("每秒给多少数据，影响清晰度和文件大小")
+        case .format: return T("封装容器，决定哪些平台和软件认它")
         }
     }
 
     var body: String {
         switch self {
         case .resolution:
-            return """
+            return T("""
             输出画面的像素尺寸（宽×高），是清晰度的天花板。
             · 只能缩不能提：放大会靠插值补像素，画面只会更软，不会更清晰；选比源大的档位没有意义。
             · 体积大致随像素数线性涨：1080p 的面积是 720p 的 2.25 倍。
             · 取舍：要存档或留剪辑余量选「原始」或 1080p；只发社交平台，720p 也够。
-            """
+            """)
         case .frameRate:
-            return """
+            return T("""
             一秒记录多少张画面，管的是动作顺不顺，不管清晰度。
             · 提高帧率不会直接把文件变大：码率固定时帧率翻倍，每帧分到的数据减半，快速运动处更容易糊。
             · 只能往下选：不插帧，选比源片更高的档位没有实际意义。
             · 取舍：社交发布 30 一般够用；运动、游戏、要做慢动作才需要 60。
-            """
+            """)
         case .format:
-            return """
+            return T("""
             封装容器，画面编码都是 H.264，两者画质与体积基本一致，差别在"外壳"。
             · MP4：通用性最好，微信、抖音、B 站、网页、Windows 播放器都直接认。
             · MOV：苹果生态顺手，Final Cut / QuickTime 更友好，但部分平台或网页不认。
             · 需要上传或发给别人，选 MP4；只在 Mac 上留着继续剪，MOV 更顺。
-            """
+            """)
         case .bitrate:
-            return """
+            return T("""
             一秒允许编码器写多少数据，同时决定清晰度和文件大小。
             · 体积 = 码率 × 时长 ÷ 8，码率翻倍，文件就翻倍。
             · 推荐档：按源片码率 × 目标像素比例折算，并且不超过源片码率。
             · 更低（0.6×）更省空间，细节略减；更高（1.6×）细节更足，但超过源片码率也不会真的变清晰；自定义直接填 Mbps。
             · 码率给太少时，运动段和大面积纹理先出块、发糊。
-            """
+            """)
         }
     }
 }
@@ -2594,9 +2594,9 @@ private struct MacExportSheet: View {
     private var isDone: Bool { model.exportedURL != nil && !model.isExporting }
 
     private var title: String {
-        if isDone { return "导出完成" }
-        if errorText != nil { return "导出失败" }
-        return "正在导出"
+        if isDone { return T("导出完成") }
+        if errorText != nil { return T("导出失败") }
+        return T("正在导出")
     }
 
     private var titleIcon: String {
@@ -2616,7 +2616,7 @@ private struct MacExportSheet: View {
                     .foregroundStyle(.white)
             }
 
-            Text("默认导出到「下载」文件夹：\(MacExportPaths.downloads.path)")
+            Text(T("默认导出到「下载」文件夹：{1}", MacExportPaths.downloads.path))
                 .font(.system(size: 12))
                 .foregroundStyle(.white.opacity(0.55))
                 .textSelection(.enabled)
@@ -2626,7 +2626,7 @@ private struct MacExportSheet: View {
                     .progressViewStyle(.linear)
                     .tint(MacTheme.accent)
                 HStack {
-                    Text("正在渲染时间轴…")
+                    Text(T("正在渲染时间轴…"))
                         .font(.system(size: 12))
                         .foregroundStyle(.white.opacity(0.55))
                     Spacer()
@@ -2662,7 +2662,7 @@ private struct MacExportSheet: View {
                     Button {
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                     } label: {
-                        Text("在访达中显示")
+                        Text(T("在访达中显示"))
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 14)
@@ -2678,7 +2678,7 @@ private struct MacExportSheet: View {
                 Button {
                     onClose()
                 } label: {
-                    Text(isDone ? "完成" : "关闭")
+                    Text(isDone ? T("完成") : T("关闭"))
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 18)
@@ -2929,7 +2929,7 @@ private struct SpaceKeyMonitor: ViewModifier {
             .onAppear {
                 guard monitor == nil else { return }
                 monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                    guard let window = event.window, window.title.contains("剪辑") else { return event }
+                    guard let window = event.window, window.title.contains(T("剪辑")) else { return event }
                     guard event.keyCode == 49 else { return event }
                     let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
                     if flags.contains(.command) || flags.contains(.option) || flags.contains(.control) { return event }
@@ -2957,7 +2957,7 @@ private struct DeleteKeyMonitor: ViewModifier {
             .onAppear {
                 guard monitor == nil else { return }
                 monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                    guard let window = event.window, window.title.contains("剪辑") else { return event }
+                    guard let window = event.window, window.title.contains(T("剪辑")) else { return event }
                     guard event.keyCode == 51 || event.keyCode == 117 else { return event }
                     if window.firstResponder is NSTextView { return event }
                     onDelete()
