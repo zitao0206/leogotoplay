@@ -20,21 +20,6 @@ final class MacEditorWindowManager: NSObject, NSWindowDelegate {
 
     private var entries: [Entry] = []
 
-    private override init() {
-        super.init()
-        // V2.9.5：首页改名后同步已经开着的窗口标题
-        NotificationCenter.default.addObserver(
-            forName: .macProjectRenamed,
-            object: nil,
-            queue: .main
-        ) { note in
-            guard let id = note.userInfo?["id"] as? UUID,
-                  let title = note.userInfo?["title"] as? String else { return }
-            Task { @MainActor in
-                MacEditorWindowManager.shared.renameWindow(id: id, title: title)
-            }
-        }
-    }
 
     /// 首页 / 素材库入口：source 为 nil 就是全新空白项目；带素材库视频时复用它已有的项目。
     func open(source: MacEditorSource?, library: LibraryStore) {
@@ -77,8 +62,9 @@ final class MacEditorWindowManager: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         // V2.8.2：剪辑窗口不参与系统的「重新打开窗口」恢复，避免下次启动被系统还原出上一次的项目
         window.isRestorable = false
-        // V2.9.5：项目名就是窗口标题（新建项目也已经有「11-27 (01)」这样的默认名）
-        window.title = project.title
+        // V2.9.6：标题栏不再显示项目名（项目名只在编辑页左上角显示）
+        window.title = ""
+        window.titleVisibility = .hidden
         window.subtitle = "LeogotoPlay"
         window.minSize = NSSize(width: 1040, height: 660)
         window.appearance = NSAppearance(named: .darkAqua)
@@ -95,11 +81,6 @@ final class MacEditorWindowManager: NSObject, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         entries.append(Entry(window: window, projectID: project.id))
-    }
-
-    /// 改名后把标题贴回已经开着的窗口
-    func renameWindow(id: UUID, title: String) {
-        entries.first { $0.projectID == id }?.window.title = title
     }
 
     func windowWillClose(_ notification: Notification) {
