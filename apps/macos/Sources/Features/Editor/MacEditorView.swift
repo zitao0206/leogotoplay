@@ -2195,7 +2195,7 @@ private struct MacExportConfigSheet: View {
             }
 
             HStack(spacing: 8) {
-                Text("导入视频参数：")
+                Text("视频原始参数：")
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.45))
                 Text(configSummary)
@@ -2205,7 +2205,13 @@ private struct MacExportConfigSheet: View {
                     .minimumScaleFactor(0.85)
                 Spacer(minLength: 0)
             }
-            .padding(.bottom, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 10)
+
+            Rectangle()
+                .fill(Color.white.opacity(0.08))
+                .frame(height: 1)
+                .padding(.bottom, 4)
 
             optionRow("分辨率", topic: .resolution) {
                 menuField(resolutionTitle(options.quality)) {
