@@ -91,7 +91,9 @@ struct MacPlayerView: View {
     @State private var containerSize: CGSize = .zero
     private let pointerTimer = Timer.publish(every: 0.06, on: .main, in: .common).autoconnect()
     @State private var dragStartOffset: CGSize?
+    @State private var dragStartPoint: CGPoint?
     private static let panelSize = CGSize(width: 520, height: 84)
+    private static let playerSpace = "playerSpace"
 
     /// 窗口置顶（「在最前」）
     @State private var isPinned = false
@@ -156,6 +158,7 @@ struct MacPlayerView: View {
                         .transition(.opacity)
                 }
             }
+            .coordinateSpace(name: Self.playerSpace)
             .overlay(alignment: .bottomTrailing) {
                 if let toast {
                     Text(toast)
@@ -243,7 +246,7 @@ struct MacPlayerView: View {
                     Image(systemName: "pin")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(pinHovering || isPinned ? MacTheme.accent : Color.white.opacity(0.85))
-                        .rotationEffect(.degrees(isPinned ? 0 : -45))
+                        .rotationEffect(.degrees(isPinned ? 0 : 90))
                         .animation(.easeInOut(duration: 0.28), value: isPinned)
                         .frame(width: 26, height: 22)
                         .contentShape(Rectangle())
@@ -266,7 +269,7 @@ struct MacPlayerView: View {
 
     /// 面板显示条件：鼠标在面板上；或「在最前」时鼠标进入播放器区域
     private var showControls: Bool {
-        panelHovering || dragStartOffset != nil || (isPinned && pointerInside)
+        panelHovering || dragStartPoint != nil || dragStartOffset != nil || (isPinned && pointerInside)
     }
 
     /// 面板容器：鼠标进入整体淡入、离开整体淡出；面板底色可按住拖动，限制在窗口内
@@ -301,14 +304,22 @@ struct MacPlayerView: View {
     /// 每 60ms 读一次鼠标位置：窗口内 / 面板上分别驱动「操作面板」和「钉子」的显隐
     private func pollPointer() {
         guard let window, let content = window.contentView else { return }
-        let screen = NSEvent.mouseLocation          // 屏幕坐标，原点在左下
-        let frame = window.frame
-        containerSize = content.bounds.size
-        // 换成「窗口左上角为原点、y 朝下」的界面坐标
-        let point = CGPoint(x: screen.x - frame.minX, y: frame.maxY - screen.y)
+        let bounds = content.bounds.size
+        if containerSize != bounds { containerSize = bounds }
+        // 屏幕坐标 → 窗口坐标 → 内容视图坐标，最后翻成「左上原点、y 朝下」
+        let inWindow = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+        let inContent = content.convert(inWindow, from: nil)
+        // SwiftUI 的宿主视图是 flipped 的，y 已经朝下，不能再翻
+        let yDown = content.isFlipped ? inContent.y : bounds.height - inContent.y
+        let point = CGPoint(x: inContent.x, y: yDown)
         let inside = point.x >= 0 && point.y >= 0
-            && point.x <= frame.width && point.y <= frame.height
+            && point.x <= bounds.width && point.y <= bounds.height
 
+        // 拖动过程中冻结 hover 轮询：每 60ms 改状态会打断 SwiftUI 的拖动手势
+        if dragStartPoint != nil || dragStartOffset != nil {
+            if inside != pointerInside { pointerInside = inside }
+            return
+        }
         if inside != pointerInside { setPointerInside(inside) }
         guard inside else {
             if panelHovering { setPanelHovering(false) }
@@ -355,30 +366,35 @@ struct MacPlayerView: View {
 
     /// 面板拖动：只挂在底部圆角底色上，按钮 / 滑杆照常点击
     private func panelDragGesture(in size: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 2)
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.playerSpace))
             .onChanged { drag in
-                if dragStartOffset == nil { dragStartOffset = panelOffset }
-                let base = dragStartOffset ?? .zero
+                if dragStartPoint == nil {
+                    dragStartPoint = drag.startLocation
+                    dragStartOffset = panelOffset
+                }
+                guard let start = dragStartPoint, let base = dragStartOffset else { return }
                 panelOffset = clampedPanelOffset(
                     CGSize(
-                        width: base.width + drag.translation.width,
-                        height: base.height + drag.translation.height
+                        width: base.width + (drag.location.x - start.x),
+                        height: base.height + (drag.location.y - start.y)
                     ),
                     in: size
                 )
             }
             .onEnded { _ in
+                dragStartPoint = nil
                 dragStartOffset = nil
                 panelHovering = true
             }
     }
 
     private func clampedPanelOffset(_ proposed: CGSize, in size: CGSize) -> CGSize {
-        let maxX = max(0, (size.width - Self.panelSize.width) / 2 - 10)
-        let maxY = max(0, size.height - Self.panelSize.height - 40)
+        let maxX = max(0, (size.width - Self.panelSize.width) / 2 - 12)
+        let maxUp = max(0, size.height - 28 - Self.panelSize.height - 12)
+        let maxDown: CGFloat = 12
         return CGSize(
             width: min(max(proposed.width, -maxX), maxX),
-            height: min(max(proposed.height, -maxY), 10)
+            height: min(max(proposed.height, -maxUp), maxDown)
         )
     }
 
