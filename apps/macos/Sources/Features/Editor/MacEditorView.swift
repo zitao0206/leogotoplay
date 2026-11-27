@@ -66,6 +66,8 @@ final class MacEditorModel: ObservableObject {
         let audioRange: CMTimeRange
         let transform: CGAffineTransform
         let duration: Double
+        /// 源视频的像素尺寸（导出体积预估按它挑码率）
+        var pixelSize: CGSize = .zero
     }
     private var materialTracks: [UUID: MaterialTracks] = [:]
 
@@ -300,13 +302,18 @@ final class MacEditorModel: ObservableObject {
             audioRange = range
         }
         let transform = (try? await video?.load(.preferredTransform)) ?? .identity
+        var pixelSize = CGSize.zero
+        if let video, let natural = try? await video.load(.naturalSize) {
+            pixelSize = CGSize(width: abs(natural.width), height: abs(natural.height))
+        }
         materialTracks[material.id] = MaterialTracks(
             asset: asset,
             videoTrack: video,
             audioTrack: audio,
             audioRange: audioRange,
             transform: transform,
-            duration: duration
+            duration: duration,
+            pixelSize: pixelSize
         )
         if let index = materials.firstIndex(where: { $0.id == material.id }) {
             materials[index].duration = duration
@@ -851,9 +858,9 @@ final class MacEditorModel: ObservableObject {
         ) else {
             return (composition, total)
         }
-        let compositionAudio = includeAudio
-            ? composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
-            : nil
+        // V2.9.0：音轨改成「有真实音频段才建」 —— 空音轨会让 AVAssetExportSession 直接
+        // 以 AVFoundationErrorDomain -11838 收场（无声视频的时间轴以前根本导不出来）
+        var compositionAudio: AVMutableCompositionTrack?
 
         var cursor = CMTime.zero
         var transformApplied = false
@@ -869,11 +876,17 @@ final class MacEditorModel: ObservableObject {
             )
             try? compositionVideo.insertTimeRange(range, of: videoTrack, at: cursor)
 
-            if let audioTrack = tracks.audioTrack, let compositionAudio, tracks.audioRange.duration > .zero {
+            if includeAudio, let audioTrack = tracks.audioTrack, tracks.audioRange.duration > .zero {
                 let start = CMTimeMaximum(range.start, tracks.audioRange.start)
                 let end = CMTimeMinimum(range.end, tracks.audioRange.end)
                 if end > start {
-                    try? compositionAudio.insertTimeRange(
+                    if compositionAudio == nil {
+                        compositionAudio = composition.addMutableTrack(
+                            withMediaType: .audio,
+                            preferredTrackID: kCMPersistentTrackID_Invalid
+                        )
+                    }
+                    try? compositionAudio?.insertTimeRange(
                         CMTimeRange(start: start, end: end),
                         of: audioTrack,
                         at: cursor + (start - range.start)
@@ -967,7 +980,30 @@ final class MacEditorModel: ObservableObject {
         return path
     }
 
-    func export() async -> URL? {
+    /// 导出面板的体积预估：按画质档位挑码率 × 时长，再加 128kbps 音轨（只求数量级对得上）
+    func estimatedExportBytes(quality: VideoExporter.Quality, duration: Double) -> Int64 {
+        guard duration > 0 else { return 0 }
+        // 预设只缩小不放大：有效高度取「源高度」和「目标高度」的较小值，再按它挑码率
+        let sourceHeight = clips.first?.sourceID.flatMap { materialTracks[$0]?.pixelSize.height } ?? 0
+        let targetHeight: Double
+        switch quality {
+        case .p720: targetHeight = 720
+        case .p1080: targetHeight = 1080
+        case .highest: targetHeight = sourceHeight
+        }
+        let effective = sourceHeight > 0 ? min(sourceHeight, targetHeight) : targetHeight
+        let videoMbps: Double
+        if effective >= 2000 { videoMbps = 45 }
+        else if effective >= 1400 { videoMbps = 24 }
+        else if effective >= 1080 { videoMbps = 12 }
+        else if effective >= 720 { videoMbps = 5 }
+        else { videoMbps = 2 }
+        let totalMbps = videoMbps + 0.128
+        return Int64(totalMbps * duration / 8 * 1_000_000)
+    }
+
+    func export(quality: VideoExporter.Quality = ExportSettings.quality,
+                fileType: AVFileType = .mp4) async -> URL? {
         guard !clips.isEmpty, outputDuration > 0.1 else {
             errorMessage = "时间轴里没有可导出的片段"
             return nil
@@ -982,7 +1018,8 @@ final class MacEditorModel: ObservableObject {
         do {
             let url = try await VideoExporter.export(
                 composition: built.composition,
-                quality: ExportSettings.quality,
+                quality: quality,
+                fileType: fileType,
                 progressHandler: { [weak self] progress in
                     self?.exportProgress = progress
                 }
@@ -1034,6 +1071,9 @@ struct MacEditorView: View {
     @State private var timelineWidth: CGFloat = 0
     /// 素材区里选中的素材（V2.8.5：支持 ⌘ 多选后删除）
     @State private var selectedMaterialIDs: Set<UUID> = []
+    /// 导出配置弹框（V2.9.0：先填标题/目录/分辨率/格式，再进进度弹框）
+    @State private var isExportConfigPresented = false
+    @State private var exportDraft = MacExportOptions.defaultOptions(title: "")
     /// 导出进度弹框
     @State private var isExportSheetPresented = false
     /// 导出失败文案（弹框内展示，不走全局 alert）
@@ -1078,6 +1118,22 @@ struct MacEditorView: View {
             Button("好") { model.errorMessage = nil }
         } message: {
             Text(model.errorMessage ?? "")
+        }
+        .sheet(isPresented: $isExportConfigPresented) {
+            MacExportConfigSheet(
+                model: model,
+                options: $exportDraft,
+                onCancel: { isExportConfigPresented = false },
+                onSubmit: { options in
+                    exportDraft = options
+                    isExportConfigPresented = false
+                    // 两个弹框不能同时挂，等配置弹框收完再顶进度弹框
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 220_000_000)
+                        startExport(options: options)
+                    }
+                }
+            )
         }
         .sheet(isPresented: $isExportSheetPresented) {
             MacExportSheet(model: model, errorText: exportErrorText) {
@@ -1615,7 +1671,7 @@ struct MacEditorView: View {
     private var exportButton: some View {
         VStack(alignment: .trailing, spacing: 6) {
             Button {
-                startExport()
+                presentExportConfig()
             } label: {
                 HStack(spacing: 7) {
                     Image(systemName: "square.and.arrow.up")
@@ -1769,28 +1825,32 @@ struct MacEditorView: View {
 
     // MARK: - 导出（V2.8.0 起带进度弹框，默认落到「下载」文件夹）
 
-    /// 点导出：先把弹框顶上来，再在后台渲染时间轴，进度实时写进 model.exportProgress
-    private func startExport() {
+    /// 点导出：先弹配置面板（标题 / 目录 / 分辨率 / 格式）
+    private func presentExportConfig() {
+        guard !model.clips.isEmpty, !model.isExporting else { return }
+        exportDraft = MacExportOptions.defaultOptions(title: model.title)
+        isExportConfigPresented = true
+    }
+
+    /// 确认配置后：进度弹框顶上来，后台按所选分辨率/封装渲染时间轴
+    private func startExport(options: MacExportOptions) {
         guard !model.clips.isEmpty, !model.isExporting else { return }
         model.pause()
         model.exportedURL = nil
         exportErrorText = nil
         isExportSheetPresented = true
-        Task { await runExport() }
+        Task { await runExport(options: options) }
     }
 
-    private func runExport() async {
-        guard let exported = await model.export() else {
+    private func runExport(options: MacExportOptions) async {
+        guard let exported = await model.export(quality: options.quality, fileType: options.format.fileType) else {
             // 失败信息放进弹框里，同时清掉全局 alert 的文案，避免两层弹窗叠一起
             exportErrorText = model.errorMessage ?? "导出失败，请稍后再试"
             model.errorMessage = nil
             return
         }
 
-        let stamp = Int(Date().timeIntervalSince1970)
-        let base = model.title.replacingOccurrences(of: "/", with: "-")
-        let destination = MacExportPaths.downloads
-            .appendingPathComponent("\(base)-\(stamp).mp4")
+        let destination = options.destinationURL
         do {
             try VideoExporter.moveExport(exported, to: destination)
             model.exportedURL = destination
@@ -1804,6 +1864,254 @@ struct MacEditorView: View {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 2_200_000_000)
             if toast == text { toast = nil }
+        }
+    }
+}
+
+// MARK: - 导出配置（V2.9.0）
+
+/// 导出封装格式：只暴露 H.264 的 MP4 / MOV 两种，够用又不会导出失败
+enum MacExportFormat: String, CaseIterable, Identifiable {
+    case mp4
+    case mov
+
+    var id: String { rawValue }
+    var title: String { self == .mp4 ? "MP4（H.264）" : "MOV（H.264）" }
+    var shortTitle: String { rawValue.uppercased() }
+    var fileType: AVFileType { self == .mp4 ? .mp4 : .mov }
+}
+
+/// 一次导出的全部参数（标题、落地目录、分辨率、封装格式）
+struct MacExportOptions: Equatable {
+    var title: String
+    var directory: URL
+    var quality: VideoExporter.Quality
+    var format: MacExportFormat
+
+    /// 上次用过的目录记在 UserDefaults 里，下次打开还停在那儿
+    static let directoryKey = "leogotoplay.mac.exportDirectory"
+
+    static func defaultOptions(title: String) -> MacExportOptions {
+        let saved = UserDefaults.standard.string(forKey: directoryKey).map { URL(fileURLWithPath: $0) }
+        let dir = saved ?? MacExportPaths.downloads
+        return MacExportOptions(
+            title: title.isEmpty ? "未命名项目" : title,
+            directory: FileManager.default.fileExists(atPath: dir.path) ? dir : MacExportPaths.downloads,
+            quality: ExportSettings.quality,
+            format: .mp4
+        )
+    }
+
+    var fileName: String {
+        let cleaned = title
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? "未命名项目" : cleaned
+    }
+
+    /// 重名自动加 -2、-3 …，不覆盖已有文件
+    var destinationURL: URL {
+        let fm = FileManager.default
+        let base = fileName
+        var candidate = directory.appendingPathComponent("\(base).\(format.rawValue)")
+        var index = 2
+        while fm.fileExists(atPath: candidate.path) {
+            candidate = directory.appendingPathComponent("\(base)-\(index).\(format.rawValue)")
+            index += 1
+        }
+        return candidate
+    }
+}
+
+private struct MacExportConfigSheet: View {
+    @ObservedObject var model: MacEditorModel
+    @Binding var options: MacExportOptions
+    let onCancel: () -> Void
+    let onSubmit: (MacExportOptions) -> Void
+
+    @State private var hoveringFolder = false
+
+    private var durationText: String {
+        let total = Int(model.outputDuration.rounded())
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 { return "\(h) 时 \(m) 分 \(s) 秒" }
+        if m > 0 { return "\(m) 分 \(s) 秒" }
+        return "\(s) 秒"
+    }
+
+    private var sizeText: String {
+        let bytes = model.estimatedExportBytes(quality: options.quality, duration: model.outputDuration)
+        let gb = Double(bytes) / 1_000_000_000
+        if gb >= 1 { return String(format: "%.2f GB", gb) }
+        let mb = Double(bytes) / 1_000_000
+        return String(format: "%.0f MB", mb)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("导出")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.bottom, 16)
+
+            row("标题") {
+                TextField("", text: $options.title)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+
+            row("导出至") {
+                HStack(spacing: 8) {
+                    Text(options.directory.path)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.62))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    Button {
+                        chooseDirectory()
+                    } label: {
+                        Image(systemName: "folder")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(MacTheme.accent)
+                            .frame(width: 34, height: 32)
+                            .background(Color.white.opacity(hoveringFolder ? 0.14 : 0.07),
+                                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { hoveringFolder = $0 }
+                    .help("选择导出目录")
+                }
+            }
+
+            row("分辨率") {
+                menuField(resolutionTitle(options.quality)) {
+                    ForEach(VideoExporter.Quality.allCases, id: \.self) { quality in
+                        Button(resolutionTitle(quality)) { options.quality = quality }
+                    }
+                }
+            }
+
+            row("视频格式") {
+                menuField(options.format.title) {
+                    ForEach(MacExportFormat.allCases) { format in
+                        Button(format.title) { options.format = format }
+                    }
+                }
+            }
+
+            Rectangle()
+                .fill(Color.white.opacity(0.08))
+                .frame(height: 1)
+                .padding(.vertical, 16)
+
+            HStack(spacing: 10) {
+                Image(systemName: "film")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.45))
+                Text("时长：\(durationText) ｜ 大小：\(sizeText)（估计）")
+                    .font(.system(size: 12).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.62))
+                Spacer(minLength: 12)
+                Button {
+                    onCancel()
+                } label: {
+                    Text("取消")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.1), in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    onSubmit(options)
+                } label: {
+                    Text("导出")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                        .background(MacTheme.accentGradient, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(24)
+        .frame(width: 620)
+        .background(MacTheme.surface)
+    }
+
+    private func resolutionTitle(_ quality: VideoExporter.Quality) -> String {
+        switch quality {
+        case .highest: return "原始（最高质量）"
+        case .p1080: return "1080p"
+        case .p720: return "720p"
+        }
+    }
+
+    /// 和参考图一致的下拉框：一个灰底圆角条，左边当前值、右边 chevron
+    @ViewBuilder
+    private func menuField<Content: View>(_ current: String, @ViewBuilder content: () -> Content) -> some View {
+        Menu {
+            content()
+        } label: {
+            HStack {
+                Text(current)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+    }
+
+    @ViewBuilder
+    private func row<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text(label)
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.75))
+                .frame(width: 72, alignment: .leading)
+            content()
+        }
+        .padding(.bottom, 12)
+    }
+
+    private func chooseDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.prompt = "选择"
+        panel.message = "选择导出视频保存的位置"
+        panel.directoryURL = options.directory
+        if panel.runModal() == .OK, let url = panel.url {
+            options.directory = url
+            UserDefaults.standard.set(url.path, forKey: MacExportOptions.directoryKey)
         }
     }
 }
