@@ -92,6 +92,12 @@ struct MacPlayerView: View {
     @State private var dragStartOffset: CGSize?
     @State private var dragStartPoint: CGPoint?
     private static let panelSize = CGSize(width: 520, height: 84)
+
+    /// 全屏空闲自动隐藏：3 秒内无点击 / 无鼠标移动就把「操作面板 + 钉子」收起来
+    @State private var isFullscreen = false
+    @State private var controlsIdleHidden = false
+    @State private var lastActivity = Date()
+    @State private var lastPointerPoint = CGPoint(x: -1, y: -1)
     private static let playerSpace = "playerSpace"
 
     /// 窗口置顶（「在最前」）
@@ -118,13 +124,23 @@ struct MacPlayerView: View {
                 // 单击播放/暂停，双击进入或退出全屏（面板、侧边栏盖在上层，不会被误触）
                 MacPlayerClickCatcher(
                     onSingleClick: {
+                        lastActivity = Date()
+                        controlsIdleHidden = false
                         isPlaying ? pause() : play()
                     },
-                    onDoubleClick: { toggleFullscreen() }
+                    onDoubleClick: {
+                        lastActivity = Date()
+                        controlsIdleHidden = false
+                        toggleFullscreen()
+                    }
                 )
 
                 VStack(spacing: 0) {
+                    // 全屏空闲时标题也跟着收起，模拟「只看画面」
                     titleBar
+                        .opacity(isFullscreen && controlsIdleHidden ? 0 : 1)
+                        .animation(.easeOut(duration: 0.2), value: controlsIdleHidden)
+                        .allowsHitTesting(false)
                     Spacer(minLength: 0)
                 }
 
@@ -284,7 +300,8 @@ struct MacPlayerView: View {
 
     /// 面板显隐：鼠标在播放器区域就出现，移出窗口就消失（拖动中保持）
     private var showControls: Bool {
-        pointerInside || dragStartPoint != nil || dragStartOffset != nil
+        if dragStartPoint != nil || dragStartOffset != nil { return true }
+        return pointerInside && !controlsIdleHidden
     }
 
     /// 面板容器：鼠标进入整体淡入、离开整体淡出；面板底色可按住拖动，限制在窗口内
@@ -298,6 +315,7 @@ struct MacPlayerView: View {
                         .fill(Color.black.opacity(0.001))
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .allowsHitTesting(showControls)
 
             controlPanel(in: size)
                 .allowsHitTesting(showControls)
@@ -319,6 +337,30 @@ struct MacPlayerView: View {
         let point = CGPoint(x: inContent.x, y: yDown)
         let inside = point.x >= 0 && point.y >= 0
             && point.x <= bounds.width && point.y <= bounds.height
+
+        // 全屏状态（窗口切换全屏有动画，靠轮询同步最快）
+        let fullscreen = window.styleMask.contains(.fullScreen)
+        if fullscreen != isFullscreen { isFullscreen = fullscreen }
+
+        // 鼠标移动算「有活动」，静止就累计空闲时间
+        if inside {
+            let moved = hypot(point.x - lastPointerPoint.x, point.y - lastPointerPoint.y) > 1
+            if moved || lastPointerPoint.x < 0 { lastActivity = Date() }
+            lastPointerPoint = point
+        } else {
+            lastPointerPoint = CGPoint(x: -1, y: -1)
+        }
+
+        // 全屏时空闲满 3 秒就收起；非全屏或正在拖动则立刻恢复
+        if isFullscreen, inside,
+           dragStartPoint == nil, dragStartOffset == nil {
+            let idle = Date().timeIntervalSince(lastActivity) >= 3
+            if idle != controlsIdleHidden {
+                withAnimation(.easeOut(duration: 0.2)) { controlsIdleHidden = idle }
+            }
+        } else if controlsIdleHidden {
+            controlsIdleHidden = false
+        }
 
         // 拖动过程中冻结 hover 轮询：每 60ms 改状态会打断 SwiftUI 的拖动手势
         if dragStartPoint != nil || dragStartOffset != nil {
