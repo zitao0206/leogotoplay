@@ -154,7 +154,7 @@ struct MacLibraryView: View {
                     .buttonStyle(MacAccentToolbarButtonStyle())
                     }
                     .fixedSize(horizontal: true, vertical: false)
-                    .padding(.trailing, 10)
+                    .padding(.trailing, 11.5)
                 }
             }
             .onExitCommand { if showSearch { closeSearch() } }
