@@ -1073,11 +1073,21 @@ final class MacEditorModel: ObservableObject {
         return max(24, min(120, tracks?.frameRate ?? 30))
     }
 
+    /// 源片的像素尺寸（「导入视频参数」那一行用）
+    var sourcePixelSize: CGSize {
+        let tracks = clips.first?.sourceID.flatMap { materialTracks[$0] } ?? materialTracks.values.first
+        return tracks?.pixelSize ?? CGSize(width: 1920, height: 1080)
+    }
+
+    /// 源片码率（Mbps）
+    var sourceBitrateMbps: Double {
+        let tracks = clips.first?.sourceID.flatMap { materialTracks[$0] } ?? materialTracks.values.first
+        return (tracks?.bitrateKbps ?? 0) / 1000
+    }
+
     /// 源片的短边（默认分辨率档按它挑）
     var sourceShortSide: Double {
-        let tracks = clips.first?.sourceID.flatMap { materialTracks[$0] } ?? materialTracks.values.first
-        let size = tracks?.pixelSize ?? CGSize(width: 1920, height: 1080)
-        return min(size.width, size.height)
+        min(sourcePixelSize.width, sourcePixelSize.height)
     }
 
     /// 「默认配置成源片参数」用的分辨率档：1080 附近→1080p、720 附近→720p，其它（含竖屏/方形）→原始
@@ -2185,7 +2195,7 @@ private struct MacExportConfigSheet: View {
             }
 
             HStack(spacing: 8) {
-                Text("当前参数：")
+                Text("导入视频参数：")
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.45))
                 Text(configSummary)
@@ -2195,7 +2205,6 @@ private struct MacExportConfigSheet: View {
                     .minimumScaleFactor(0.85)
                 Spacer(minLength: 0)
             }
-            .padding(.leading, 6)
             .padding(.bottom, 12)
 
             optionRow("分辨率", topic: .resolution) {
@@ -2320,16 +2329,13 @@ private struct MacExportConfigSheet: View {
 
     private var isPassthrough: Bool { options.quality == .highest }
 
-    /// 「当前视频配置：分辨率 · 帧率 · 码率 · 格式」，随下面四项实时变
+    /// 「导入视频参数：分辨率，帧率，码率」——描述导入的源片本身，不随后面四项变
     private var configSummary: String {
-        let plan = model.exportPlan(for: options.quality,
-                                    frameRateChoice: options.frameRate,
-                                    bitrateChoice: options.bitrate,
-                                    customMbps: options.customMbps)
-        let resolution = "\(plan.width)×\(plan.height)"
-        let fps = "\(MacExportFrameRate.label(plan.frameRate)) fps"
-        let mbps = String(format: "%.2f Mbps", Double(plan.bitrate) / 1_000_000)
-        return "分辨率：\(resolution)｜帧率：\(fps)｜码率：\(mbps)｜格式：\(options.format.title)"
+        let size = model.sourcePixelSize
+        let resolution = "\(Int(size.width))×\(Int(size.height))"
+        let fps = "\(MacExportFrameRate.label(model.sourceFrameRate))fps"
+        let mbps = String(format: "%.2f Mbps", model.sourceBitrateMbps)
+        return "分辨率：\(resolution)，帧率：\(fps)，码率：\(mbps)"
     }
 
     private var frameRateTitle: String {
