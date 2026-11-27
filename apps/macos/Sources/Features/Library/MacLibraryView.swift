@@ -9,6 +9,9 @@ struct MacLibraryView: View {
 
     @State private var openFolderID: UUID?
     @State private var searchText = ""
+    /// 搜索页（独立页面，点顶栏放大镜进）
+    @State private var showSearch = false
+    @FocusState private var searchFieldFocused: Bool
 
     @State private var renameVideoTarget: VideoItem?
     @State private var renameFolderTarget: VideoFolder?
@@ -40,10 +43,16 @@ struct MacLibraryView: View {
     }
 
     private var displayedVideos: [VideoItem] {
-        let base = library.videos(in: openFolderID)
+        library.videos(in: openFolderID)
+    }
+
+    /// 搜索页的结果：全库按标题匹配，文件夹里的也算
+    private var searchResults: [VideoItem] {
         let keyword = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !keyword.isEmpty else { return base }
-        return base.filter { $0.title.localizedCaseInsensitiveContains(keyword) }
+        guard !keyword.isEmpty else { return [] }
+        return library.videos
+            .filter { $0.title.localizedCaseInsensitiveContains(keyword) }
+            .sorted { $0.createdAt > $1.createdAt }
     }
 
     var body: some View {
@@ -117,6 +126,12 @@ struct MacLibraryView: View {
                     if isImporting {
                         ProgressView().controlSize(.small)
                     }
+                    Button {
+                        openSearch()
+                    } label: {
+                        Label("搜索", systemImage: "magnifyingglass")
+                    }
+                    .help("搜索素材库视频")
                     PhotosPicker(selection: $photoPickerItem, matching: .videos) {
                         Label("从相册导入", systemImage: "photo.on.rectangle")
                     }
@@ -137,7 +152,7 @@ struct MacLibraryView: View {
                     .buttonStyle(MacAccentToolbarButtonStyle())
                 }
             }
-            .searchable(text: $searchText, prompt: "搜索视频标题")
+            .onExitCommand { if showSearch { closeSearch() } }
             .onChange(of: photoPickerItem) { newValue in
                 guard let newValue else { return }
                 Task { await importPhoto(newValue) }
@@ -150,6 +165,16 @@ struct MacLibraryView: View {
     }
 
     private var content: some View {
+        Group {
+            if showSearch {
+                searchPage
+            } else {
+                libraryPage
+            }
+        }
+    }
+
+    private var libraryPage: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 header
@@ -165,6 +190,149 @@ struct MacLibraryView: View {
             }
             .padding(MacTheme.pagePadding)
         }
+    }
+
+    // MARK: - 搜索页
+
+    private func openSearch() {
+        searchText = ""
+        showSearch = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { searchFieldFocused = true }
+    }
+
+    private func closeSearch() {
+        showSearch = false
+        searchText = ""
+        searchFieldFocused = false
+    }
+
+    private var searchPage: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Button {
+                    closeSearch()
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(.bordered)
+                .help("返回素材库")
+
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.white.opacity(0.5))
+                    TextField("搜索视频标题", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .focused($searchFieldFocused)
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                            searchFieldFocused = true
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 12))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.white.opacity(0.45))
+                        .help("清空")
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                )
+                .frame(maxWidth: 420)
+
+                Spacer()
+
+                if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("\(searchResults.count) 个结果")
+                        .font(.caption)
+                        .foregroundStyle(Color.white.opacity(0.5))
+                }
+            }
+            .padding(.horizontal, MacTheme.pagePadding)
+            .padding(.top, 14)
+            .padding(.bottom, 12)
+
+            Divider().overlay(Color.white.opacity(0.08))
+
+            ScrollView {
+                searchResultsBody
+                    .padding(MacTheme.pagePadding)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var searchResultsBody: some View {
+        let keyword = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if keyword.isEmpty {
+            MacEmptyStateView(
+                symbol: "text.magnifyingglass",
+                title: "搜索素材库里的视频",
+                message: "输入片名关键词即可，文件夹里的视频也能搜到。"
+            )
+            .frame(height: 320)
+        } else if searchResults.isEmpty {
+            MacEmptyStateView(
+                symbol: "magnifyingglass",
+                title: "没有找到匹配的视频",
+                message: "没有标题包含「\(keyword)」的视频，换个关键词或检查拼写。"
+            )
+            .frame(height: 320)
+        } else {
+            VStack(spacing: 8) {
+                ForEach(searchResults) { item in
+                    searchResultRow(item)
+                }
+            }
+        }
+    }
+
+    private func searchResultRow(_ item: VideoItem) -> some View {
+        let folderName = item.folderID.flatMap { library.folder(with: $0)?.name } ?? "根目录"
+        let meta = "\(folderName) · \(item.fileSize.fileSizeText) · \(item.duration.timecode)"
+        return Button {
+            play(item)
+        } label: {
+            HStack(spacing: 12) {
+                MacThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 8)
+                    .frame(width: 44, height: 44)
+                    .clipped()
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Text(meta)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(Color.white.opacity(0.5))
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "play.circle")
+                    .font(.system(size: 16))
+                    .foregroundStyle(Color.white.opacity(0.35))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: MacTheme.cardRadius, style: .continuous)
+                    .fill(MacTheme.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: MacTheme.cardRadius, style: .continuous)
+                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("单击播放")
     }
 
     // MARK: - 头部
