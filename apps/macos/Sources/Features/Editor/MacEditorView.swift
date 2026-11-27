@@ -2185,15 +2185,17 @@ private struct MacExportConfigSheet: View {
             }
 
             HStack(spacing: 8) {
-                Text("当前视频配置：")
-                    .font(.system(size: 12))
+                Text("当前参数：")
+                    .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.45))
                 Text(configSummary)
-                    .font(.system(size: 12).monospacedDigit())
+                    .font(.system(size: 11.5))
                     .foregroundStyle(.white.opacity(0.8))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
                 Spacer(minLength: 0)
             }
-            .padding(.leading, 84)
+            .padding(.leading, 6)
             .padding(.bottom, 12)
 
             optionRow("分辨率", topic: .resolution) {
@@ -2217,7 +2219,7 @@ private struct MacExportConfigSheet: View {
                 .opacity(isPassthrough ? 0.45 : 1)
             }
 
-            optionRow("视频码率", topic: .bitrate) {
+            optionRow("码率", topic: .bitrate) {
                 menuField(bitrateTitle) {
                     Button("推荐（\(formatMbps(model.recommendedBitrateMbps(for: options.quality)))）") {
                         options.bitrate = .recommended
@@ -2263,7 +2265,7 @@ private struct MacExportConfigSheet: View {
                     .padding(.bottom, 12)
             }
 
-            optionRow("视频格式", topic: .format) {
+            optionRow("格式", topic: .format) {
                 menuField(options.format.title) {
                     ForEach(MacExportFormat.allCases) { format in
                         Button(format.title) { options.format = format }
@@ -2327,7 +2329,7 @@ private struct MacExportConfigSheet: View {
         let resolution = "\(plan.width)×\(plan.height)"
         let fps = "\(MacExportFrameRate.label(plan.frameRate)) fps"
         let mbps = String(format: "%.2f Mbps", Double(plan.bitrate) / 1_000_000)
-        return "\(resolution) · \(fps) · \(mbps) · \(options.format.title)"
+        return "分辨率：\(resolution)｜帧率：\(fps)｜码率：\(mbps)｜格式：\(options.format.title)"
     }
 
     private var frameRateTitle: String {
