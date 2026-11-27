@@ -15,7 +15,7 @@ enum MacSection: String, CaseIterable, Identifiable {
         switch self {
         case .cut: return "Cut"
         case .library: return "Library"
-        case .mine: return "Mine"
+        case .mine: return "Me"
         }
     }
 
