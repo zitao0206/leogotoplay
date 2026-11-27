@@ -16,11 +16,14 @@ final class MacPlayerLayerView: NSView {
 
 struct MacPlayerSurface: NSViewRepresentable {
     let player: AVPlayer
+    /// 画布准备好后把 view 交出去（画中画需要拿到 AVPlayerLayer）
+    var onReady: ((MacPlayerLayerView) -> Void)? = nil
 
     func makeNSView(context: Context) -> MacPlayerLayerView {
         let view = MacPlayerLayerView()
         view.wantsLayer = true
         view.playerLayer?.player = player
+        onReady?(view)
         return view
     }
 

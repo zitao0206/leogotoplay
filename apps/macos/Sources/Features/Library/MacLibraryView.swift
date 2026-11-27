@@ -10,7 +10,6 @@ struct MacLibraryView: View {
     @State private var openFolderID: UUID?
     @State private var searchText = ""
 
-    @State private var playingVideo: VideoItem?
     @State private var renameVideoTarget: VideoItem?
     @State private var renameFolderTarget: VideoFolder?
     @State private var moveVideoTarget: VideoItem?
@@ -35,9 +34,6 @@ struct MacLibraryView: View {
 
     var body: some View {
         decorated
-            .sheet(item: $playingVideo) { item in
-                MacPlayerView(item: item)
-            }
             .sheet(item: $renameVideoTarget) { item in
                 MacRenameSheet(title: "重命名视频", currentName: item.title) { newName in
                     library.renameVideo(item.id, to: newName)
@@ -279,7 +275,7 @@ struct MacLibraryView: View {
                     ForEach(displayedVideos) { item in
                         MacVideoRow(
                             item: item,
-                            onPlay: { playingVideo = item }
+                            onPlay: { MacPlayerWindowManager.shared.open(item: item, library: library) }
                         ) {
                             Button(item.isFavorite ? "取消收藏" : "收藏") {
                                 library.toggleFavorite(item.id)

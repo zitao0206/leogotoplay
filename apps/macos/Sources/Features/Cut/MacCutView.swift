@@ -6,7 +6,6 @@ import LeogotoPlayCore
 struct MacCutView: View {
     @EnvironmentObject private var library: LibraryStore
 
-    @State private var playingVideo: VideoItem?
     @State private var toast: String?
     /// 最近编辑的项目（V2.8.6：来自项目存档，每条都是动过时间轴的现场）
     @State private var projects: [MacProjectRecord] = []
@@ -42,9 +41,6 @@ struct MacCutView: View {
             .padding(.bottom, 24)
         }
         .background(MacTheme.canvas)
-        .sheet(item: $playingVideo) { item in
-            MacPlayerView(item: item)
-        }
         .overlay(alignment: .bottom) {
             if let toast {
                 Text(toast)
