@@ -77,6 +77,9 @@ struct MacRootView: View {
                 }
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: MacTheme.sidebarWidth, max: 260)
+            // 侧栏原来透的是系统 sidebar 材质（灰），这里换成与主区一致的纯黑画布
+            .scrollContentBackground(.hidden)
+            .background(MacTheme.canvas)
             .safeAreaInset(edge: .bottom) {
                 // V1.0：这里原来显示账号名（登录状态），已去掉，只留素材库统计。
                 Text("\(library.videos.count) 个视频 · \(library.totalSize.fileSizeText)")
@@ -85,6 +88,7 @@ struct MacRootView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
+                    .background(MacTheme.canvas)
             }
         } detail: {
             detail

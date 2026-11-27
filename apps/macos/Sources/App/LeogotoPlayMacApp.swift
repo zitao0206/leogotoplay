@@ -19,6 +19,7 @@ struct LeogotoPlayMacApp: App {
                 .environmentObject(auth)
                 .tint(MacTheme.accent)
                 .frame(minWidth: 980, minHeight: 640)
+                .background(MacWindowChromeConfigurator())
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
@@ -31,6 +32,27 @@ struct LeogotoPlayMacApp: App {
                 .keyboardShortcut("i", modifiers: [.command, .shift])
             }
         }
+    }
+}
+
+/// 顶部标题栏原来透出系统窗口材质（灰），这里把窗口底色刷成纯黑、标题栏透明，
+/// 侧栏/标题栏与页面画布连成一片黑。
+private struct MacWindowChromeConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async { configure(view.window) }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async { configure(view.window) }
+    }
+
+    private func configure(_ window: NSWindow?) {
+        guard let window else { return }
+        window.backgroundColor = NSColor(red: 0.059, green: 0.059, blue: 0.067, alpha: 1)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .visible
     }
 }
 
