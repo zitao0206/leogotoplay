@@ -22,6 +22,10 @@ struct MacLibraryView: View {
 
     private var currentFolder: VideoFolder? { library.folder(with: openFolderID) }
 
+    private var displayedSize: String {
+        displayedVideos.reduce(into: Int64(0)) { $0 += $1.fileSize }.fileSizeText
+    }
+
     private var displayedVideos: [VideoItem] {
         let base = library.videos(in: openFolderID)
         let keyword = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -183,8 +187,11 @@ struct MacLibraryView: View {
 
     private var folderSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("文件夹").font(.headline)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("文件夹").font(.system(size: 17, weight: .semibold))
+                Text("\(library.folders.count) 个文件夹")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Button("新建") { showNewFolder = true }
                     .buttonStyle(.link)
@@ -209,12 +216,13 @@ struct MacLibraryView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 14)], spacing: 14) {
+                // V3.0.0：按 iOS 的列表样式排（一条文件夹一行）
+                VStack(spacing: 8) {
                     ForEach(library.folders) { folder in
-                        MacFolderCard(
+                        MacFolderRow(
                             folder: folder,
                             videoCount: library.videoCount(in: folder.id),
-                            coverThumbnails: library.coverThumbnails(for: folder.id),
+                            subfolderCount: library.subfolderCount(in: folder.id),
                             onOpen: { openFolderID = folder.id }
                         )
                         .contextMenu {
@@ -242,12 +250,15 @@ struct MacLibraryView: View {
 
     private var videoSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(openFolderID == nil ? "全部视频" : "文件夹内视频").font(.headline)
-                Spacer()
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(openFolderID == nil ? "视频" : "文件夹内视频")
+                    .font(.system(size: 17, weight: .semibold))
                 if !displayedVideos.isEmpty {
-                    Text("\(displayedVideos.count) 个").font(.caption).foregroundStyle(.secondary)
+                    Text("\(displayedVideos.count) 个 · \(displayedSize)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
+                Spacer()
             }
 
             if displayedVideos.isEmpty {
@@ -264,17 +275,11 @@ struct MacLibraryView: View {
                 )
                 .frame(height: 320)
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 16)], spacing: 18) {
+                VStack(spacing: 8) {
                     ForEach(displayedVideos) { item in
-                        MacVideoCard(
+                        MacVideoRow(
                             item: item,
-                            onPlay: { playingVideo = item },
-                            onEdit: {
-                                MacEditorWindowManager.shared.open(
-                                    source: MacEditorSource(url: item.fileURL, title: item.title, libraryVideoID: item.id),
-                                    library: library
-                                )
-                            }
+                            onPlay: { playingVideo = item }
                         ) {
                             Button(item.isFavorite ? "取消收藏" : "收藏") {
                                 library.toggleFavorite(item.id)

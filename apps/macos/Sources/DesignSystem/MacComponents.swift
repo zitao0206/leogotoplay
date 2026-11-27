@@ -251,3 +251,129 @@ enum MacAlerts {
         return alert.runModal() == .alertFirstButtonReturn
     }
 }
+
+
+// MARK: - Library 列表行（V3.0.0：对齐 iOS 的一行一条式布局）
+
+/// 行里用的日期格式（懒加载一次，泛型 struct 里不能放 static 存储属性）
+private enum MacRowDateFormatter {
+    static let shared: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+}
+
+/// 文件夹行：图标 + 名字 + 「N 个视频 · M 个文件夹」+ 右侧箭头
+struct MacFolderRow: View {
+    let folder: VideoFolder
+    let videoCount: Int
+    let subfolderCount: Int
+    var onOpen: () -> Void
+
+    @State private var hovering = false
+
+    private var detail: String {
+        subfolderCount > 0
+        ? "\(videoCount) 个视频 · \(subfolderCount) 个文件夹"
+        : "\(videoCount) 个视频"
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "folder.fill")
+                .font(.system(size: 22))
+                .foregroundStyle(MacTheme.accent)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(folder.name)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(Color.white.opacity(0.5))
+            }
+
+            Spacer(minLength: 8)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.35))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: MacTheme.cardRadius, style: .continuous)
+                .fill(MacTheme.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: MacTheme.cardRadius, style: .continuous)
+                .stroke(Color.white.opacity(hovering ? 0.16 : 0.06), lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
+        .onHover { hovering = $0 }
+    }
+}
+
+/// 视频行：缩略图 + 名字 + 「体积 · 日期 · 时长」+ 右侧箭头，点一行就播放
+struct MacVideoRow<MenuContent: View>: View {
+    let item: VideoItem
+    var onPlay: () -> Void
+    @ViewBuilder var menuContent: MenuContent
+
+    @State private var hovering = false
+
+    private var meta: String {
+        "\(item.fileSize.fileSizeText) · \(MacRowDateFormatter.shared.string(from: item.createdAt)) · \(item.duration.timecode)"
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            MacThumbnailView(thumbnailName: item.thumbnailName, cornerRadius: 8)
+                .frame(width: 56, height: 56)
+                .clipped()
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    Text(item.title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    if item.isFavorite {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(MacTheme.accent)
+                    }
+                }
+                Text(meta)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(Color.white.opacity(0.5))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(hovering ? 0.6 : 0.35))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: MacTheme.cardRadius, style: .continuous)
+                .fill(hovering ? Color.white.opacity(0.06) : MacTheme.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: MacTheme.cardRadius, style: .continuous)
+                .stroke(Color.white.opacity(hovering ? 0.16 : 0.06), lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onPlay)
+        .onHover { hovering = $0 }
+        .contextMenu { menuContent }
+    }
+}
